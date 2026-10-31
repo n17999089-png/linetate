@@ -1,0 +1,2473 @@
+/* LINESTATE — просмотр карты: логика */
+(function () {
+    'use strict';
+
+    const $ = id => document.getElementById(id);
+    const { store, esc } = LT;
+    const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+    const state = {
+        date: null,
+        layers: {},
+        hidden: new Set(),
+        savedAt: 0,
+        base: 'hybrid',
+        regions: true,
+        labels: false,
+        advance: false
+    };
+
+    let map = null;
+    let mapReady = false;
+    let mounted = new Set();
+    let cal = null;
+    let lastVer = store.version();
+    let lastFx = '';
+    let playTimer = null;
+    let pxLabels = null;
+    let blend = null;
+    const shownFC = new Map();
+
+    /* ---------------------------- данные ---------------------------- */
+
+    function normalize(src) {
+        const out = {};
+        Object.keys(src || {}).forEach((id, i) => {
+            const l = src[id] || {};
+            const s = l.style || {};
+            const anim = ['none', 'pulse', 'flow', 'march'].indexOf(s.anim) >= 0 ? s.anim : (s.anim ? 'pulse' : 'none');
+            out[id] = {
+                id,
+                name: typeof l.name === 'string' && l.name ? l.name : id,
+                desc: typeof l.desc === 'string' ? l.desc : '',
+                imported: l.imported === true,
+                image: LT.validImage(l.image),
+                imageRatio: Number.isFinite(l.imageRatio) ? Math.max(0.1, Math.min(10, l.imageRatio)) : 1,
+                kind: ['arrow', 'point', 'image'].includes(l.kind) ? l.kind : 'zone',
+                z: Number.isFinite(l.z) ? l.z : i,
+                style: {
+                    color: typeof s.color === 'string' ? s.color : '#4f7bb8',
+                    bcol: typeof s.bcol === 'string' ? s.bcol : '#dbe8ff',
+                    bw: Number.isFinite(s.bw) ? s.bw : 1.5,
+                    alpha: Number.isFinite(s.alpha) ? s.alpha : .35,
+                    visible: s.visible !== false,
+                    markerSize: Number.isFinite(s.markerSize) ? Math.max(24, Math.min(200, s.markerSize)) : (l.kind === 'image' ? 96 : 40),
+                    markerIcon: ['dot', 'diamond', 'cross', 'flag'].includes(s.markerIcon) ? s.markerIcon : 'dot',
+                    shadow: s.shadow !== false,
+                    maskTarget: typeof s.maskTarget === 'string' ? s.maskTarget : '',
+                    maskTargets: Array.isArray(s.maskTargets)
+                        ? s.maskTargets.filter(x => typeof x === 'string' && x && src[x])
+                        : [],
+                    hard: s.hard === true,
+                    water: s.water === true,
+                    pattern: ['none', 'hatch', 'diag', 'grid', 'dots', 'cross', 'bricks', 'waves', 'hazard'].indexOf(s.pattern) >= 0 ? s.pattern : 'none',
+                    patternScale: Number.isFinite(s.patternScale) ? Math.min(60, Math.max(8, s.patternScale)) : 22,
+                    border: ['solid', 'dashed', 'glow'].indexOf(s.border) >= 0 ? s.border : 'solid',
+                    anim,
+                    glow: Number.isFinite(s.glow) ? Math.min(100, Math.max(0, s.glow)) : 60,
+                    iglow: Number.isFinite(s.iglow) ? Math.min(100, Math.max(0, s.iglow)) : 0,
+                    igcol: typeof s.igcol === 'string' ? s.igcol : '#ffffff',
+                    grad: s.grad === true,
+                    gcol: typeof s.gcol === 'string' ? s.gcol : '#04101c',
+                    gdir: Number.isFinite(s.gdir) ? Math.min(360, Math.max(0, s.gdir)) : 90,
+                    label: s.label === true,
+                    labelSize: Number.isFinite(s.labelSize) ? Math.min(28, Math.max(8, s.labelSize)) : 12,
+                    labelColor: typeof s.labelColor === 'string' ? s.labelColor : '#e8eef5',
+                    labelText: typeof s.labelText === 'string' ? s.labelText : '',
+                    labelPos: Array.isArray(s.labelPos) && s.labelPos.length === 2 && Number.isFinite(+s.labelPos[0]) && Number.isFinite(+s.labelPos[1])
+                        ? [+s.labelPos[0], +s.labelPos[1]] : null,
+                    blend: LT.BLENDS.indexOf(s.blend) >= 0 ? s.blend : 'normal',
+                    widthKm: Number.isFinite(s.widthKm) ? s.widthKm : 8,
+                    headRatio: Number.isFinite(s.headRatio) ? s.headRatio : 2.6,
+                    d3: s.d3 !== false,
+                    depth: Number.isFinite(s.depth) ? Math.min(6, Math.max(0.2, s.depth)) : 1.6,
+                    taper: Number.isFinite(s.taper) ? Math.min(0.8, Math.max(0, s.taper)) : 0.16,
+                    headW: Number.isFinite(s.headW) ? Math.min(1.8, Math.max(0.5, s.headW)) : 0.95
+                },
+                data: l.data && Array.isArray(l.data.features)
+                    ? { type: 'FeatureCollection', features: l.data.features }
+                    : { type: 'FeatureCollection', features: [] }
+            };
+        });
+        return out;
+    }
+
+    function maskIds(l, layers) {
+        const src = layers || state.layers;
+        const ids = [];
+        const push = v => { if (typeof v === 'string' && v && v !== l.id && src[v] && ids.indexOf(v) < 0) ids.push(v); };
+        if (Array.isArray(l.style.maskTargets)) l.style.maskTargets.forEach(push);
+        push(l.style.maskTarget);
+        return ids;
+    }
+
+    function displayFC(l, layers) {
+        const src = layers || state.layers;
+        if (l._ltDfc && l._ltDfc.layers === src) return l._ltDfc.fc;
+        const memo = fc => { l._ltDfc = { layers: src, fc }; return fc; };
+
+        const ids = maskIds(l, src);
+        if (!ids.length) return memo(l.data);
+        if (!l.data.features.length) return memo(EMPTY_FC);
+
+        const masks = [];
+        ids.forEach(id => src[id].data.features.forEach(f => masks.push(f)));
+        if (!masks.length) return memo(EMPTY_FC);
+
+        const out = [];
+        l.data.features.forEach(f => {
+            masks.forEach(mf => {
+                try {
+                    const r = turf.intersect(f, mf);
+                    if (r && r.geometry && r.geometry.coordinates.length) out.push(r);
+                } catch (e) { }
+            });
+        });
+        return memo({ type: 'FeatureCollection', features: out });
+    }
+
+    function areaKm2(feature) {
+        try { return turf.area(feature) / 1e6; } catch (e) { return 0; }
+    }
+
+    // дата грузится и нормализуется один раз; повторные обновления берут кэш
+    const docCache = new Map();
+    let currentDoc = null;
+
+    function loadDoc(date, fresh) {
+        const doc = store.load(date);
+        const key = doc && doc.savedAt ? doc.savedAt : 0;
+        const hit = docCache.get(date);
+        if (!fresh && hit && hit.key === key) return hit;
+        const entry = {
+            key,
+            savedAt: key,
+            layers: doc && doc.layers ? normalize(doc.layers) : {},
+            doc
+        };
+        docCache.set(date, entry);
+        return entry;
+    }
+
+    /* ---------------------------- карта ---------------------------- */
+
+    function isVisible(l) {
+        return l.style.visible && !state.hidden.has(l.id);
+    }
+
+    function applyLayer(l) {
+        const src = map.getSource('s_' + l.id);
+        if (!src) return;
+        const fc = displayFC(l);
+        shownFC.set(l.id, fc);
+        src.setData(l.style.iglow > 0 ? LT.rewindFC(fc) : fc);
+        LT.applyLayerPaint(map, l, isVisible(l));
+        LT.syncLayerDecor(map, l, fc, isVisible(l));
+        if (blend) blend.draw();
+    }
+
+    function restack() {
+        if (!mapReady) return;
+        LT.orderLayerObjects(map, state.layers);
+        ['lt-flow-halo', 'lt-flow-dot'].forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
+        if (map.getLayer('lt-adv-fill')) map.moveLayer('lt-adv-fill');
+        if (map.getLayer('lt-adv-line')) map.moveLayer('lt-adv-line');
+        orderToolLayers();
+        if (map.getLayer('lt-places-label')) map.moveLayer('lt-places-label');
+        ['lt-sel-glow', 'lt-sel-line'].forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
+        if (blend) blend.sync();
+    }
+
+    /* ---------------------------- выбор слоя ---------------------------- */
+
+    const SEL_SRC = 'lt-sel';
+    let sel = null;
+
+    function ensureSelectionLayers() {
+        if (!mapReady) return;
+        if (!map.getSource(SEL_SRC)) {
+            map.addSource(SEL_SRC, { type: 'geojson', data: EMPTY_FC });
+        }
+        if (!map.getLayer('lt-sel-glow')) {
+            map.addLayer({
+                id: 'lt-sel-glow', type: 'line', source: SEL_SRC,
+                paint: { 'line-color': '#ffffff', 'line-width': 16, 'line-blur': 15, 'line-opacity': .5 }
+            });
+        }
+        if (!map.getLayer('lt-sel-line')) {
+            map.addLayer({
+                id: 'lt-sel-line', type: 'line', source: SEL_SRC,
+                paint: { 'line-color': '#ffffff', 'line-width': 2, 'line-opacity': 1 }
+            });
+        }
+    }
+
+    function selMeta(l) {
+        const shown = displayFC(l);
+        const total = l.data.features.length;
+        if (l.kind === 'arrow') {
+            const word = LT.countWord(total, 'viewer.arrow');
+            return LT.t('viewer.arrows') + ' · ' + (total ? total + ' ' + word : LT.t('viewer.emptyVal'));
+        }
+        const km = Math.round(areaKm2(shown));
+        return LT.t('viewer.zone') + ' · ' + (total ? km.toLocaleString(LT.locale()) + ' ' + LT.t('viewer.km') : LT.t('viewer.emptyVal'));
+    }
+
+    function selLabel(l) {
+        const el = document.createElement('div');
+        el.className = 'sel-label';
+        const desc = (l.desc || '').trim();
+        el.innerHTML = `<i></i><span class="sl-txt"><b>${esc(l.name)}</b><small>${esc(selMeta(l))}</small>${desc ? `<small class="sl-desc">${esc(desc)}</small>` : ''}</span><em title="${esc(LT.t('viewer.close'))}">×</em>`;
+        el.querySelector('em').addEventListener('click', e => {
+            e.stopPropagation();
+            clearSelection();
+        });
+        return el;
+    }
+
+    function pickLayer(point) {
+        let hits = [];
+        try { hits = map.queryRenderedFeatures(point); } catch (e) { return ''; }
+        for (const f of hits) {
+            const m = /^(?:f|p|l|g|ig|xb|xs|xh)_(.+)$/.exec(f.layer.id);
+            if (m && state.layers[m[1]]) return m[1];
+        }
+        return '';
+    }
+
+    function selectLayer(id, lngLat) {
+        const l = state.layers[id];
+        if (!l) return;
+        clearSelection();
+        ensureSelectionLayers();
+
+        const src = map.getSource(SEL_SRC);
+        if (src) src.setData(displayFC(l));
+        ['lt-sel-glow', 'lt-sel-line'].forEach(x => { if (map.getLayer(x)) map.moveLayer(x); });
+
+        const el = selLabel(l);
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -14] })
+            .setLngLat(lngLat)
+            .addTo(map);
+        sel = { id, marker, el, lngLat };
+
+        legendRow(id, row => row.classList.add('sel'));
+    }
+
+    function relabelSelection() {
+        if (!sel) return;
+        const l = state.layers[sel.id];
+        if (!l) { clearSelection(); return; }
+        const next = selLabel(l);
+        sel.marker.remove();
+        sel.el = next;
+        sel.marker = new maplibregl.Marker({ element: next, anchor: 'bottom', offset: [0, -14] })
+            .setLngLat(sel.lngLat)
+            .addTo(map);
+    }
+
+    function clearSelection() {
+        if (sel) {
+            if (sel.marker) sel.marker.remove();
+            sel = null;
+        }
+        const src = map.getSource(SEL_SRC);
+        if (src) src.setData(EMPTY_FC);
+        document.querySelectorAll('#legend-list .lg-row.sel').forEach(r => r.classList.remove('sel'));
+    }
+
+    function legendRow(id, fn) {
+        document.querySelectorAll('#legend-list .lg-row').forEach(row => {
+            if (row.dataset.id === id) fn(row);
+        });
+    }
+
+    /* ---------------------------- инструменты карты ---------------------------- */
+
+    const ANNO_PREFIX = 'LINETATE:A:';
+    const COLOR_KEY = 'LINETATE:__color';
+    const DRAW_KEY = 'LINETATE:__draw';
+    const LEGACY_ARROW_KEY = 'LINETATE:__arrow';
+    const DRAW_DEFAULT = '#ffffff';
+    const DRAW_LEGACY = '#ffd45e';
+    const W_MIN = 1;
+    const W_MAX = 8;
+    const HEAD_MIN = 8;
+    const HEAD_MAX = 30;
+    const DRAW_TOOLS = ['pen', 'arrow', 'rect', 'circle', 'zone', 'erase'];
+    const TOOL_HINT = {
+        pen: 'tools.penHint', arrow: 'tools.arrowHint', rect: 'tools.rectHint',
+        circle: 'tools.circleHint', zone: 'tools.zoneHint', erase: 'tools.eraseHint'
+    };
+    let anno = [];
+    let tool = '';
+    let rulerPts = [];
+    let rulerDone = false;
+    let rulerClosed = false;
+    let rulerLabels = [];
+    let rulerTotal = null;
+    let pen = null;
+    let shape = null;
+    let arrow = null;
+    let drawW = 2.6;
+    let drawHead = 15;
+    let drawPanelOpen = false;
+    let zonePts = [];
+    let drawColor = DRAW_DEFAULT;
+    const clampNum = (v, min, max, fallback) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+    };
+    try {
+        const savedColor = localStorage.getItem(COLOR_KEY);
+        if (/^#[0-9a-f]{6}$/i.test(savedColor || '')) drawColor = savedColor === DRAW_LEGACY ? DRAW_DEFAULT : savedColor;
+    } catch (e) { }
+    {
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem(DRAW_KEY) || 'null'); } catch (e) { }
+        if (saved) {
+            drawW = clampNum(saved.w, W_MIN, W_MAX, drawW);
+            drawHead = clampNum(saved.head, HEAD_MIN, HEAD_MAX, drawHead);
+        } else {
+            // настройки старой панели стрелки хранили индексы 0..2
+            let old = null;
+            try { old = JSON.parse(localStorage.getItem(LEGACY_ARROW_KEY) || 'null'); } catch (e) { }
+            if (old) {
+                drawW = [1.8, 2.6, 3.8][old.w] || drawW;
+                drawHead = [11, 15, 21][old.h] || drawHead;
+            }
+        }
+    }
+    let searchRows = [];
+    let searchActive = -1;
+    let searchPick = null;
+    let searchMarker = null;
+    let searchSeq = 0;
+
+    /* ---------------- рисунки поверх слоёв карты ---------------- */
+
+    // заливки с градиентом и режимом наложения рисуются на DOM-canvas над картой;
+    // рисунки держим на своём слое выше, иначе они тонут под цветом зоны
+    let drawCv = null;
+    let drawCtx = null;
+    let drawQueued = false;
+    let draftFC = EMPTY_FC;
+    let rulerFC = EMPTY_FC;
+
+    const MAP_DRAW_LAYERS = [
+        'lt-anno-fill-shadow', 'lt-anno-fill', 'lt-anno-rim', 'lt-anno-glow', 'lt-anno-shadow',
+        'lt-anno-casing', 'lt-anno-line',
+        'lt-draft-fill', 'lt-draft-glow', 'lt-draft-casing', 'lt-draft-line', 'lt-draft-pts',
+        'lt-ruler-fill', 'lt-ruler-glow', 'lt-ruler-shadow', 'lt-ruler-casing', 'lt-ruler-line',
+        'lt-ruler-halo', 'lt-ruler-dots'
+    ];
+
+    function rgba(hex, a) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+        if (!m) return 'rgba(255,255,255,' + a + ')';
+        const n = parseInt(m[1], 16);
+        return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+    }
+
+    function ensureDrawCanvas() {
+        if (drawCv || !mapReady) return;
+        drawCv = document.createElement('canvas');
+        drawCv.id = 'lt-draw-canvas';
+        document.body.appendChild(drawCv);
+        drawCtx = drawCv.getContext('2d');
+        map.on('render', scheduleDraw);
+        scheduleDraw();
+    }
+
+    function scheduleDraw() {
+        if (drawQueued) return;
+        drawQueued = true;
+        requestAnimationFrame(() => { drawQueued = false; paintDraw(); });
+    }
+
+    function pathGeo(g, geo) {
+        if (!geo) return false;
+        const ring = pts => {
+            if (!Array.isArray(pts) || pts.length < 2) return;
+            pts.forEach((c, i) => {
+                if (!c || !isFinite(c[0]) || !isFinite(c[1])) return;
+                let p;
+                try { p = map.project(c); } catch (e) { return; }
+                if (i === 0) g.moveTo(p.x, p.y);
+                else g.lineTo(p.x, p.y);
+            });
+        };
+        if (geo.type === 'Polygon') {
+            g.beginPath();
+            (geo.coordinates || []).forEach(ring);
+            g.closePath();
+            return true;
+        }
+        if (geo.type === 'MultiPolygon') {
+            g.beginPath();
+            (geo.coordinates || []).forEach(poly => (poly || []).forEach(ring));
+            g.closePath();
+            return true;
+        }
+        if (geo.type === 'LineString') {
+            g.beginPath();
+            ring(geo.coordinates);
+            return true;
+        }
+        if (geo.type === 'MultiLineString') {
+            g.beginPath();
+            (geo.coordinates || []).forEach(ring);
+            return true;
+        }
+        if (geo.type === 'Point') {
+            const c = geo.coordinates || [];
+            if (!isFinite(c[0]) || !isFinite(c[1])) return false;
+            let p;
+            try { p = map.project(c); } catch (e) { return false; }
+            g.beginPath();
+            g.arc(p.x, p.y, 1, 0, Math.PI * 2);
+            return true;
+        }
+        return false;
+    }
+
+    function fillGeo(g, geo, color, alpha, ox, oy) {
+        if (!pathGeo(g, geo)) return;
+        g.save();
+        g.globalAlpha = alpha == null ? 1 : alpha;
+        g.fillStyle = color;
+        if (ox || oy) g.translate(ox || 0, oy || 0);
+        try { g.fill('evenodd'); } catch (e) { g.fill(); }
+        g.restore();
+    }
+
+    function lineGeo(g, geo, color, width, alpha, dash, ox, oy, blur) {
+        if (!pathGeo(g, geo)) return;
+        g.save();
+        g.globalAlpha = alpha == null ? 1 : alpha;
+        g.strokeStyle = color;
+        g.lineWidth = width;
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        if (dash && dash.length) g.setLineDash(dash);
+        if (ox || oy) g.translate(ox || 0, oy || 0);
+        if (blur) {
+            g.shadowColor = color;
+            g.shadowBlur = blur;
+        }
+        g.stroke();
+        g.restore();
+    }
+
+    function drawDot(g, at, radius, fill, stroke, strokeW, halo) {
+        let p;
+        try { p = map.project(at); } catch (e) { return; }
+        if (halo) {
+            g.save();
+            g.globalAlpha = halo;
+            g.beginPath();
+            g.arc(p.x, p.y, radius * 2.2, 0, Math.PI * 2);
+            g.fillStyle = fill;
+            g.shadowColor = fill;
+            g.shadowBlur = 5;
+            g.fill();
+            g.restore();
+        }
+        g.beginPath();
+        g.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        g.fillStyle = fill;
+        g.fill();
+        if (stroke) {
+            g.lineWidth = strokeW;
+            g.strokeStyle = stroke;
+            g.stroke();
+        }
+    }
+
+    function paintAnnoFeature(f) {
+        const g = drawCtx;
+        const geo = f && f.geometry;
+        if (!g || !geo) return;
+        const p = f.properties || {};
+        const col = /^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : DRAW_DEFAULT;
+        const w = Number(p.w) || 2.4;
+        const poly = geo.type === 'Polygon' || geo.type === 'MultiPolygon';
+        if (poly) {
+            fillGeo(g, geo, '#000000', .38, 3, 4);
+            fillGeo(g, geo, rgba(col, .24), Number(p.alpha) || .2);
+            lineGeo(g, geo, 'rgba(255,255,255,.22)', 1.1, 1, null, -1, -1);
+        }
+        lineGeo(g, geo, rgba(col, .38), w + 6.6, 1, null, 0, 0, 14);
+        lineGeo(g, geo, '#000000', w + 3.6, .42, null, 3, 3, 6);
+        lineGeo(g, geo, '#0a0a0b', w + 2.8, .5);
+        lineGeo(g, geo, col, w, 1);
+    }
+
+    function paintDraft() {
+        const g = drawCtx;
+        if (!g || !draftFC) return;
+        (draftFC.features || []).forEach(f => {
+            const geo = f.geometry;
+            const p = f.properties || {};
+            const col = /^#[0-9a-f]{6}$/i.test(p.color || '') ? p.color : DRAW_DEFAULT;
+            const w = Number(p.w) || 2.4;
+            if (geo.type === 'Point') {
+                let pt;
+                try { pt = map.project(geo.coordinates); } catch (e) { return; }
+                g.beginPath();
+                g.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+                g.fillStyle = '#141414';
+                g.fill();
+                g.lineWidth = 2;
+                g.strokeStyle = col;
+                g.stroke();
+                return;
+            }
+            if (geo.type === 'Polygon') fillGeo(g, geo, rgba(col, .18), 1, 1, 2);
+            lineGeo(g, geo, rgba(col, .34), w + 5, 1, null, 0, 0, 12);
+            lineGeo(g, geo, '#0a0a0b', w + 2.2, .42, [2 * w, 1.5 * w]);
+            lineGeo(g, geo, rgba(col, .96), w, 1, [2 * w, 1.5 * w]);
+        });
+    }
+
+    function paintRuler() {
+        const g = drawCtx;
+        if (!g || !rulerFC) return;
+        let line = null;
+        let poly = null;
+        const pts = [];
+        (rulerFC.features || []).forEach(f => {
+            const geo = f.geometry || {};
+            if (geo.type === 'LineString') line = geo;
+            else if (geo.type === 'Polygon') poly = geo;
+            else if (geo.type === 'Point' && Array.isArray(geo.coordinates)) pts.push(geo.coordinates);
+        });
+        if (poly) fillGeo(g, poly, 'rgba(255,233,168,.14)');
+        if (line) {
+            lineGeo(g, line, 'rgba(255,233,168,.45)', 12, 1, null, 0, 0, 24);
+            lineGeo(g, line, '#000000', 5, .4, null, 3, 3, 6);
+            lineGeo(g, line, '#0a0a0b', 5, .55);
+            lineGeo(g, line, '#ffe9a8', 2.2, 1, [2.4 * 2.2, 1.8 * 2.2]);
+        }
+        pts.forEach(c => drawDot(g, c, 4.5, '#141414', '#ffe9a8', 2, .16));
+    }
+
+    function paintDraw() {
+        if (!drawCv || !drawCtx || !mapReady) return;
+        const src = map.getCanvas();
+        const cw = src.width;
+        const ch = src.height;
+        if (!cw || !ch) return;
+        if (drawCv.width !== cw || drawCv.height !== ch) {
+            drawCv.width = cw;
+            drawCv.height = ch;
+        }
+        const cssW = src.clientWidth || cw;
+        const cssH = src.clientHeight || ch;
+        const g = drawCtx;
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, cw, ch);
+        g.scale(cw / cssW, ch / cssH);
+        anno.forEach(paintAnnoFeature);
+        paintDraft();
+        paintRuler();
+    }
+
+    function addSourceSafe(id) {
+        if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: EMPTY_FC });
+    }
+
+    function ensureToolLayers() {
+        if (!mapReady) return;
+
+        addSourceSafe('lt-anno');
+        addSourceSafe('lt-draft');
+        addSourceSafe('lt-ruler');
+        addSourceSafe('lt-ps');
+
+        const drawColorExpr = ['coalesce', ['get', 'color'], DRAW_DEFAULT];
+        const drawW = ['coalesce', ['get', 'w'], 2.4];
+        const drawWCasing = ['+', drawW, 2.8];
+        const drawWGlow = ['+', drawW, 6.6];
+        const drawWHit = ['+', drawW, 16];
+
+        if (!map.getLayer('lt-anno-fill-shadow')) map.addLayer({
+            id: 'lt-anno-fill-shadow', type: 'fill', source: 'lt-anno',
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: { 'fill-color': '#000000', 'fill-opacity': .38, 'fill-translate': [3, 4] }
+        });
+        if (!map.getLayer('lt-anno-fill')) map.addLayer({
+            id: 'lt-anno-fill', type: 'fill', source: 'lt-anno',
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: {
+                'fill-color': drawColorExpr,
+                'fill-opacity': ['coalesce', ['get', 'alpha'], .2]
+            }
+        });
+        if (!map.getLayer('lt-anno-rim')) map.addLayer({
+            id: 'lt-anno-rim', type: 'line', source: 'lt-anno',
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: { 'line-color': '#ffffff', 'line-width': 1.1, 'line-opacity': .22, 'line-translate': [-1, -1] }
+        });
+        if (!map.getLayer('lt-anno-glow')) map.addLayer({
+            id: 'lt-anno-glow', type: 'line', source: 'lt-anno',
+            paint: { 'line-color': drawColorExpr, 'line-width': drawWGlow, 'line-blur': 7, 'line-opacity': .38 }
+        });
+        if (!map.getLayer('lt-anno-shadow')) map.addLayer({
+            id: 'lt-anno-shadow', type: 'line', source: 'lt-anno',
+            paint: { 'line-color': '#000000', 'line-width': ['+', drawW, 3.6], 'line-blur': 3, 'line-opacity': .42, 'line-translate': [3, 3] }
+        });
+        if (!map.getLayer('lt-anno-casing')) map.addLayer({
+            id: 'lt-anno-casing', type: 'line', source: 'lt-anno',
+            paint: { 'line-color': '#0a0a0b', 'line-width': drawWCasing, 'line-opacity': .5 }
+        });
+        if (!map.getLayer('lt-anno-line')) map.addLayer({
+            id: 'lt-anno-line', type: 'line', source: 'lt-anno',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': drawColorExpr, 'line-width': drawW, 'line-opacity': 1 }
+        });
+        if (!map.getLayer('lt-anno-hit')) map.addLayer({
+            id: 'lt-anno-hit', type: 'line', source: 'lt-anno',
+            paint: { 'line-color': '#000000', 'line-width': drawWHit, 'line-opacity': .01 }
+        });
+        if (!map.getLayer('lt-anno-hit-fill')) map.addLayer({
+            id: 'lt-anno-hit-fill', type: 'fill', source: 'lt-anno',
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: { 'fill-color': '#000000', 'fill-opacity': .01 }
+        });
+
+        if (!map.getLayer('lt-draft-fill')) map.addLayer({
+            id: 'lt-draft-fill', type: 'fill', source: 'lt-draft',
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: { 'fill-color': drawColorExpr, 'fill-opacity': .18, 'fill-translate': [1, 2] }
+        });
+        if (!map.getLayer('lt-draft-glow')) map.addLayer({
+            id: 'lt-draft-glow', type: 'line', source: 'lt-draft',
+            filter: ['==', ['geometry-type'], 'LineString'],
+            paint: { 'line-color': drawColorExpr, 'line-width': ['+', drawW, 5], 'line-blur': 6, 'line-opacity': .34 }
+        });
+        if (!map.getLayer('lt-draft-casing')) map.addLayer({
+            id: 'lt-draft-casing', type: 'line', source: 'lt-draft',
+            filter: ['!=', ['geometry-type'], 'Point'],
+            paint: { 'line-color': '#0a0a0b', 'line-width': ['+', drawW, 2.2], 'line-opacity': .42 }
+        });
+        if (!map.getLayer('lt-draft-line')) map.addLayer({
+            id: 'lt-draft-line', type: 'line', source: 'lt-draft',
+            filter: ['!=', ['geometry-type'], 'Point'],
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': drawColorExpr, 'line-width': drawW, 'line-dasharray': [2, 1.5], 'line-opacity': .96 }
+        });
+        if (!map.getLayer('lt-draft-pts')) map.addLayer({
+            id: 'lt-draft-pts', type: 'circle', source: 'lt-draft',
+            filter: ['==', ['geometry-type'], 'Point'],
+            paint: {
+                'circle-radius': 5, 'circle-color': '#141414',
+                'circle-stroke-width': 2, 'circle-stroke-color': drawColorExpr
+            }
+        });
+
+        if (!map.getLayer('lt-ruler-fill')) map.addLayer({
+            id: 'lt-ruler-fill', type: 'fill', source: 'lt-ruler',
+            filter: ['==', ['geometry-type'], 'Polygon'],
+            paint: { 'fill-color': '#ffe9a8', 'fill-opacity': .14 }
+        });
+        if (!map.getLayer('lt-ruler-glow')) map.addLayer({
+            id: 'lt-ruler-glow', type: 'line', source: 'lt-ruler',
+            filter: ['==', ['geometry-type'], 'LineString'],
+            paint: { 'line-color': '#ffe9a8', 'line-width': 12, 'line-blur': 8, 'line-opacity': .45 }
+        });
+        if (!map.getLayer('lt-ruler-shadow')) map.addLayer({
+            id: 'lt-ruler-shadow', type: 'line', source: 'lt-ruler',
+            filter: ['==', ['geometry-type'], 'LineString'],
+            paint: { 'line-color': '#000000', 'line-width': 5, 'line-blur': 3, 'line-opacity': .4, 'line-translate': [3, 3] }
+        });
+        if (!map.getLayer('lt-ruler-casing')) map.addLayer({
+            id: 'lt-ruler-casing', type: 'line', source: 'lt-ruler',
+            filter: ['==', ['geometry-type'], 'LineString'],
+            paint: { 'line-color': '#0a0a0b', 'line-width': 5, 'line-opacity': .55 }
+        });
+        if (!map.getLayer('lt-ruler-line')) map.addLayer({
+            id: 'lt-ruler-line', type: 'line', source: 'lt-ruler',
+            filter: ['==', ['geometry-type'], 'LineString'],
+            paint: { 'line-color': '#ffe9a8', 'line-width': 2.2, 'line-dasharray': [2.4, 1.8], 'line-opacity': 1 }
+        });
+        if (!map.getLayer('lt-ruler-halo')) map.addLayer({
+            id: 'lt-ruler-halo', type: 'circle', source: 'lt-ruler',
+            filter: ['==', ['geometry-type'], 'Point'],
+            paint: { 'circle-radius': 10, 'circle-color': '#ffe9a8', 'circle-opacity': .16, 'circle-blur': 1 }
+        });
+        if (!map.getLayer('lt-ruler-dots')) map.addLayer({
+            id: 'lt-ruler-dots', type: 'circle', source: 'lt-ruler',
+            filter: ['==', ['geometry-type'], 'Point'],
+            paint: { 'circle-radius': 4.5, 'circle-color': '#141414', 'circle-stroke-width': 2, 'circle-stroke-color': '#ffe9a8' }
+        });
+
+        if (!map.getLayer('lt-ps-fill')) map.addLayer({
+            id: 'lt-ps-fill', type: 'fill', source: 'lt-ps',
+            paint: { 'fill-color': '#ffcf4d', 'fill-opacity': .08 }
+        });
+        if (!map.getLayer('lt-ps-glow')) map.addLayer({
+            id: 'lt-ps-glow', type: 'line', source: 'lt-ps',
+            paint: { 'line-color': '#ffcf4d', 'line-width': 9, 'line-opacity': .5, 'line-blur': 8 }
+        });
+        if (!map.getLayer('lt-ps-line')) map.addLayer({
+            id: 'lt-ps-line', type: 'line', source: 'lt-ps',
+            paint: { 'line-color': '#fff1b8', 'line-width': 2, 'line-dasharray': [3, 2], 'line-opacity': .95 }
+        });
+
+        // визуал рисунков теперь на DOM-canvas над картой; в карте остаются только слои попадания
+        MAP_DRAW_LAYERS.forEach(id => {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
+        });
+    }
+
+    function orderToolLayers() {
+        if (!mapReady) return;
+        [
+            'lt-anno-fill-shadow', 'lt-anno-fill', 'lt-anno-rim', 'lt-anno-glow', 'lt-anno-shadow', 'lt-anno-casing', 'lt-anno-line', 'lt-anno-hit', 'lt-anno-hit-fill',
+            'lt-draft-fill', 'lt-draft-glow', 'lt-draft-casing', 'lt-draft-line', 'lt-draft-pts',
+            'lt-ruler-fill', 'lt-ruler-glow', 'lt-ruler-shadow', 'lt-ruler-casing', 'lt-ruler-line', 'lt-ruler-halo', 'lt-ruler-dots',
+            'lt-ps-fill', 'lt-ps-glow', 'lt-ps-line'
+        ].forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
+    }
+
+    function refreshAnno() {
+        if (!mapReady) return;
+        ensureToolLayers();
+        const src = map.getSource('lt-anno');
+        if (src) src.setData({ type: 'FeatureCollection', features: anno });
+        scheduleDraw();
+    }
+
+    function loadAnno() {
+        let items = [];
+        try {
+            const raw = localStorage.getItem(ANNO_PREFIX + state.date);
+            const doc = raw ? JSON.parse(raw) : null;
+            if (doc && Array.isArray(doc.items)) {
+                items = doc.items.filter(f => f && f.geometry && f.properties);
+            }
+        } catch (e) { items = []; }
+        anno = items;
+        refreshAnno();
+    }
+
+    function saveAnno() {
+        try {
+            if (anno.length) {
+                localStorage.setItem(ANNO_PREFIX + state.date, JSON.stringify({ v: 1, savedAt: Date.now(), items: anno }));
+            } else {
+                localStorage.removeItem(ANNO_PREFIX + state.date);
+            }
+        } catch (e) { }
+    }
+
+    function annoId() {
+        return 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+
+    function setDraft(features) {
+        draftFC = { type: 'FeatureCollection', features: features || [] };
+        const src = map.getSource('lt-draft');
+        if (src) src.setData(draftFC);
+        scheduleDraw();
+    }
+
+    function fmtDist(km) {
+        if (km < 1) return Math.round(km * 1000) + ' ' + LT.t('tools.m');
+        if (km < 10) return km.toFixed(2) + ' ' + LT.t('tools.km');
+        if (km < 100) return km.toFixed(1) + ' ' + LT.t('tools.km');
+        return Math.round(km).toLocaleString(LT.locale()) + ' ' + LT.t('tools.km');
+    }
+
+    function syncColorUI() {
+        const inp = $('draw-color');
+        if (inp && String(inp.value).toLowerCase() !== drawColor) inp.value = drawColor;
+        const custom = document.querySelector('.dp-custom');
+        if (custom) custom.style.setProperty('--c', drawColor);
+        document.querySelectorAll('#dp-colors .dp-sw').forEach(b => {
+            b.classList.toggle('active', String(b.dataset.color).toLowerCase() === drawColor);
+        });
+    }
+
+    function setDrawColor(c) {
+        if (!/^#[0-9a-f]{6}$/i.test(c || '')) return;
+        drawColor = c.toLowerCase();
+        try { localStorage.setItem(COLOR_KEY, drawColor); } catch (e) { }
+        syncColorUI();
+        if (pen) drawPenDraft();
+        if (shape) drawShapeDraft();
+        if (arrow) drawArrowDraft();
+        if (zonePts.length) drawZoneDraft();
+    }
+
+    function midPoint(a, b) {
+        return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    }
+
+    function samePoint(a, b) {
+        return Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+    }
+
+    function nearPoint(lngLat, point, px) {
+        try {
+            const a = map.project(lngLat);
+            return Math.hypot(a.x - point.x, a.y - point.y) < px;
+        } catch (e) { return false; }
+    }
+
+    function ensureRulerLabels(n) {
+        while (rulerLabels.length < n) {
+            const el = document.createElement('div');
+            el.className = 'lt-measure seg';
+            rulerLabels.push({
+                el,
+                marker: new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -9] })
+                    .setLngLat([0, 0])
+                    .addTo(map)
+            });
+        }
+        while (rulerLabels.length > n) {
+            const last = rulerLabels.pop();
+            last.marker.remove();
+        }
+    }
+
+    function setRulerTotal(text, lngLat) {
+        if (!text) {
+            if (rulerTotal) {
+                rulerTotal.marker.remove();
+                rulerTotal = null;
+            }
+            return;
+        }
+        if (!rulerTotal) {
+            const el = document.createElement('div');
+            el.className = 'lt-measure total';
+            rulerTotal = {
+                el,
+                marker: new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -10] })
+                    .setLngLat([0, 0])
+                    .addTo(map)
+            };
+        }
+        rulerTotal.el.textContent = text;
+        rulerTotal.marker.setLngLat(lngLat);
+    }
+
+    function drawRuler(cursor) {
+        const src = map.getSource('lt-ruler');
+        if (!src) return;
+
+        const preview = !rulerDone && rulerPts.length > 0 && cursor && !samePoint(cursor, rulerPts[rulerPts.length - 1]);
+        const coords = rulerPts.slice();
+        if (preview) coords.push(cursor);
+
+        const fc = [];
+        let lineCoords = coords;
+        if (rulerClosed && rulerDone && coords.length >= 3) lineCoords = coords.concat([coords[0]]);
+        if (lineCoords.length >= 2) {
+            fc.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: lineCoords } });
+        }
+        if (rulerClosed && rulerDone && coords.length >= 3) {
+            fc.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [lineCoords] } });
+        }
+        coords.forEach(p => {
+            fc.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } });
+        });
+        rulerFC = { type: 'FeatureCollection', features: fc };
+        src.setData(rulerFC);
+        scheduleDraw();
+
+        const segs = [];
+        for (let i = 1; i < coords.length; i++) segs.push([coords[i - 1], coords[i]]);
+        if (rulerClosed && rulerDone && coords.length >= 3) segs.push([coords[coords.length - 1], coords[0]]);
+
+        ensureRulerLabels(segs.length);
+        segs.forEach((seg, i) => {
+            let km = 0;
+            try { km = turf.distance(seg[0], seg[1], { units: 'kilometers' }); } catch (e) { km = 0; }
+            rulerLabels[i].el.textContent = fmtDist(km);
+            rulerLabels[i].marker.setLngLat(midPoint(seg[0], seg[1]));
+        });
+
+        if (rulerDone && rulerPts.length >= 3) {
+            let total = 0;
+            try {
+                total = turf.length(turf.lineString(rulerClosed ? rulerPts.concat([rulerPts[0]]) : rulerPts), { units: 'kilometers' });
+            } catch (e) { total = 0; }
+            let text = 'Σ ' + fmtDist(total);
+            let at = rulerPts[rulerPts.length - 1];
+            if (rulerClosed) {
+                try {
+                    const poly = { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [rulerPts.concat([rulerPts[0]])] } };
+                    const area = turf.area(poly) / 1e6;
+                    text += ' · ' + Math.round(area).toLocaleString(LT.locale()) + ' ' + LT.t('viewer.km');
+                    at = turf.centroid(poly).geometry.coordinates;
+                } catch (e) { }
+            }
+            setRulerTotal(text, at);
+        } else {
+            setRulerTotal('', null);
+        }
+
+        if (!rulerPts.length) ensureRulerLabels(0);
+    }
+
+    function resetRulerState() {
+        rulerPts = [];
+        rulerDone = false;
+        rulerClosed = false;
+        ensureRulerLabels(0);
+        setRulerTotal('', null);
+    }
+
+    function clearRuler() {
+        resetRulerState();
+        rulerFC = EMPTY_FC;
+        const src = map.getSource('lt-ruler');
+        if (src) src.setData(rulerFC);
+        scheduleDraw();
+    }
+
+    function rulerFinish() {
+        if (!rulerPts.length || rulerDone) return;
+        rulerPts = dedupePts(rulerPts);
+        if (rulerPts.length < 2) { clearRuler(); return; }
+        rulerDone = true;
+        rulerClosed = false;
+        drawRuler();
+    }
+
+    function rulerClick(e) {
+        const p = e.lngLat.toArray();
+        if (rulerDone) {
+            resetRulerState();
+            rulerPts = [p];
+            drawRuler();
+            return;
+        }
+        if (rulerPts.length >= 3 && e.point && nearPoint(rulerPts[0], e.point, 18)) {
+            rulerClosed = true;
+            rulerDone = true;
+            drawRuler();
+            return;
+        }
+        if (rulerPts.length >= 2 && e.point && nearPoint(rulerPts[rulerPts.length - 1], e.point, 16)) {
+            rulerDone = true;
+            drawRuler();
+            return;
+        }
+        if (rulerPts.length && samePoint(p, rulerPts[rulerPts.length - 1])) return;
+        rulerPts.push(p);
+        drawRuler();
+    }
+
+    function drawPenDraft() {
+        if (!pen) return;
+        setDraft([{
+            type: 'Feature', properties: { color: drawColor, w: drawW },
+            geometry: { type: 'LineString', coordinates: pen.pts.slice() }
+        }]);
+    }
+
+    function penStart(e) {
+        const oe = e.originalEvent;
+        if (oe && typeof oe.button === 'number' && oe.button !== 0) return;
+        pen = { pts: [e.lngLat.toArray()] };
+        drawPenDraft();
+    }
+
+    function penMove(e) {
+        if (!pen) return;
+        const p = e.lngLat.toArray();
+        const last = pen.pts[pen.pts.length - 1];
+        let a;
+        let b;
+        try {
+            a = map.project(last);
+            b = e.point || map.project(p);
+        } catch (err) { return; }
+        if (Math.hypot(a.x - b.x, a.y - b.y) < 2.5) return;
+        pen.pts.push(p);
+        drawPenDraft();
+    }
+
+    function penEnd() {
+        if (!pen) return;
+        const pts = pen.pts;
+        pen = null;
+        setDraft([]);
+        if (pts.length < 2) return;
+        let km = 0;
+        try { km = turf.length(turf.lineString(pts), { units: 'kilometers' }); } catch (e) { km = 0; }
+        if (km < 0.02) { LT.toast(LT.t('tools.tooShort'), 'err'); return; }
+        anno.push({
+            type: 'Feature',
+            properties: { aid: annoId(), kind: 'pen', color: drawColor, w: drawW },
+            geometry: { type: 'LineString', coordinates: pts }
+        });
+        saveAnno();
+        refreshAnno();
+    }
+
+    function draftPoint(p) {
+        return { type: 'Feature', properties: { color: drawColor }, geometry: { type: 'Point', coordinates: p } };
+    }
+
+    function drawZoneDraft(cursor) {
+        const pts = zonePts.slice();
+        if (cursor) pts.push(cursor);
+        const fc = [];
+        if (pts.length >= 2) {
+            fc.push({ type: 'Feature', properties: { color: drawColor, w: drawW }, geometry: { type: 'LineString', coordinates: pts } });
+        }
+        if (pts.length >= 3) {
+            fc.push({ type: 'Feature', properties: { color: drawColor, w: drawW }, geometry: { type: 'Polygon', coordinates: [pts.concat([pts[0]])] } });
+        }
+        zonePts.forEach(p => fc.push(draftPoint(p)));
+        setDraft(fc);
+    }
+
+    function dedupePts(pts) {
+        const out = [];
+        pts.forEach(p => {
+            const q = out[out.length - 1];
+            if (!q || Math.abs(q[0] - p[0]) > 1e-7 || Math.abs(q[1] - p[1]) > 1e-7) out.push(p);
+        });
+        if (out.length > 1) {
+            const f = out[0];
+            const l = out[out.length - 1];
+            if (Math.abs(f[0] - l[0]) < 1e-7 && Math.abs(f[1] - l[1]) < 1e-7) out.pop();
+        }
+        return out;
+    }
+
+    function zoneClick(e) {
+        if (zonePts.length >= 3 && e.point) {
+            const first = map.project(zonePts[0]);
+            if (Math.hypot(first.x - e.point.x, first.y - e.point.y) < 18) {
+                zoneFinish();
+                return;
+            }
+        }
+        zonePts.push(e.lngLat.toArray());
+        drawZoneDraft();
+    }
+
+    function zoneFinish() {
+        const pts = dedupePts(zonePts);
+        zonePts = [];
+        setDraft([]);
+        if (pts.length < 3) return;
+        anno.push({
+            type: 'Feature',
+            properties: { aid: annoId(), kind: 'zone', color: drawColor, w: drawW, alpha: .18 },
+            geometry: { type: 'Polygon', coordinates: [pts.concat([pts[0]])] }
+        });
+        saveAnno();
+        refreshAnno();
+    }
+
+    function shapeRing(kind, a, b) {
+        const w = Math.min(a[0], b[0]);
+        const e = Math.max(a[0], b[0]);
+        const s = Math.min(a[1], b[1]);
+        const n = Math.max(a[1], b[1]);
+        if (kind === 'rect') {
+            return [[w, s], [e, s], [e, n], [w, n], [w, s]];
+        }
+        const cx = (w + e) / 2;
+        const cy = (s + n) / 2;
+        const rx = (e - w) / 2;
+        const ry = (n - s) / 2;
+        const ring = [];
+        const steps = 72;
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps * Math.PI * 2;
+            ring.push([cx + rx * Math.cos(t), cy + ry * Math.sin(t)]);
+        }
+        return ring;
+    }
+
+    function drawShapeDraft() {
+        if (!shape) return;
+        const ring = shapeRing(shape.kind, shape.start, shape.cur);
+        setDraft([
+            { type: 'Feature', properties: { color: drawColor, w: drawW }, geometry: { type: 'Polygon', coordinates: [ring] } },
+            { type: 'Feature', properties: { color: drawColor }, geometry: { type: 'Point', coordinates: shape.start } },
+            { type: 'Feature', properties: { color: drawColor }, geometry: { type: 'Point', coordinates: shape.cur } }
+        ]);
+    }
+
+    function shapeStart(e) {
+        const oe = e.originalEvent;
+        if (oe && typeof oe.button === 'number' && oe.button !== 0) return;
+        shape = { kind: tool, start: e.lngLat.toArray(), cur: e.lngLat.toArray() };
+        drawShapeDraft();
+    }
+
+    function shapeMove(e) {
+        if (!shape) return;
+        shape.cur = e.lngLat.toArray();
+        drawShapeDraft();
+    }
+
+    function shapeEnd() {
+        if (!shape) return;
+        const s = shape;
+        shape = null;
+        setDraft([]);
+        let a;
+        let b;
+        try {
+            a = map.project(s.start);
+            b = map.project(s.cur);
+        } catch (e) { return; }
+        if (Math.hypot(a.x - b.x, a.y - b.y) < 6) return;
+        const ring = shapeRing(s.kind, s.start, s.cur);
+        anno.push({
+            type: 'Feature',
+            properties: { aid: annoId(), kind: 'shape', shape: s.kind, color: drawColor, w: drawW, alpha: .24 },
+            geometry: { type: 'Polygon', coordinates: [ring] }
+        });
+        saveAnno();
+        refreshAnno();
+    }
+
+    function arrowWidth() {
+        return drawW;
+    }
+
+    function arrowHeadPx() {
+        return drawHead;
+    }
+
+    function saveDrawCfg() {
+        try { localStorage.setItem(DRAW_KEY, JSON.stringify({ w: drawW, head: drawHead })); } catch (e) { }
+    }
+
+    function arrowGeometry(a, b) {
+        let pa;
+        let pb;
+        try {
+            pa = map.project(a);
+            pb = map.project(b);
+        } catch (e) { return null; }
+        const px = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+        if (px < 1) return null;
+        let km = 0;
+        let bearing = 0;
+        try {
+            km = turf.distance(a, b, { units: 'kilometers' });
+            bearing = turf.bearing(a, b);
+        } catch (e) { return null; }
+        if (!(km > 0)) return null;
+        const head = Math.min(km * .42, arrowHeadPx() * km / px);
+        let left;
+        let right;
+        try {
+            left = turf.destination(b, head, bearing + 152, { units: 'kilometers' }).geometry.coordinates;
+            right = turf.destination(b, head, bearing - 152, { units: 'kilometers' }).geometry.coordinates;
+        } catch (e) { return null; }
+        return { type: 'MultiLineString', coordinates: [[a, b], [left, b], [right, b]] };
+    }
+
+    function drawArrowDraft() {
+        if (!arrow) return;
+        const geo = arrowGeometry(arrow.a, arrow.b);
+        setDraft(geo ? [{ type: 'Feature', properties: { color: drawColor, w: arrowWidth() }, geometry: geo }] : []);
+    }
+
+    function arrowStart(e) {
+        const oe = e.originalEvent;
+        if (oe && typeof oe.button === 'number' && oe.button !== 0) return;
+        const p = e.lngLat.toArray();
+        arrow = { a: p, b: p };
+        drawArrowDraft();
+    }
+
+    function arrowMove(e) {
+        if (!arrow) return;
+        arrow.b = e.lngLat.toArray();
+        drawArrowDraft();
+    }
+
+    function arrowEnd() {
+        if (!arrow) return;
+        const s = arrow;
+        arrow = null;
+        setDraft([]);
+        let pa;
+        let pb;
+        try {
+            pa = map.project(s.a);
+            pb = map.project(s.b);
+        } catch (e) { return; }
+        if (Math.hypot(pa.x - pb.x, pa.y - pb.y) < 8) return;
+        const geo = arrowGeometry(s.a, s.b);
+        if (!geo) return;
+        anno.push({
+            type: 'Feature',
+            properties: { aid: annoId(), kind: 'arrow', color: drawColor, w: arrowWidth() },
+            geometry: geo
+        });
+        saveAnno();
+        refreshAnno();
+    }
+
+    function eraseAt(point) {        let hits = [];
+        try {
+            hits = map.queryRenderedFeatures(point, { layers: ['lt-anno-hit', 'lt-anno-hit-fill'] });
+        } catch (e) { return; }
+        if (!hits.length) return;
+        const ids = new Set();
+        hits.forEach(f => {
+            const aid = f.properties && f.properties.aid;
+            if (aid) ids.add(String(aid));
+        });
+        if (!ids.size) return;
+        anno = anno.filter(f => !ids.has(String(f.properties && f.properties.aid)));
+        saveAnno();
+        refreshAnno();
+    }
+
+    function clearDrawings() {
+        if (!anno.length) return;
+        if (!window.confirm(LT.t('tools.clearAsk'))) return;
+        anno = [];
+        saveAnno();
+        resetDrafts();
+        refreshAnno();
+        LT.toast(LT.t('tools.cleared'));
+    }
+
+    function paintRange(inp) {
+        const min = +inp.min;
+        const max = +inp.max;
+        const v = +inp.value;
+        const p = max > min ? Math.round((v - min) / (max - min) * 100) : 0;
+        inp.style.setProperty('--p', p + '%');
+    }
+
+    function updateDrawHint() {
+        const hint = $('dp-hint');
+        if (!hint) return;
+        hint.textContent = tool && TOOL_HINT[tool] ? LT.t(TOOL_HINT[tool]) : LT.t('tools.drawHint');
+    }
+
+    function syncDrawUI() {
+        document.querySelectorAll('#dp-tools .dp-tool').forEach(b => {
+            const on = b.dataset.tool === tool;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-pressed', String(on));
+        });
+        const wInp = $('draw-width');
+        if (wInp) {
+            wInp.value = String(drawW);
+            paintRange(wInp);
+            const out = $('draw-width-val');
+            if (out) out.textContent = drawW.toFixed(1) + ' px';
+        }
+        const hInp = $('draw-head');
+        if (hInp) {
+            hInp.value = String(Math.round(drawHead));
+            paintRange(hInp);
+            const out = $('draw-head-val');
+            if (out) out.textContent = Math.round(drawHead) + ' px';
+        }
+        const headSec = $('dp-head-sec');
+        if (headSec) headSec.classList.toggle('collapsed', tool !== 'arrow');
+        updateDrawHint();
+    }
+
+    function setDrawPanel(open) {
+        open = !!open;
+        if (open === drawPanelOpen) return;
+        drawPanelOpen = open;
+        const box = $('draw-panel');
+        if (box) {
+            box.classList.toggle('open', open);
+            box.setAttribute('aria-hidden', String(!open));
+        }
+        const tab = $('tool-draw');
+        if (tab) {
+            tab.classList.toggle('active', open);
+            tab.setAttribute('aria-expanded', String(open));
+            tab.setAttribute('aria-pressed', String(open));
+        }
+        if (!open && DRAW_TOOLS.indexOf(tool) >= 0) setTool('');
+        if (open) syncDrawUI();
+    }
+
+    function syncToolUI() {
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            const on = btn.id === 'tool-' + tool;
+            btn.classList.toggle('active', on);
+            if (btn.hasAttribute('aria-pressed')) btn.setAttribute('aria-pressed', String(on));
+        });
+        syncDrawUI();
+        if (map) {
+            const c = map.getCanvas();
+            if (c) c.style.cursor = tool ? 'crosshair' : '';
+        }
+    }
+
+    function setTool(next) {
+        if (next === tool) next = '';
+        if (tool === 'pen') {
+            pen = null;
+            setDraft([]);
+        }
+        if (tool === 'rect' || tool === 'circle') {
+            shape = null;
+            setDraft([]);
+        }
+        if (tool === 'arrow') {
+            arrow = null;
+            setDraft([]);
+        }
+        if (tool === 'zone') {
+            zonePts = [];
+            setDraft([]);
+        }
+        tool = next;
+        if (tool !== 'ruler') clearRuler();
+        if (map) {
+            if (tool === 'pen' || tool === 'rect' || tool === 'circle' || tool === 'arrow') map.dragPan.disable();
+            else map.dragPan.enable();
+            if (tool === 'zone' || tool === 'ruler') map.doubleClickZoom.disable();
+            else map.doubleClickZoom.enable();
+        }
+        const wantsPanel = DRAW_TOOLS.indexOf(tool) >= 0;
+        if (wantsPanel !== drawPanelOpen) setDrawPanel(wantsPanel);
+        syncToolUI();
+    }
+
+    function resetDrafts() {
+        pen = null;
+        shape = null;
+        arrow = null;
+        zonePts = [];
+        setDraft([]);
+        clearRuler();
+    }
+
+    /* ---------------------------- поиск мест ---------------------------- */
+
+    const PLACE_TYPES = {
+        city: 'place.city', town: 'place.city', village: 'place.village', hamlet: 'place.hamlet',
+        isolated_dwelling: 'place.hut', suburb: 'place.suburb', quarter: 'place.quarter',
+        municipality: 'place.municipality', county: 'place.county', state: 'place.state',
+        province: 'place.state', region: 'place.region', state_district: 'place.district',
+        administrative: 'place.administrative', locality: 'place.locality'
+    };
+
+    function placeType(res) {
+        const type = res.addresstype || res.type || '';
+        const dn = String(res.display_name || '').toLowerCase();
+        if (type === 'administrative') {
+            if (dn.includes('область') || dn.includes('обл.') || dn.includes('oblast')) return LT.t('place.state');
+            if (dn.includes('район') || dn.includes('raion') || dn.includes('district')) return LT.t('place.district');
+            return LT.t('place.territory');
+        }
+        if (PLACE_TYPES[type]) return LT.t(PLACE_TYPES[type]);
+        if (dn.includes('область')) return LT.t('place.state');
+        if (dn.includes('район')) return LT.t('place.district');
+        return type ? String(type).toUpperCase() : LT.t('place.object');
+    }
+
+    function shortName(res) {
+        const first = String(res.display_name || '').split(',')[0].trim();
+        return (res.name && String(res.name).trim()) || first || LT.t('place.object');
+    }
+
+    function setSearch(open) {
+        const panel = $('place-search');
+        const btn = $('search-btn');
+        if (!panel) return;
+        panel.classList.toggle('open', open);
+        panel.setAttribute('aria-hidden', String(!open));
+        if (btn) {
+            btn.classList.toggle('active', open);
+            btn.setAttribute('aria-expanded', String(open));
+        }
+        if (open) {
+            setTimeout(() => { const q = $('ps-q'); if (q) q.focus(); }, 60);
+        }
+    }
+
+    function renderSearchRows() {
+        const box = $('ps-results');
+        if (!box) return;
+        if (!searchRows.length) {
+            box.innerHTML = '';
+            box.classList.remove('show');
+            return;
+        }
+        box.innerHTML = searchRows.map((res, i) => {
+            const dn = String(res.display_name || '').split(',').slice(1, 3).join(',').trim();
+            return `<button type="button" class="sr ${i === searchActive ? 'active' : ''}" data-i="${i}">
+                <b>${esc(shortName(res).toUpperCase())}</b>
+                <small>${esc(placeType(res))}${dn ? ' · ' + esc(dn) : ''}</small>
+            </button>`;
+        }).join('');
+        box.classList.add('show');
+    }
+
+    function syncSearchHint() {
+        const hint = $('ps-hint');
+        if (!hint) return;
+        if (!searchPick) {
+            hint.textContent = LT.t('search.viewerHint');
+            return;
+        }
+        if (!searchPick.feature) {
+            hint.textContent = LT.t('search.noContour');
+            return;
+        }
+        let km2 = 0;
+        try { km2 = turf.area(searchPick.feature) / 1e6; } catch (e) { km2 = 0; }
+        hint.textContent = LT.t('search.area') + ' — ' + Math.round(km2).toLocaleString(LT.locale()) + ' ' + LT.t('viewer.km');
+    }
+
+    function refreshSearchArea() {
+        if (!mapReady) return;
+        ensureToolLayers();
+        const src = map.getSource('lt-ps');
+        if (!src) return;
+        const fs = searchPick && searchPick.feature ? [searchPick.feature] : [];
+        src.setData({ type: 'FeatureCollection', features: fs });
+        const vis = fs.length ? 'visible' : 'none';
+        ['lt-ps-fill', 'lt-ps-glow', 'lt-ps-line'].forEach(id => {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+        });
+        restack();
+    }
+
+    function clearSearchMarker() {
+        if (searchMarker) {
+            searchMarker.remove();
+            searchMarker = null;
+        }
+    }
+
+    function setSearchMarker(lngLat, label) {
+        clearSearchMarker();
+        const el = document.createElement('div');
+        el.className = 'search-marker';
+        el.innerHTML = `<span>${esc(label)}</span><b title="${esc(LT.t('viewer.close'))}">×</b>`;
+        searchMarker = new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -8] })
+            .setLngLat(lngLat)
+            .addTo(map);
+        el.querySelector('b').addEventListener('click', e => {
+            e.stopPropagation();
+            clearSearch();
+        });
+    }
+
+    function pickSearch(res, index) {
+        searchActive = index;
+        const geom = res.geojson;
+        const feature = geom && (geom.type === 'Polygon' || geom.type === 'MultiPolygon')
+            ? { type: 'Feature', properties: { name: shortName(res) }, geometry: geom }
+            : null;
+
+        searchPick = { res, feature, name: shortName(res), label: placeType(res) };
+        refreshSearchArea();
+        renderSearchRows();
+        syncSearchHint();
+
+        let b = feature ? LT.boundsOf([feature]) : null;
+        if (!b && res.boundingbox) {
+            b = [+res.boundingbox[2], +res.boundingbox[0], +res.boundingbox[3], +res.boundingbox[1]];
+        }
+        if (b && b.every(Number.isFinite)) {
+            map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 70, duration: 700, maxZoom: 12 });
+        }
+        if (res.lon && res.lat) setSearchMarker([+res.lon, +res.lat], searchPick.name.toUpperCase());
+        if (!feature) LT.toast(LT.t('search.noContour'));
+    }
+
+    async function doSearch() {
+        const q = String($('ps-q') && $('ps-q').value || '').trim();
+        if (!q) return;
+        const btn = $('ps-go');
+        if (btn) btn.disabled = true;
+        const seq = ++searchSeq;
+        try {
+            const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1'
+                + '&polygon_geojson=1&accept-language=' + LT.lang() + '&q=' + encodeURIComponent(q);
+            const r = await fetch(url, { headers: { Accept: 'application/json' } });
+            if (seq !== searchSeq) return;
+            if (!r.ok) throw new Error('http');
+            const rows = await r.json();
+            if (seq !== searchSeq) return;
+            if (!Array.isArray(rows) || !rows.length) {
+                searchRows = [];
+                searchActive = -1;
+                renderSearchRows();
+                LT.toast(LT.t('search.notFound'), 'err');
+                return;
+            }
+            searchRows = rows;
+            searchActive = 0;
+            pickSearch(rows[0], 0);
+        } catch (e) {
+            if (seq === searchSeq) LT.toast(LT.t('search.unavailable'), 'err');
+        } finally {
+            if (seq === searchSeq && btn) btn.disabled = false;
+        }
+    }
+
+    function clearSearch() {
+        searchPick = null;
+        searchRows = [];
+        searchActive = -1;
+        searchSeq++;
+        clearSearchMarker();
+        const src = map.getSource('lt-ps');
+        if (src) src.setData(EMPTY_FC);
+        ['lt-ps-fill', 'lt-ps-glow', 'lt-ps-line'].forEach(id => {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
+        });
+        const box = $('ps-results');
+        if (box) {
+            box.innerHTML = '';
+            box.classList.remove('show');
+        }
+        syncSearchHint();
+    }
+
+    function toolClick(e) {
+        if (tool === 'ruler') rulerClick(e);
+        else if (tool === 'zone') zoneClick(e);
+        else if (tool === 'erase') eraseAt(e.point);
+    }
+
+    function toolHover(e) {
+        if (tool === 'ruler') {
+            if (!rulerDone && rulerPts.length) drawRuler(e.lngLat.toArray());
+            return;
+        }
+        if (tool === 'zone' && zonePts.length) drawZoneDraft(e.lngLat.toArray());
+    }
+
+    function syncMapLayers() {
+        if (!mapReady) return;
+
+        Array.from(mounted).forEach(id => {
+            if (state.layers[id]) return;
+            LT.removeLayerObjects(map, id);
+            mounted.delete(id);
+        });
+
+        Object.values(state.layers).forEach(l => {
+            if (!mounted.has(l.id)) {
+                LT.removeLayerObjects(map, l.id);
+                LT.createLayerObjects(map, l);
+                mounted.add(l.id);
+            }
+            applyLayer(l);
+        });
+
+        restack();
+    }
+
+    function remount() {
+        mounted.clear();
+        clearSelection();
+        LT.ensureFlow(map);
+        syncMapLayers();
+        LT.applyMapLang(map);
+        LT.ensurePlaceLabels(map, state.base);
+        if (mapTools) { mapTools.refresh(); mapTools.setRegions(state.regions); }
+        ensureSelectionLayers();
+        ensureToolLayers();
+        refreshAnno();
+        refreshSearchArea();
+        if (rulerPts.length) drawRuler();
+        restack();
+        if (blend) blend.sync();
+        scheduleDraw();
+    }
+
+    /* ---------------------------- дата и слои ---------------------------- */
+
+    function clampDate(iso) {
+        const b = LT.dateBounds();
+        if (iso < b.min) return b.min;
+        if (iso > b.max) return b.max;
+        return iso;
+    }
+
+    function pickDate() {
+        const saved = store.lastDate();
+        if (saved) return saved;
+        const list = store.listDates();
+        if (!list.length) return LT.todayIso();
+        let best = null;
+        list.forEach(d => {
+            const doc = store.load(d.date);
+            const hasData = doc && doc.layers && Object.values(doc.layers).some(l => l.data && l.data.features && l.data.features.length);
+            if (hasData) best = d.date;
+        });
+        return best || list[list.length - 1].date;
+    }
+
+    function readDate() {
+        store.setLastDate(state.date);
+        shownFC.clear();
+        clearSelection();
+        currentDoc = loadDoc(state.date);
+        state.layers = currentDoc.layers;
+        state.savedAt = currentDoc.savedAt;
+        resetDrafts();
+        loadAnno();
+        Object.keys(state.layers).forEach(id => {
+            state.layers[id].viewLabel = state.labels;
+            if (!state.layers[id].style.visible) state.hidden.add(id);
+        });
+        syncMapLayers();
+        updateLegend();
+        updateEmpty();
+        syncAdvanceButton();
+    }
+
+    function zoneSnapshot() {
+        const out = {};
+        Object.values(state.layers).forEach(l => {
+            if (l.kind !== 'zone' || !isVisible(l)) return;
+            out[l.id] = { fc: displayFC(l) };
+        });
+        return out;
+    }
+
+    function pulseDate(dir) {
+        const el = $('date-trigger');
+        el.classList.remove('shift-up', 'shift-down');
+        void el.offsetWidth;
+        el.classList.add(dir > 0 ? 'shift-up' : 'shift-down');
+        setTimeout(() => el.classList.remove('shift-up', 'shift-down'), 500);
+    }
+
+    function switchDate(iso) {
+        if (!LT.DATE_RE.test(iso)) return;
+        iso = clampDate(iso);
+        if (iso === state.date) return;
+        const dir = iso > state.date ? 1 : -1;
+        state.date = iso;
+        state.hidden.clear();
+        readDate();
+        uiDate();
+        if (cal) cal.refresh();
+        if (state.advance) refreshAdvance();
+        pulseDate(dir);
+    }
+
+    function shiftDate(delta) {
+        const d = LT.fromIso(state.date);
+        d.setDate(d.getDate() + delta);
+        switchDate(LT.isoOf(d));
+    }
+
+    function uiDate() {
+        $('date-trigger').textContent = LT.fmtTrigger(state.date);
+        document.title = LT.t('app.title') + ' — ' + LT.fmtFull(state.date);
+        const b = LT.dateBounds();
+        $('prev-date').disabled = state.date <= b.min;
+        $('next-date').disabled = state.date >= b.max;
+    }
+
+    /* ---------------------------- интерфейс ---------------------------- */
+
+    // маски (слои, которые режут другие) и скрытые слои — служебные, в списке их не показываем
+    function publicLayers() {
+        const masks = new Set();
+        Object.values(state.layers).forEach(l => maskIds(l).forEach(id => masks.add(id)));
+        return Object.values(state.layers)
+            .filter(l => l.style.visible !== false && !masks.has(l.id))
+            .sort((a, b) => b.z - a.z);
+    }
+
+    function updateLegend() {
+        const list = publicLayers();
+        const box = $('legend-list');
+
+        $('legend-count').textContent = String(list.length);
+
+        if (!list.length) {
+            box.innerHTML = '<div class="hint" style="padding:6px">' + LT.t('viewer.noLayers') + '</div>';
+        } else {
+            box.innerHTML = list.map(l => {
+                const shown = shownFC.get(l.id) || displayFC(l);
+                const area = l.kind === 'zone' ? areaKm2(shown) : 0;
+                const total = l.data.features.length;
+                const val = l.kind === 'arrow'
+                    ? (total ? total + ' ' + LT.countWord(total, 'viewer.arrow') : LT.t('viewer.emptyVal'))
+                    : (total ? Math.round(area).toLocaleString(LT.locale()) + ' ' + LT.t('viewer.km') : LT.t('viewer.emptyVal'));
+                const meta = l.kind === 'arrow' ? LT.t('viewer.arrows') : LT.t('viewer.zone');
+                const desc = (l.desc || '').trim();
+                const hasLabel = !!((l.style.labelText || '').trim() || l.name);
+                return `<div class="lg-row ${isVisible(l) ? '' : 'off'}" data-id="${esc(l.id)}" title="${esc(desc || l.name)}">
+                    <span class="sw ${l.kind === 'arrow' ? 'arrow' : ''}" style="background:${esc(l.style.color)};box-shadow:0 0 9px ${esc(l.style.color)}88"></span>
+                    <span class="lg-txt"><b>${esc(l.name)}</b><small>${esc(desc || meta)}</small></span>
+                    <span class="lg-val">${val}</span>
+                    ${hasLabel ? `<button type="button" class="lg-center" data-center="${esc(l.id)}" title="${esc(LT.t('viewer.center'))}" aria-label="${esc(LT.t('viewer.center'))}">◎</button>` : ''}
+                </div>`;
+            }).join('');
+        }
+
+        const when = state.savedAt
+            ? new Date(state.savedAt).toLocaleTimeString(LT.locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            : '—';
+        $('legend-foot').innerHTML = LT.t('viewer.updated') + ' <b>' + when + '</b>';
+    }
+
+    function updateEmpty() {
+        const total = Object.values(state.layers).reduce((n, l) => n + l.data.features.length, 0);
+        $('empty').classList.toggle('hidden', total > 0);
+    }
+
+    let menuOpen = false;
+
+    function setMenu(open) {
+        menuOpen = open;
+        const legend = $('legend');
+        const backdrop = $('legend-backdrop');
+        const toggle = $('viewer-menu-toggle');
+        if (legend) legend.classList.toggle('open', open);
+        if (backdrop) backdrop.classList.toggle('show', open);
+        if (toggle) {
+            toggle.classList.toggle('active', open);
+            toggle.setAttribute('aria-expanded', String(open));
+        }
+    }
+
+    /* ---------------------------- подписи и продвижение ---------------------------- */
+
+    function markDocSaved() {
+        lastVer = store.version();
+        const hit = docCache.get(state.date);
+        if (!hit) return;
+        const doc = store.load(state.date);
+        hit.key = doc && doc.savedAt ? doc.savedAt : hit.key;
+        hit.savedAt = hit.key;
+        state.savedAt = hit.key;
+        currentDoc = hit;
+    }
+
+    function setLabels(on) {
+        state.labels = !!on;
+        const btn = $('view-labels');
+        if (btn) {
+            btn.classList.toggle('active', state.labels);
+            btn.setAttribute('aria-pressed', String(state.labels));
+        }
+        Object.values(state.layers).forEach(l => {
+            l.viewLabel = state.labels;
+            if (!mapReady) return;
+            LT.applyLayerPaint(map, l, isVisible(l));
+            LT.syncLayerDecor(map, l, shownFC.get(l.id) || displayFC(l), isVisible(l));
+        });
+    }
+
+    function centerLabel(id) {
+        const l = state.layers[id];
+        if (!l) return;
+        delete l.style.labelPos;
+        store.saveLabelPos(state.date, id, null);
+        markDocSaved();
+        if (!state.labels) setLabels(true);
+        else if (mapReady) {
+            LT.applyLayerPaint(map, l, isVisible(l));
+            LT.syncLayerDecor(map, l, shownFC.get(l.id) || displayFC(l), isVisible(l));
+        }
+        updateLegend();
+    }
+
+    function hasDataDoc(entry) {
+        return Object.values(entry.layers).some(l => l.data.features.length);
+    }
+
+    function dateHasData(date) {
+        const entry = docCache.get(date);
+        if (entry) return hasDataDoc(entry);
+        const doc = store.load(date);
+        return !!(doc && doc.layers && Object.values(doc.layers)
+            .some(l => l.data && l.data.features && l.data.features.length));
+    }
+
+    function snapshotFor(layers) {
+        const out = {};
+        Object.values(layers).forEach(l => {
+            if (l.kind !== 'zone' || !l.style.visible) return;
+            out[l.id] = { fc: displayFC(l, layers) };
+        });
+        return out;
+    }
+
+    function refreshAdvance() {
+        if (!state.advance) { LT.clearAdvance(map); return; }
+        const dates = store.listDates()
+            .filter(d => dateHasData(d.date))
+            .map(d => d.date);
+        const i = dates.indexOf(state.date);
+        if (i < 0 || dates.length < 2) {
+            state.advance = false;
+            syncAdvanceButton();
+            LT.clearAdvance(map);
+            LT.toast(LT.t('viewer.advanceNone'), 'err');
+            return;
+        }
+        const ref = i > 0 ? dates[i - 1] : dates[i + 1];
+        const refLayers = loadDoc(ref).layers;
+        const current = zoneSnapshot();
+        const other = snapshotFor(refLayers);
+        const stats = ref < state.date ? LT.showAdvance(map, other, current) : LT.showAdvance(map, current, other);
+        LT.advanceToast(stats, true);
+    }
+
+    function setAdvance(on) {
+        state.advance = !!on;
+        syncAdvanceButton();
+        if (state.advance) refreshAdvance();
+        else LT.clearAdvance(map);
+    }
+
+    function syncAdvanceButton() {
+        const btn = $('advance-btn');
+        if (!btn) return;
+        btn.classList.toggle('active', state.advance);
+        btn.setAttribute('aria-pressed', String(state.advance));
+    }
+
+    function togglePlay() {
+        const btn = $('play-btn');
+        if (playTimer) {
+            clearInterval(playTimer);
+            playTimer = null;
+            btn.classList.remove('active');
+            btn.textContent = LT.t('viewer.play');
+            return;
+        }
+        const b = LT.dateBounds();
+        const dates = store.listDates()
+            .filter(d => {
+                if (d.date < b.min || d.date > b.max) return false;
+                const doc = store.load(d.date);
+                return doc && doc.layers && Object.values(doc.layers).some(l => l.data && l.data.features && l.data.features.length);
+            })
+            .map(d => d.date);
+
+        if (dates.length < 2) { LT.toast(LT.t('viewer.playErr'), 'err'); return; }
+
+        let i = Math.max(0, dates.indexOf(state.date));
+        btn.classList.add('active');
+        btn.textContent = LT.t('viewer.stop');
+        playTimer = setInterval(() => {
+            i = (i + 1) % dates.length;
+            switchDate(dates[i]);
+        }, 1500);
+    }
+
+    function startAnimations() {
+        LT.startAnimations(map, () => state.layers, isVisible);
+    }
+
+    /* ---------------------------- снимок карты ---------------------------- */
+
+    function stampPhoto(ctx, W, H) {
+        const k = Math.max(1, W / 1500);
+        const pad = Math.round(26 * k);
+
+        ctx.save();
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+
+        ctx.fillStyle = '#f5f5f6';
+        ctx.fillRect(pad, H - pad - Math.round(56 * k), Math.round(52 * k), Math.round(3 * k));
+
+        ctx.font = `900 ${Math.round(30 * k)}px 'Tektur', 'Handjet', monospace`;
+        ctx.fillStyle = 'rgba(235,242,250,.96)';
+        ctx.fillText('LINESTATE', pad, H - pad - Math.round(18 * k));
+
+        ctx.font = `700 ${Math.round(13 * k)}px 'Handjet', 'Tektur', monospace`;
+        ctx.fillStyle = 'rgba(158,182,205,.92)';
+        ctx.fillText(LT.fmtFull(state.date), pad, H - pad);
+
+        const c = map.getCenter();
+        const right = 'ZOOM ' + map.getZoom().toFixed(1) + ' · ' + Math.abs(c.lat).toFixed(2) + (c.lat >= 0 ? 'N' : 'S')
+            + ' ' + Math.abs(c.lng).toFixed(2) + (c.lng >= 0 ? 'E' : 'W');
+        ctx.textAlign = 'right';
+        ctx.font = `700 ${Math.round(13 * k)}px 'Handjet', 'Tektur', monospace`;
+        ctx.fillStyle = 'rgba(158,182,205,.92)';
+        ctx.fillText(right, W - pad, H - pad);
+        ctx.restore();
+    }
+
+    function photoFx(ctx, W, H, k) {
+        if (document.querySelector('#fx-scan.on')) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,.5)';
+            const step = Math.max(2, Math.round(3 * k));
+            const th = Math.max(1, Math.round(k));
+            for (let y = 0; y < H; y += step) ctx.fillRect(0, y, W, th);
+            ctx.restore();
+        }
+
+        if (document.querySelector('#fx-grain.on')) {
+            const n = document.createElement('canvas');
+            n.width = 128;
+            n.height = 128;
+            const nc = n.getContext('2d');
+            const img = nc.createImageData(128, 128);
+            for (let i = 0; i < img.data.length; i += 4) {
+                const v = 128 + Math.round(Math.random() * 96 - 48);
+                img.data[i] = v;
+                img.data[i + 1] = v;
+                img.data[i + 2] = v;
+                img.data[i + 3] = 255;
+            }
+            nc.putImageData(img, 0, 0);
+            ctx.save();
+            ctx.globalCompositeOperation = 'overlay';
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = ctx.createPattern(n, 'repeat');
+            ctx.fillRect(0, 0, W, H);
+            ctx.restore();
+        }
+    }
+
+    function photoSelLabel(ctx, W) {
+        if (!sel) return;
+        const l = state.layers[sel.id];
+        if (!l) return;
+
+        const src = map.getCanvas();
+        const dpr = W / (src.clientWidth || 1);
+        const p = map.project(sel.lngLat);
+        const x = p.x * dpr;
+        const yBottom = p.y * dpr - 14 * dpr;
+
+        const name = l.name;
+        const meta = selMeta(l);
+        const desc = (l.desc || '').trim();
+
+        const fsName = 15 * dpr, fsMeta = 12 * dpr, fsDesc = 11 * dpr;
+        const padX = 10 * dpr, gap = 9 * dpr, barW = 3 * dpr, closeW = 12 * dpr;
+        const padY = 6 * dpr;
+
+        ctx.save();
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        ctx.font = `700 ${fsName}px 'Handjet', 'Tektur', monospace`;
+        const nameW = ctx.measureText(name).width;
+        ctx.font = `700 ${fsMeta}px 'Handjet', 'Tektur', monospace`;
+        const metaW = ctx.measureText(meta).width;
+
+        let descText = '';
+        let descW = 0;
+        if (desc) {
+            ctx.font = `700 ${fsDesc}px 'Handjet', 'Tektur', monospace`;
+            descText = desc;
+            const maxW = Math.max(220 * dpr, Math.max(nameW, metaW));
+            while (descText.length > 4 && ctx.measureText(descText + '…').width > maxW) descText = descText.slice(0, -2);
+            if (descText !== desc) descText += '…';
+            descW = ctx.measureText(descText).width;
+        }
+
+        const boxH = padY * 2 + fsName + 2 * dpr + fsMeta + (descText ? fsDesc + 3 * dpr : 0);
+        const boxW = padX * 2 + barW + gap + Math.max(nameW, metaW, descW) + gap + closeW;
+        const bx = x - boxW / 2;
+        const by = yBottom - boxH;
+
+        ctx.fillStyle = 'rgba(10, 13, 17, .96)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, .22)';
+        ctx.lineWidth = Math.max(1, dpr);
+        if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(bx, by, boxW, boxH, 5 * dpr);
+            ctx.fill();
+            ctx.stroke();
+        } else {
+            ctx.fillRect(bx, by, boxW, boxH);
+            ctx.strokeRect(bx, by, boxW, boxH);
+        }
+
+        ctx.fillStyle = '#f5f5f6';
+        ctx.fillRect(bx + padX, by + padY, barW, boxH - padY * 2);
+
+        const tx = bx + padX + barW + gap;
+        ctx.font = `700 ${fsName}px 'Handjet', 'Tektur', monospace`;
+        ctx.fillStyle = '#e8eef5';
+        ctx.fillText(name, tx, by + padY);
+        ctx.font = `700 ${fsMeta}px 'Handjet', 'Tektur', monospace`;
+        ctx.fillStyle = 'rgba(107, 120, 133, .95)';
+        ctx.fillText(meta, tx, by + padY + fsName + 2 * dpr);
+
+        if (descText) {
+            ctx.font = `700 ${fsDesc}px 'Handjet', 'Tektur', monospace`;
+            ctx.fillStyle = 'rgba(146, 160, 174, .92)';
+            ctx.fillText(descText, tx, by + padY + fsName + 2 * dpr + fsMeta + 3 * dpr);
+        }
+
+        ctx.font = `700 ${fsName}px 'Handjet', 'Tektur', monospace`;
+        ctx.fillStyle = 'rgba(107, 120, 133, .9)';
+        ctx.textAlign = 'right';
+        ctx.fillText('×', bx + boxW - padX - 2 * dpr, by + padY);
+
+        ctx.restore();
+    }
+
+    function snapPhoto() {
+        try {
+            const src = map.getCanvas();
+            const W = src.width, H = src.height;
+            if (!W || !H) { LT.toast(LT.t('viewer.photoErr'), 'err'); return; }
+
+            const cv = document.createElement('canvas');
+            cv.width = W;
+            cv.height = H;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = '#05080b';
+            ctx.fillRect(0, 0, W, H);
+
+            // фильтры FX применяются CSS-фильтром к контейнеру карты — вшиваем в снимок
+            let flt = 'none';
+            try {
+                const cc = map.getCanvasContainer();
+                const cf = getComputedStyle(cc).filter;
+                if (cf && cf !== 'none') flt = cf;
+            } catch (e) { }
+
+            ctx.filter = flt;
+            ctx.drawImage(src, 0, 0);
+
+            const pc = map.getCanvasContainer().querySelector('canvas.lt-places-canvas');
+            if (pc && pc.width && pc.height) ctx.drawImage(pc, 0, 0, W, H);
+            ctx.filter = 'none';
+
+            // градиентные заливки живут на DOM-canvas: после смены DPR их нужно
+            // перерисовать синхронно, иначе в снимок попадает пустой холст
+            if (blend) blend.sync();
+
+            document.querySelectorAll('#lt-blend canvas').forEach(c => {
+                const m = String(c.style.mixBlendMode || '');
+                let mode = 'source-over';
+                if (LT.BLENDS.indexOf(m) >= 0 && m !== 'normal') mode = m;
+                try { ctx.globalCompositeOperation = mode; } catch (e) { ctx.globalCompositeOperation = 'source-over'; }
+                ctx.drawImage(c, 0, 0, W, H);
+            });
+            ctx.globalCompositeOperation = 'source-over';
+
+            paintDraw();
+            if (drawCv && drawCv.width) ctx.drawImage(drawCv, 0, 0, W, H);
+
+            const k = Math.max(1, W / 1500);
+            photoFx(ctx, W, H, k);
+
+            const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .34, W / 2, H / 2, Math.max(W, H) * .78);
+            g.addColorStop(0, 'rgba(0,0,0,0)');
+            g.addColorStop(1, 'rgba(0,0,0,.52)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, W, H);
+
+            photoSelLabel(ctx, W);
+
+            ctx.strokeStyle = 'rgba(190,215,245,.22)';
+            ctx.lineWidth = Math.max(1, k * 1.2);
+            ctx.strokeRect(k * 10, k * 10, W - k * 20, H - k * 20);
+
+            stampPhoto(ctx, W, H);
+
+            cv.toBlob(blob => {
+                if (!blob) { LT.toast(LT.t('viewer.photoErr'), 'err'); return; }
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'LINESTATE-front-' + state.date + '.png';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+                LT.toast(LT.t('viewer.photoOk'));
+            }, 'image/png');
+        } catch (e) {
+            LT.toast(LT.t('viewer.photoErr'), 'err');
+        }
+    }
+
+    // снимок рендерится заново в повышенном DPR: карта даёт ~2K по ширине,
+    // а не размер окна браузера
+    function photo() {
+        const src = map.getCanvas();
+        const cssW = src.clientWidth || src.width;
+        const cssH = src.clientHeight || src.height;
+        if (!cssW || !cssH) { LT.toast(LT.t('viewer.photoErr'), 'err'); return; }
+
+        const base = map.getPixelRatio();
+        let ratio = Math.max(base, 2048 / cssW);
+        ratio = Math.max(base, Math.min(ratio, 3.2, 3072 / cssH));
+
+        const restore = () => {
+            try {
+                map.setPixelRatio(base === (window.devicePixelRatio || 1) ? null : base);
+                LT.setPlaceDpr(map, 0);
+            } catch (e) { }
+        };
+
+        if (ratio <= base + 0.01) { snapPhoto(); return; }
+
+        let fired = false;
+        const finish = () => {
+            if (fired) return;
+            fired = true;
+            try { snapPhoto(); } finally { restore(); }
+        };
+        try {
+            map.setPixelRatio(ratio);
+            LT.setPlaceDpr(map, ratio);
+            map.once('idle', finish);
+            setTimeout(finish, 1000);
+            map.triggerRepaint();
+        } catch (e) {
+            finish();
+        }
+    }
+
+    /* ---------------------------- обновление ---------------------------- */
+
+    function refresh() {
+        const clamped = clampDate(state.date);
+        const changedDate = clamped !== state.date;
+        if (changedDate) {
+            state.date = clamped;
+            state.hidden.clear();
+        }
+        const entry = loadDoc(state.date);
+        if (!changedDate && entry === currentDoc) {
+            updateLegend();
+            uiDate();
+            return;
+        }
+        readDate();
+        uiDate();
+        if (cal) cal.refresh();
+        if (state.advance) refreshAdvance();
+    }
+
+    function watchLive() {
+        setInterval(() => {
+            let fxk = '';
+            try { fxk = localStorage.getItem('LINETATE:__fx') || ''; } catch (e) { }
+            if (fxk !== lastFx) {
+                lastFx = fxk;
+                LT.applyFX();
+            }
+            const v = store.version();
+            if (v !== lastVer) {
+                lastVer = v;
+                refresh();
+            }
+        }, 2500);
+
+        window.addEventListener('storage', e => {
+            const key = String(e.key || '');
+            if (e.key === null || key.startsWith('LINETATE:')) {
+                if (key === 'LINETATE:__fx' || e.key === null) LT.applyFX();
+                if (key === ANNO_PREFIX + state.date) loadAnno();
+                lastVer = store.version();
+                refresh();
+            }
+        });
+    }
+
+    /* ---------------------------- старт ---------------------------- */
+
+    LT.initI18n();
+    LT.initDevice();
+    LT.initFX();
+    state.date = clampDate(LT.todayIso());
+
+    map = LT.createMap('map', { center: [37.6, 48.35], zoom: 7 });
+    const mapTools = LT.installMapTools(map);
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+    map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 120 }), 'bottom-right');
+
+    LT.setLayerLabelDrag(map, (id, pos) => {
+        const l = state.layers[id];
+        if (!l) return;
+        l.style.labelPos = pos;
+        store.saveLabelPos(state.date, id, pos);
+        markDocSaved();
+        updateLegend();
+    });
+
+    const UKRAINE_BOUNDS = [[22.0, 44.2], [40.6, 52.6]];
+    function fitUkraine() {
+        const dev = LT.device();
+        map.fitBounds(UKRAINE_BOUNDS, {
+            padding: dev.mobile
+                ? { top: 78, bottom: 140, left: 14, right: 14 }
+                : { top: 46, bottom: 84, left: 26, right: 26 },
+            duration: 0
+        });
+    }
+    fitUkraine();
+
+    pxLabels = LT.pixelLabels(map);
+    pxLabels.setOn(state.base === 'hybrid');
+
+    function syncLangUI() {
+        const langBtn = $('lang-btn');
+        if (langBtn) langBtn.innerHTML = LT.flagSVG(LT.lang()).replace('<svg ', '<svg width="22" height="15" ') + '<span>' + LT.lang().toUpperCase() + '</span>';
+        if (!mapReady) return;
+        LT.applyMapLang(map);
+        LT.ensurePlaceLabels(map, state.base);
+        if (pxLabels) pxLabels.relabel();
+        relabelSelection();
+        updateLegend();
+        uiDate();
+        $('play-btn').textContent = playTimer ? LT.t('viewer.stop') : LT.t('viewer.play');
+        if (searchRows.length) renderSearchRows();
+        syncSearchHint();
+        syncDrawUI();
+    }
+
+    document.addEventListener('linetate:lang', syncLangUI);
+
+    syncLangUI();
+
+    const setBase = LT.baseSwitcher(map, remount);
+
+    let dataReady = false;
+    let styleReady = false;
+
+    function markStyleReady() {
+        if (styleReady) return;
+        styleReady = true;
+        boot();
+    }
+
+    function boot() {
+        if (mapReady || !dataReady || !styleReady) return;
+        mapReady = true;
+
+        cal = LT.Calendar({
+            el: $('cal'),
+            trigger: $('date-trigger'),
+            current: () => state.date,
+            hasData: iso => !!store.load(iso),
+            minDate: () => LT.dateBounds().min,
+            maxDate: () => LT.dateBounds().max,
+            onPick: iso => { setMenu(false); switchDate(iso); }
+        });
+
+        readDate();
+        uiDate();
+        $('play-btn').textContent = LT.t('viewer.play');
+        LT.applyMapLang(map);
+        LT.ensurePlaceLabels(map, state.base);
+        blend = LT.blendEngine(map, () => state.layers, isVisible, l => shownFC.get(l.id) || displayFC(l));
+        blend.sync();
+        startAnimations();
+        watchLive();
+
+        ensureSelectionLayers();
+        ensureToolLayers();
+        ensureDrawCanvas();
+
+        map.on('click', e => {
+            if (menuOpen) setMenu(false);
+            if (tool) { toolClick(e); return; }
+            const id = pickLayer(e.point);
+            if (!id) { clearSelection(); return; }
+            selectLayer(id, e.lngLat);
+        });
+
+        map.on('dblclick', () => {
+            if (tool === 'zone') zoneFinish();
+            if (tool === 'ruler') rulerFinish();
+        });
+
+        map.on('mousedown', e => {
+            if (tool === 'pen') penStart(e);
+            else if (tool === 'arrow') arrowStart(e);
+            else if (tool === 'rect' || tool === 'circle') shapeStart(e);
+        });
+        map.on('mouseup', () => {
+            if (pen) penEnd();
+            if (shape) shapeEnd();
+            if (arrow) arrowEnd();
+        });
+        map.on('touchstart', e => {
+            if (!e.lngLats || e.lngLats.length !== 1) return;
+            if (tool === 'pen') {
+                pen = { pts: [e.lngLats[0].toArray()] };
+                drawPenDraft();
+            } else if (tool === 'arrow') {
+                const p = e.lngLats[0].toArray();
+                arrow = { a: p, b: p };
+                drawArrowDraft();
+            } else if (tool === 'rect' || tool === 'circle') {
+                const p = e.lngLats[0].toArray();
+                shape = { kind: tool, start: p, cur: p };
+                drawShapeDraft();
+            }
+        });
+        map.on('touchmove', e => {
+            if (!e.lngLats || e.lngLats.length !== 1) return;
+            if (pen) penMove({ lngLat: e.lngLats[0], point: e.points && e.points[0] });
+            else if (arrow) arrowMove({ lngLat: e.lngLats[0], point: e.points && e.points[0] });
+            else if (shape) shapeMove({ lngLat: e.lngLats[0], point: e.points && e.points[0] });
+        });
+        map.on('touchend', () => {
+            if (pen) penEnd();
+            if (shape) shapeEnd();
+            if (arrow) arrowEnd();
+        });
+
+        let hoverTimer = 0;
+        map.on('mousemove', e => {
+            if (pen) { penMove(e); return; }
+            if (shape) { shapeMove(e); return; }
+            if (arrow) { arrowMove(e); return; }
+            if (tool) { toolHover(e); return; }
+            if (e.originalEvent && e.originalEvent.buttons) return;
+            clearTimeout(hoverTimer);
+            hoverTimer = setTimeout(() => {
+                try { map.getCanvas().style.cursor = pickLayer(e.point) ? 'pointer' : ''; } catch (err) { }
+            }, 90);
+        });
+
+        $('prev-date').addEventListener('click', () => shiftDate(-1));
+        $('next-date').addEventListener('click', () => shiftDate(1));
+        $('play-btn').addEventListener('click', togglePlay);
+        $('photo-btn').addEventListener('click', photo);
+        $('view-regions').addEventListener('click', e => {
+            const on = !e.currentTarget.classList.contains('active');
+            e.currentTarget.classList.toggle('active', on);
+            e.currentTarget.setAttribute('aria-pressed', String(on));
+            state.regions = on;
+            mapTools.setRegions(on);
+        });
+        $('view-labels').addEventListener('click', () => setLabels(!state.labels));
+        $('advance-btn').addEventListener('click', () => setAdvance(!state.advance));
+        $('date-trigger').addEventListener('click', () => { setMenu(false); cal.toggle(state.date); });
+
+        $('lang-btn').addEventListener('click', () => LT.switchLang());
+
+        $('search-btn').addEventListener('click', () => setSearch(!$('place-search').classList.contains('open')));
+        $('ps-close').addEventListener('click', () => setSearch(false));
+        $('ps-go').addEventListener('click', doSearch);
+        $('ps-q').addEventListener('keydown', e => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                doSearch();
+            }
+        });
+        $('ps-results').addEventListener('click', e => {
+            const row = e.target.closest('.sr');
+            if (!row) return;
+            const res = searchRows[+row.dataset.i];
+            if (res) pickSearch(res, +row.dataset.i);
+        });
+
+        $('tool-draw').addEventListener('click', () => setDrawPanel(!drawPanelOpen));
+        $('dp-close').addEventListener('click', () => setDrawPanel(false));
+        $('tool-ruler').addEventListener('click', () => setTool('ruler'));
+        document.querySelectorAll('#dp-tools .dp-tool').forEach(b => {
+            b.addEventListener('click', () => setTool(b.dataset.tool));
+        });
+        $('dp-clear').addEventListener('click', clearDrawings);
+
+        const widthInp = $('draw-width');
+        if (widthInp) widthInp.addEventListener('input', () => {
+            drawW = clampNum(widthInp.value, W_MIN, W_MAX, drawW);
+            saveDrawCfg();
+            syncDrawUI();
+            if (pen) drawPenDraft();
+            if (shape) drawShapeDraft();
+            if (arrow) drawArrowDraft();
+            if (zonePts.length) drawZoneDraft();
+        });
+        const headInp = $('draw-head');
+        if (headInp) headInp.addEventListener('input', () => {
+            drawHead = clampNum(headInp.value, HEAD_MIN, HEAD_MAX, drawHead);
+            saveDrawCfg();
+            syncDrawUI();
+            if (arrow) drawArrowDraft();
+        });
+
+        document.querySelectorAll('#dp-colors .dp-sw').forEach(b => {
+            b.addEventListener('click', () => setDrawColor(b.dataset.color));
+        });
+        syncColorUI();
+        syncDrawUI();
+        const colorInp = $('draw-color');
+        if (colorInp) {
+            colorInp.addEventListener('input', () => setDrawColor(colorInp.value));
+            colorInp.addEventListener('change', () => setDrawColor(colorInp.value));
+        }
+
+        $('viewer-menu-toggle').addEventListener('click', () => setMenu(!menuOpen));
+        const backdrop = $('legend-backdrop');
+        if (backdrop) backdrop.addEventListener('click', () => setMenu(false));
+        const legendClose = $('legend-close');
+        if (legendClose) legendClose.addEventListener('click', () => setMenu(false));
+        document.addEventListener('keydown', e => {
+            if (e.key !== 'Escape') return;
+            if (menuOpen) setMenu(false);
+            if (drawPanelOpen) setDrawPanel(false);
+            if (tool) setTool('');
+            const search = $('place-search');
+            if (search && search.classList.contains('open')) setSearch(false);
+        });
+        document.addEventListener('linetate:device', e => { if (!e.detail.mobile) setMenu(false); });
+
+        $('legend-list').addEventListener('click', e => {
+            const center = e.target.closest('.lg-center');
+            if (center) {
+                e.stopPropagation();
+                centerLabel(center.dataset.center);
+                return;
+            }
+            const row = e.target.closest('.lg-row');
+            if (!row) return;
+            const id = row.dataset.id;
+            if (!state.layers[id]) return;
+            if (state.hidden.has(id)) state.hidden.delete(id);
+            else state.hidden.add(id);
+            if (sel && sel.id === id && state.hidden.has(id)) clearSelection();
+            applyLayer(state.layers[id]);
+            if (blend) blend.sync();
+            updateLegend();
+        });
+
+        document.querySelectorAll('#base-seg button').forEach(b => {
+            b.addEventListener('click', () => {
+                document.querySelectorAll('#base-seg button').forEach(x => x.classList.toggle('active', x === b));
+                state.base = b.dataset.base;
+                setBase(b.dataset.base);
+                if (pxLabels) pxLabels.setOn(b.dataset.base === 'hybrid');
+                LT.ensurePlaceLabels(map, state.base);
+            });
+        });
+    }
+
+    // опубликованные данные лежат рядом с сайтом: data/map.json
+    LT.store.loadRemoteData('data/map.json').then(() => {
+        dataReady = true;
+        if (!mapReady) state.date = clampDate(pickDate());
+        else if (!dateHasData(state.date)) state.date = clampDate(pickDate());
+        boot();
+        if (mapReady) refresh();
+    });
+
+    map.once('style.load', markStyleReady);
+    // style.load приходит раньше, чем догружаются глифы; подписи не должны держать карту закрытой
+    const bootPoll = setInterval(() => {
+        if (mapReady) { clearInterval(bootPoll); return; }
+        if (!styleReady && map.isStyleLoaded()) markStyleReady();
+    }, 200);
+    setTimeout(() => clearInterval(bootPoll), 20000);
+})();

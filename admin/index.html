@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>LINESTATE — редактор карти</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Handjet:wght@400;700;900&family=Tektur:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="../assets/vendor/maplibre-gl.css" rel="stylesheet">
+<script src="../assets/vendor/maplibre-gl.js"></script>
+<script src="../assets/vendor/turf.min.js"></script>
+<script src="../assets/vendor/topojson-client.min.js"></script>
+<link rel="stylesheet" href="../assets/theme.css?v=28">
+<link rel="stylesheet" href="../assets/admin.css?v=29">
+</head>
+<body>
+
+<div id="map"></div>
+
+<aside id="panel" class="panel">
+    <div class="panel-top">
+        <div class="brand">
+            <b>LINESTATE</b>
+            <small data-i18n="app.editorTag">Редактор карты</small><em class="build-tag">v22</em>
+        </div>
+        <span class="status" id="save-status" data-i18n="status.ready">ГОТОВО</span>
+        <button class="icon-btn lang-btn" id="lang-btn" title="Мова" data-i18n-title="app.langHint">UK</button>
+        <button class="icon-btn" id="collapse" title="Згорнути панель" data-i18n-title="nav.collapse">–</button>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" data-tab="layers" data-i18n="tab.layers">Слои</div>
+        <div class="tab" data-tab="style" data-i18n="tab.style">Слой</div>
+        <div class="tab" data-tab="mapfx" data-i18n="tab.map">Карта</div>
+        <div class="tab" data-tab="sys" data-i18n="tab.file">Файл</div>
+    </div>
+
+    <div id="panel-body">
+
+        <div class="pane active" data-pane="layers">
+            <div class="row">
+                <button class="btn" id="btn-add-zone" data-i18n="admin.addZone">+ ПОЛІГОН</button>
+                <button class="btn" id="btn-add-arrow" data-i18n="admin.addArrow">+ Стрелки</button>
+            </div>
+            <div class="row">
+                <button class="btn" id="btn-add-point" data-i18n="admin.addPoint">+ Точка</button>
+                <button class="btn" id="btn-import-image" data-i18n="file.importImage">Імпорт зображення</button>
+            </div>
+            <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp" hidden>
+            <button class="btn wide danger ghost" id="btn-del-geo" data-i18n="file.delImported">Видалити імпортовані шари</button>
+            <div class="hint" data-i18n="object.hint">Точки й зображення можна перетягувати на карті.</div>
+            <div id="layer-list"></div>
+            <div class="hint" data-i18n="admin.layersHint">Рисование продолжает область: новые штрихи объединяются с уже нарисованным, старые не исчезают. Ластик чистит только выбранный слой. Рисуется только по суше — морская часть обрезается по береговой линии.</div>
+        </div>
+
+        <div class="pane" data-pane="style">
+            <div class="hint" id="style-empty" data-i18n="style.pick">ВЫБЕРИТЕ СЛОЙ В СПИСКЕ</div>
+
+            <div id="style-body" style="display:none">
+                <div class="field"><span data-i18n="style.name">Позывной</span><input class="input" id="f-name" maxlength="32"></div>
+                <div class="field"><span data-i18n="style.desc">Опис</span><textarea class="input" id="f-desc" rows="2" maxlength="240" data-i18n-ph="style.descPh" placeholder="короткий опис шару"></textarea></div>
+                <div class="field"><span data-i18n="style.fill">Заливка</span><input type="color" class="input" id="f-color"></div>
+                <div class="field"><span data-i18n="style.stroke">Контур</span><input type="color" class="input" id="f-bcol"></div>
+                <div class="field"><span data-i18n="style.alpha">Прозрачность</span><input type="range" id="f-alpha" min="0.05" max="1" step="0.01"></div>
+                <div class="field"><span data-i18n="style.bw">Толщина</span><input type="range" id="f-bw" min="0" max="8" step="0.5"></div>
+                <div class="field"><span data-i18n="style.mask">Маски</span></div>
+                <div class="chips" id="mask-list"></div>
+                <div class="hint" data-i18n="style.maskHint">Можна вибрати кілька масок: шар обрізається об'єднанням їхніх контурів. Працює і для зон, і для стрілок.</div>
+                <div class="field"><span data-i18n="style.blend">Наложение</span><select class="input" id="f-blend">
+                    <option value="normal" data-i18n="blend.normal">Обычное</option>
+                    <option value="multiply" data-i18n="blend.multiply">Умножение</option>
+                    <option value="screen" data-i18n="blend.screen">Экран</option>
+                    <option value="overlay" data-i18n="blend.overlay">Перекрытие</option>
+                    <option value="darken" data-i18n="blend.darken">Затемнение</option>
+                    <option value="lighten" data-i18n="blend.lighten">Осветление</option>
+                    <option value="difference" data-i18n="blend.difference">Разница</option>
+                    <option value="soft-light" data-i18n="blend.softlight">Мягкий свет</option>
+                </select></div>
+                <div class="hint" data-i18n="style.blendHint">Режим накладання заливки на карту: множення затемнює, екран підсвічує, різниця інвертує. Контур і підпис залишаються звичайними.</div>
+                <div class="field"><span data-i18n="style.gradient">Градієнт</span><input type="checkbox" id="f-grad"></div>
+                <div class="field"><span data-i18n="style.gradColor">Другий колір</span><input type="color" class="input" id="f-gcol"></div>
+                <div class="field"><span data-i18n="style.gradDir">Напрямок градієнта</span><input type="range" id="f-gdir" min="0" max="360" step="15"></div>
+                <div class="hint" data-i18n="style.gradHint">Заливка плавно переходить від основного кольору до другого. Працює для зон і стрілок; контур і підпис не змінюються.</div>
+                <div class="field"><span data-i18n="style.hard">Границы</span><select class="input" id="f-hard">
+                    <option value="0" data-i18n="style.hardSoft">Мягкие</option>
+                    <option value="1" data-i18n="style.hardSolid">Твёрдые</option>
+                </select></div>
+                <div class="hint" data-i18n="style.hardHint">Твёрдые границы не дают другим слоям рисовать поверх этого слоя. У мягкого слоя новая рисовка соседнего слоя стирает его в месте перекрытия.</div>
+                <div class="field"><span data-i18n="style.area">Малювання</span><select class="input" id="f-water">
+                    <option value="0" data-i18n="style.areaLand">Лише суша</option>
+                    <option value="1" data-i18n="style.areaWater">Суша й вода</option>
+                </select></div>
+                <div class="hint" data-i18n="style.areaHint">«Суша й вода» дозволяє заливати море й озера — берегова лінія більше не обрізає шар.</div>
+
+                <div class="label" style="margin-top:4px" data-i18n="style.presets">Пресеты</div>
+                <div class="chips" id="style-presets">
+                    <button data-preset="front" data-i18n="preset.front">ФРОНТ</button>
+                    <button data-preset="rear" data-i18n="preset.rear">ТЫЛ</button>
+                    <button data-preset="cauldron" data-i18n="preset.cauldron">КОТЁЛ</button>
+                    <button data-preset="strike" data-i18n="preset.strike">УДАР</button>
+                    <button data-preset="water" data-i18n="preset.water">ВОДА</button>
+                    <button data-preset="rad" data-i18n="preset.rad">РАДИАЦИЯ</button>
+                </div>
+
+                <div id="point-block" hidden>
+                    <div class="field"><span data-i18n="object.size">Розмір</span><input type="range" id="f-marker-size" min="24" max="200" step="1"></div>
+                    <div class="field"><span data-i18n="object.shadow">Тінь</span><input type="checkbox" id="f-shadow"></div>
+                    <div class="field" id="point-icon-field"><span data-i18n="object.icon">Символ</span><select class="input" id="f-marker-icon">
+                        <option value="dot" data-i18n="object.dot">Коло</option>
+                        <option value="diamond" data-i18n="object.diamond">Ромб</option>
+                        <option value="cross" data-i18n="object.cross">Хрест</option>
+                        <option value="flag" data-i18n="object.flag">Прапор</option>
+                    </select></div>
+                </div>
+                <div id="arrow-block">
+                    <div class="field"><span data-i18n="style.width">Ширина, км</span><input type="range" id="f-width" min="1" max="40" step="0.5"></div>
+                    <div class="field"><span data-i18n="style.head">Наконечник</span><input type="range" id="f-head" min="1.2" max="5" step="0.1"></div>
+                    <div class="field"><span data-i18n="style.d3">3D-объём</span><select class="input" id="f-d3">
+                        <option value="0" data-i18n="style.d3Off">Плоская</option>
+                        <option value="1" data-i18n="style.d3On">Объёмная</option>
+                    </select></div>
+                    <div class="field"><span data-i18n="style.depth">Глубина</span><input type="range" id="f-depth" min="0.2" max="6" step="0.1"></div>
+                    <div class="field"><span data-i18n="style.taper">Сужение</span><input type="range" id="f-taper" min="0" max="0.8" step="0.02"></div>
+                    <div class="field"><span data-i18n="style.headW">Ширина острия</span><input type="range" id="f-headw" min="0.5" max="1.8" step="0.05"></div>
+                </div>
+
+                <div class="label" style="margin-top:4px" data-i18n="style.effects">Эффекты</div>
+                <div class="field"><span data-i18n="style.texture">Текстура</span><select class="input" id="f-pattern">
+                    <option value="none" data-i18n="tex.none">Нет</option>
+                    <option value="hatch" data-i18n="tex.hatch">Штриховка</option>
+                    <option value="diag" data-i18n="tex.diag">Диагональ</option>
+                    <option value="grid" data-i18n="tex.grid">Сетка</option>
+                    <option value="dots" data-i18n="tex.dots">Точки</option>
+                    <option value="cross" data-i18n="tex.cross">Кресты</option>
+                    <option value="bricks" data-i18n="tex.bricks">Кирпич</option>
+                    <option value="waves" data-i18n="tex.waves">Волны</option>
+                    <option value="hazard" data-i18n="tex.hazard">Полосы</option>
+                </select></div>
+                <div class="field"><span data-i18n="style.scale">Масштаб</span><input type="range" id="f-pscale" min="8" max="60" step="1"></div>
+                <div class="field"><span data-i18n="style.border">Контур</span><select class="input" id="f-border">
+                    <option value="solid" data-i18n="border.solid">Сплошной</option>
+                    <option value="dashed" data-i18n="border.dashed">Пунктир</option>
+                    <option value="glow" data-i18n="border.glow">Свечение</option>
+                </select></div>
+                <div class="field"><span data-i18n="style.glow">Сила свечения</span><input type="range" id="f-glow" min="0" max="100" step="1"></div>
+                <div class="field"><span data-i18n="style.iglow">Світло всередині</span><input type="range" id="f-iglow" min="0" max="100" step="1"></div>
+                <div class="field"><span data-i18n="style.igcol">Колір внутрішнього світла</span><input type="color" class="input" id="f-igcol"></div>
+                <div class="field"><span data-i18n="style.anim">Анимация</span><select class="input" id="f-anim">
+                    <option value="none" data-i18n="anim.none">Нет</option>
+                    <option value="pulse" data-i18n="anim.pulse">Пульсация</option>
+                    <option value="flow" data-i18n="anim.flow">Поток</option>
+                    <option value="march" data-i18n="anim.march">Марш</option>
+                </select></div>
+                <div class="field"><span data-i18n="style.label">Подпись</span><select class="input" id="f-label">
+                    <option value="0" data-i18n="style.labelOff">Нет</option>
+                    <option value="1" data-i18n="style.labelOn">На карте</option>
+                </select></div>
+                <div class="field"><span data-i18n="style.labelText">Текст подписи</span><input class="input" id="f-labeltext" maxlength="48" data-i18n-ph="style.labelTextPh" placeholder="за назвою шару"></div>
+                <div class="field"><span data-i18n="style.labelSize">Размер подписи</span><input type="range" id="f-lsize" min="8" max="28" step="1"></div>
+                <div class="field"><span data-i18n="style.labelColor">Цвет подписи</span><input type="color" class="input" id="f-lcolor"></div>
+
+                <div class="row">
+                    <button class="btn ghost" id="btn-copy-style" data-i18n="style.copy">Копіювати стиль</button>
+                    <button class="btn ghost" id="btn-paste-style" data-i18n="style.paste">Вставити стиль</button>
+                </div>
+
+                <div class="row">
+                    <button class="btn" id="btn-dup" data-i18n="style.dup">Дубль</button>
+                    <button class="btn danger" id="btn-del-layer" data-i18n="style.del">Удалить</button>
+                </div>
+                <button class="btn ghost wide" id="btn-clear-geom" data-i18n="style.clearGeom">Очистити геометрію</button>
+
+                <div class="hint" data-i18n="style.hint">Стрелки перестраиваются при изменении ширины и наконечника. Маска обрезает слой другой зоной. Поток бежит по стрелкам и контурам, марш — бегущий пунктир.</div>
+            </div>
+        </div>
+
+        <div class="pane" data-pane="mapfx">
+            <div class="label" data-i18n="fx.presets">Пресеты</div>
+            <div class="fx-presets" id="fx-presets">
+                <button data-fx="base" class="active" data-i18n="fx.neutral">БАЗА</button>
+                <button data-fx="night" data-i18n="fx.night">НОЧЬ</button>
+                <button data-fx="thermal" data-i18n="fx.thermal">ТЕПЛО</button>
+                <button data-fx="print" data-i18n="fx.print">ПЕЧАТЬ</button>
+                <button data-fx="neon" data-i18n="fx.neon">НЕОН</button>
+                <button data-fx="glitch" data-i18n="fx.glitch">ГЛИТЧ</button>
+            </div>
+
+            <div class="label" style="margin-top:2px" data-i18n="fx.filters">Фильтры</div>
+            <div class="field"><span data-i18n="fx.bright">Яркость</span><input type="range" id="fx-br" min="40" max="180" value="100"></div>
+            <div class="field"><span data-i18n="fx.contrast">Контраст</span><input type="range" id="fx-ct" min="50" max="220" value="100"></div>
+            <div class="field"><span data-i18n="fx.sat">Насыщение</span><input type="range" id="fx-st" min="0" max="300" value="100"></div>
+            <div class="field"><span data-i18n="fx.blur">Размытие</span><input type="range" id="fx-blur" min="0" max="8" step="0.5" value="0"></div>
+            <div class="field"><span data-i18n="fx.hue">Оттенок</span><input type="range" id="fx-hue" min="-180" max="180" step="1" value="0"></div>
+            <div class="field"><span data-i18n="fx.gray">Ч/Б</span><input type="range" id="fx-gray" min="0" max="100" step="1" value="0"></div>
+            <div class="field"><span data-i18n="fx.sepia">Сепия</span><input type="range" id="fx-sepia" min="0" max="100" step="1" value="0"></div>
+            <div class="field"><span data-i18n="fx.invert">Инверсия</span><input type="range" id="fx-invert" min="0" max="100" step="1" value="0"></div>
+
+            <div class="label" style="margin-top:2px" data-i18n="fx.film">Плёнка</div>
+            <div class="seg" id="fx-film">
+                <button data-film="vig" data-i18n="fx.vig">Виньетка</button>
+                <button data-film="scan" data-i18n="fx.scan">Скан-линии</button>
+                <button data-film="grain" data-i18n="fx.grain">Зерно</button>
+            </div>
+            <button class="btn wide ghost" id="fx-reset" data-i18n="fx.reset">Сбросить эффекты</button>
+
+            <div class="label" style="margin-top:4px" data-i18n="fx.base">Подложка</div>
+            <div class="seg" id="base-seg">
+                <button data-base="dark" data-i18n="base.dark">Тёмная</button>
+                <button class="active" data-base="hybrid" data-i18n="base.hybrid">Гибрид</button>
+            </div>
+
+            <div class="label" style="margin-top:4px" data-i18n="map.overlays">ШАРИ КАРТИ</div>
+            <div class="seg" id="ov-seg">
+                <button class="active" data-ov="regions" aria-pressed="true" data-i18n="map.regions">Області</button>
+            </div>
+            <div class="hint" data-i18n="map.hint">Пунктирні межі областей малюються окремим шаром поверх підкладки й не потрапляють у дані карти.</div>
+
+            <button class="btn wide" id="btn-ghost">Контур прошлого дня: выкл</button>
+            <div class="hint" data-i18n="fx.hint">Эффекты карты сохраняются и повторяются в просмотре. Контур прошлого дня рисуется пунктиром и только для просмотра — в данные не попадает.</div>
+        </div>
+
+        <div class="pane" data-pane="sys">
+            <button class="btn wide" id="btn-import-geo" data-i18n="file.importGeo">Импорт GeoJSON</button>
+            <input type="file" id="geojson-file" accept=".geojson,.json,application/geo+json,application/json" hidden>
+            <button class="btn wide danger" id="btn-del-imported" data-i18n="file.delImported">Видалити імпортовані шари</button>
+            <button class="btn wide" id="btn-export-json" data-i18n="file.exportAll">Экспорт всех дат</button>
+            <button class="btn wide" id="btn-export-site" data-i18n="file.exportSite">Экспорт для сайта (data/map.json)</button>
+            <button class="btn wide" id="btn-import-json" data-i18n="file.importFile">Импорт файла</button>
+            <input type="file" id="import-file" accept=".json,application/json" hidden>
+            <button class="btn wide" id="btn-export-geo" data-i18n="file.exportGeo">Экспорт GeoJSON</button>
+
+            <button class="btn wide" id="btn-copy-prev" data-i18n="file.copyPrev">Копировать на пред. день</button>
+            <button class="btn wide" id="btn-copy-next" data-i18n="file.copyNext">Копировать на след. день</button>
+            <button class="btn wide danger" id="btn-del-map" data-i18n="file.deleteMap">Видалити карту за дату</button>
+            <button class="btn wide danger" id="btn-del-all" data-i18n="file.deleteAll">Видалити всі дати</button>
+
+            <a class="btn wide ghost" href="../index.html" data-i18n="app.openViewer">Открыть просмотр</a>
+
+            <div class="hint" style="margin-top:6px" data-i18n="file.hint">GeoJSON (например, границы области) загружается отдельным слоем, файл можно просто перетащить на карту. Данные лежат в localStorage браузера.</div>
+
+            <button class="btn wide danger" id="btn-reset" style="margin-top:6px" data-i18n="file.reset">Полный сброс данных</button>
+        </div>
+
+    </div>
+</aside>
+
+<div id="search" class="panel">
+    <div class="search-row">
+        <input id="q" placeholder="Город, село, район, область" data-i18n-ph="search.placeholder" onkeydown="if(event.key==='Enter')LTUI.search()">
+        <button class="btn" id="q-go" data-i18n="search.go">Найти</button>
+    </div>
+    <div id="search-results"></div>
+    <div id="search-pick">
+        <span id="sp-name">—</span>
+        <button class="btn" id="sp-add" data-i18n="search.add">В слой</button>
+        <button class="btn ghost" id="sp-clear">✕</button>
+    </div>
+</div>
+
+<div id="dock" class="panel">
+    <button class="dock-btn active" data-mode="draw"><b>▱</b><span data-i18n="dock.zone">ЗОНА</span></button>
+    <button class="dock-btn" data-mode="arrow"><b>➤</b><span data-i18n="dock.arrow">СТРЕЛКА</span></button>
+    <button class="dock-btn" data-mode="erase"><b>⌫</b><span data-i18n="dock.erase">ЛАСТИК</span></button>
+    <button class="dock-btn" data-mode="drag"><b>✥</b><span data-i18n="dock.pan">ПАНОРАМА</span></button>
+</div>
+
+<div id="bottombar" class="panel">
+    <button class="btn nav" id="prev-date" title="Попередній день" data-i18n-title="nav.prev">‹</button>
+    <button class="date-trigger" id="date-trigger">—</button>
+    <button class="btn nav" id="next-date" title="Наступний день" data-i18n-title="nav.next">›</button>
+    <button class="btn" id="play-btn">Пуск</button>
+</div>
+
+<div id="cal" class="cal"></div>
+
+<div id="drop">
+    <div class="drop-box">
+        <b data-i18n="drop.title">GEOJSON</b>
+        <small data-i18n="drop.hint">ОТПУСТИТЕ ФАЙЛ — ПОЯВИТСЯ НОВЫЙ СЛОЙ</small>
+    </div>
+</div>
+
+<div id="hint-bar" data-i18n="hint.bar">1 — зона · 2 — стрелка · 3 — ластик · 0 — панорама · Ctrl+Z — отмена</div>
+
+<div id="splash">
+    <div class="splash-box">
+        <b>LINESTATE</b>
+        <small data-i18n="app.loading">ЗАГРУЗКА КАРТЫ</small>
+        <div class="splash-bar"><i></i></div>
+    </div>
+</div>
+
+<div id="gate">
+    <form class="gate-box" id="gate-form" autocomplete="off">
+        <b>LINESTATE</b>
+        <small>СЛУЖБОВИЙ ДОСТУП</small>
+        <input class="input" id="gate-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="код доступу" aria-label="Код доступу">
+        <button class="btn wide" id="gate-go" type="submit">УВІЙТИ</button>
+        <span id="gate-err"></span>
+    </form>
+</div>
+
+<script src="../assets/gate.js?v=3"></script>
+</body>
+</html>
