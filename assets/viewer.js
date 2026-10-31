@@ -159,7 +159,7 @@
         if (!src) return;
         const fc = displayFC(l);
         shownFC.set(l.id, fc);
-        src.setData(l.style.iglow > 0 ? LT.rewindFC(fc) : fc);
+        src.setData(l.kind === 'zone' ? LT.rewindFC(fc) : fc);
         LT.applyLayerPaint(map, l, isVisible(l));
         LT.syncLayerDecor(map, l, fc, isVisible(l));
         if (blend) blend.draw();
@@ -350,6 +350,8 @@
     let drawCv = null;
     let drawCtx = null;
     let drawQueued = false;
+    let drawDirty = true;
+    let drawCam = '';
     let draftFC = EMPTY_FC;
     let rulerFC = EMPTY_FC;
 
@@ -374,14 +376,39 @@
         drawCv.id = 'lt-draw-canvas';
         document.body.appendChild(drawCv);
         drawCtx = drawCv.getContext('2d');
-        map.on('render', scheduleDraw);
-        scheduleDraw();
+        map.on('render', () => scheduleDraw(false));
+        map.on('resize', () => scheduleDraw(true));
+        scheduleDraw(true);
     }
 
-    function scheduleDraw() {
+    function isMobileUI() {
+        return document.documentElement.classList.contains('dev-mobile');
+    }
+
+    function drawCamKey() {
+        try {
+            const c = map.getCenter();
+            const cv = map.getCanvas();
+            return c.lng.toFixed(5) + '|' + c.lat.toFixed(5) + '|' + map.getZoom().toFixed(4)
+                + '|' + (map.getBearing ? map.getBearing().toFixed(2) : '0')
+                + '|' + (map.getPitch ? map.getPitch().toFixed(2) : '0')
+                + '|' + cv.width + 'x' + cv.height;
+        } catch (e) { return ''; }
+    }
+
+    function scheduleDraw(force) {
+        if (force !== false) drawDirty = true;
         if (drawQueued) return;
+        if (!drawDirty && drawCamKey() === drawCam) return;
         drawQueued = true;
-        requestAnimationFrame(() => { drawQueued = false; paintDraw(); });
+        const run = () => {
+            drawQueued = false;
+            drawDirty = false;
+            drawCam = drawCamKey();
+            paintDraw();
+        };
+        if (isMobileUI()) setTimeout(run, 30);
+        else requestAnimationFrame(run);
     }
 
     function pathGeo(g, geo) {
@@ -1280,7 +1307,7 @@
         updateDrawHint();
     }
 
-    function setDrawPanel(open) {
+    function setDrawPanel(open, keepTool) {
         open = !!open;
         if (open === drawPanelOpen) return;
         drawPanelOpen = open;
@@ -1291,12 +1318,16 @@
         }
         const tab = $('tool-draw');
         if (tab) {
-            tab.classList.toggle('active', open);
+            const drawing = DRAW_TOOLS.indexOf(tool) >= 0;
+            tab.classList.toggle('active', open || drawing);
             tab.setAttribute('aria-expanded', String(open));
-            tab.setAttribute('aria-pressed', String(open));
+            tab.setAttribute('aria-pressed', String(open || drawing));
         }
-        if (!open && DRAW_TOOLS.indexOf(tool) >= 0) setTool('');
-        if (open) syncDrawUI();
+        if (!open && !keepTool && DRAW_TOOLS.indexOf(tool) >= 0) setTool('');
+        if (open) {
+            if (typeof setSearch === 'function') setSearch(false);
+            syncDrawUI();
+        }
     }
 
     function syncToolUI() {
@@ -1387,6 +1418,7 @@
         if (!panel) return;
         panel.classList.toggle('open', open);
         panel.setAttribute('aria-hidden', String(!open));
+        if (open && drawPanelOpen) setDrawPanel(false, true);
         if (btn) {
             btn.classList.toggle('active', open);
             btn.setAttribute('aria-expanded', String(open));
@@ -1422,7 +1454,9 @@
             return;
         }
         if (!searchPick.feature) {
-            hint.textContent = LT.t('search.noContour');
+            hint.textContent = searchPick.res && searchPick.res._local
+                ? searchPick.label
+                : LT.t('search.noContour');
             return;
         }
         let km2 = 0;
@@ -1485,7 +1519,49 @@
             map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 70, duration: 700, maxZoom: 12 });
         }
         if (res.lon && res.lat) setSearchMarker([+res.lon, +res.lat], searchPick.name.toUpperCase());
-        if (!feature) LT.toast(LT.t('search.noContour'));
+        if (!feature && !res._local) LT.toast(LT.t('search.noContour'));
+    }
+
+    // локальный индекс городов: результаты есть сразу, даже если Nominatim
+    // на мобильной сети долго молчит или недоступен
+    function localSearchRows(q) {
+        const data = window.LT_PLACES;
+        if (!data || !data.length) return [];
+        const norm = s => String(s || '').toLowerCase().replace(/[’`']/g, "'");
+        const needle = norm(q);
+        if (!needle) return [];
+        const hits = [];
+        for (let i = 0; i < data.length; i++) {
+            const e = data[i];
+            const uk = norm(e[0]), en = norm(e[1] || '');
+            const iu = uk.indexOf(needle), ie = en.indexOf(needle);
+            if (iu < 0 && ie < 0) continue;
+            const starts = (iu === 0 || ie === 0) ? 1 : 0;
+            const rank = e[4] || 4;
+            hits.push({ e, score: (starts ? -1000 : 0) + rank * 10 - Math.min(9, (+e[6] || 0) / 1e6) });
+        }
+        if (!hits.length) return [];
+        hits.sort((a, b) => a.score - b.score);
+        const lang = LT.lang();
+        const seen = new Set();
+        const rows = [];
+        for (let i = 0; i < hits.length && rows.length < 6; i++) {
+            const e = hits[i].e;
+            const name = String((lang === 'en' ? (e[1] || e[0]) : e[0]) || '').trim();
+            const key = name.toLowerCase() + '@' + e[2] + ',' + e[3];
+            if (!name || seen.has(key)) continue;
+            seen.add(key);
+            const lon = e[2] / 1e5, lat = e[3] / 1e5;
+            rows.push({
+                _local: true,
+                name,
+                display_name: name,
+                type: (e[4] || 4) <= 3 ? 'city' : 'town',
+                lon, lat,
+                boundingbox: [lon - 0.1, lat - 0.07, lon + 0.1, lat + 0.07]
+            });
+        }
+        return rows;
     }
 
     async function doSearch() {
@@ -1494,6 +1570,12 @@
         const btn = $('ps-go');
         if (btn) btn.disabled = true;
         const seq = ++searchSeq;
+        const local = localSearchRows(q);
+        if (local.length) {
+            searchRows = local;
+            searchActive = 0;
+            renderSearchRows();
+        }
         try {
             const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1'
                 + '&polygon_geojson=1&accept-language=' + LT.lang() + '&q=' + encodeURIComponent(q);
@@ -1502,18 +1584,24 @@
             if (!r.ok) throw new Error('http');
             const rows = await r.json();
             if (seq !== searchSeq) return;
-            if (!Array.isArray(rows) || !rows.length) {
+            if (Array.isArray(rows) && rows.length) {
+                const names = new Set(rows.map(x => shortName(x).toLowerCase()));
+                const merged = rows.concat(local.filter(x => !names.has(x.name.toLowerCase())));
+                searchRows = merged;
+                searchActive = 0;
+                pickSearch(merged[0], 0);
+            } else if (local.length) {
+                pickSearch(local[0], 0);
+            } else {
                 searchRows = [];
                 searchActive = -1;
                 renderSearchRows();
                 LT.toast(LT.t('search.notFound'), 'err');
-                return;
             }
-            searchRows = rows;
-            searchActive = 0;
-            pickSearch(rows[0], 0);
         } catch (e) {
-            if (seq === searchSeq) LT.toast(LT.t('search.unavailable'), 'err');
+            if (seq !== searchSeq) return;
+            if (local.length) pickSearch(local[0], 0);
+            else LT.toast(LT.t('search.unavailable'), 'err');
         } finally {
             if (seq === searchSeq && btn) btn.disabled = false;
         }
@@ -1680,12 +1768,11 @@
 
     /* ---------------------------- интерфейс ---------------------------- */
 
-    // маски (слои, которые режут другие) и скрытые слои — служебные, в списке их не показываем
+    // скрытые слои (visible:false) — служебные, в списке их не показываем;
+    // маски показываем: это обычные видимые слои, которые режут другие
     function publicLayers() {
-        const masks = new Set();
-        Object.values(state.layers).forEach(l => maskIds(l).forEach(id => masks.add(id)));
         return Object.values(state.layers)
-            .filter(l => l.style.visible !== false && !masks.has(l.id))
+            .filter(l => l.style.visible !== false)
             .sort((a, b) => b.z - a.z);
     }
 
@@ -2048,8 +2135,8 @@
             ctx.filter = 'none';
 
             // градиентные заливки живут на DOM-canvas: после смены DPR их нужно
-            // перерисовать синхронно, иначе в снимок попадает пустой холст
-            if (blend) blend.sync();
+            // перерисовать синхронно, иначе в снимок попадает пустой/мыльный холст
+            if (blend) blend.sync(src.width / (src.clientWidth || 1));
 
             document.querySelectorAll('#lt-blend canvas').forEach(c => {
                 const m = String(c.style.mixBlendMode || '');
@@ -2112,16 +2199,35 @@
             try {
                 map.setPixelRatio(base === (window.devicePixelRatio || 1) ? null : base);
                 LT.setPlaceDpr(map, 0);
+                if (blend) blend.sync();
             } catch (e) { }
         };
 
-        if (ratio <= base + 0.01) { snapPhoto(); return; }
+        // без preserveDrawingBuffer WebGL-буфер живёт только внутри кадра,
+        // поэтому копию снимаем синхронно в обработчике render
+        const capture = () => {
+            if (!LT.device().mobile) {
+                try { snapPhoto(); } finally { restore(); }
+                return;
+            }
+            let got = false;
+            const grab = () => {
+                if (got) return;
+                got = true;
+                try { snapPhoto(); } finally { restore(); }
+            };
+            map.once('render', grab);
+            map.triggerRepaint();
+            setTimeout(grab, 600);
+        };
+
+        if (ratio <= base + 0.01) { capture(); return; }
 
         let fired = false;
         const finish = () => {
             if (fired) return;
             fired = true;
-            try { snapPhoto(); } finally { restore(); }
+            capture();
         };
         try {
             map.setPixelRatio(ratio);
@@ -2289,7 +2395,14 @@
             if (tool === 'ruler') rulerFinish();
         });
 
+        // на телефоне первое касание карты убирает панель, но оставляет инструмент —
+        // иначе лист на пол-экрана просто не даёт рисовать
+        const collapseForMap = () => {
+            if (drawPanelOpen && isMobileUI()) setDrawPanel(false, true);
+        };
+
         map.on('mousedown', e => {
+            collapseForMap();
             if (tool === 'pen') penStart(e);
             else if (tool === 'arrow') arrowStart(e);
             else if (tool === 'rect' || tool === 'circle') shapeStart(e);
@@ -2301,6 +2414,7 @@
         });
         map.on('touchstart', e => {
             if (!e.lngLats || e.lngLats.length !== 1) return;
+            collapseForMap();
             if (tool === 'pen') {
                 pen = { pts: [e.lngLats[0].toArray()] };
                 drawPenDraft();
@@ -2376,7 +2490,15 @@
         $('dp-close').addEventListener('click', () => setDrawPanel(false));
         $('tool-ruler').addEventListener('click', () => setTool('ruler'));
         document.querySelectorAll('#dp-tools .dp-tool').forEach(b => {
-            b.addEventListener('click', () => setTool(b.dataset.tool));
+            b.addEventListener('click', () => {
+                setTool(b.dataset.tool);
+                // на телефоне лист закрываем сразу: иначе он занимает пол-экрана
+                // и рисовать банально негде — режим остаётся включённым
+                if (tool && isMobileUI()) {
+                    setDrawPanel(false, true);
+                    if (TOOL_HINT[tool]) LT.toast(LT.t(TOOL_HINT[tool]));
+                }
+            });
         });
         $('dp-clear').addEventListener('click', clearDrawings);
 

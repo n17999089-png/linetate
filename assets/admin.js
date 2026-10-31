@@ -273,7 +273,7 @@
         if (!src) return;
         const fc = displayFC(l);
         shownFC.set(l.id, fc);
-        src.setData(l.style.iglow > 0 ? LT.rewindFC(fc) : fc);
+        src.setData(l.kind === 'zone' ? LT.rewindFC(fc) : fc);
         LT.applyLayerPaint(map, l, l.style.visible);
         LT.syncLayerDecor(map, l, fc, l.style.visible);
         if (blend) blend.draw();
@@ -909,6 +909,7 @@
                 <span class="meta">${meta}${fx}${hard}${bm}${gr}${geo}</span>
                 <button class="act" data-act="up" title="${t('admin.up')}">▲</button>
                 <button class="act" data-act="dn" title="${t('admin.down')}">▼</button>
+                <button class="act" data-act="mrg" title="${t('admin.merge')}">⇧</button>
                 <button class="act" data-act="vis" title="${t('admin.visibility')}">${l.style.visible ? '◉' : '○'}</button>
                 <button class="act del" data-act="del" title="${t('admin.delete')}">✕</button>
             </div>`;
@@ -932,6 +933,40 @@
         restack();
         uiLayers();
         autoSave();
+    }
+
+    // слияние слоя с соседним сверху: геометрия и маски переезжают, стиль — у цели
+    function mergeLayerUp(id) {
+        const src = state.layers[id];
+        if (!src) return;
+        if (!src.data.features.length) { toast(t('admin.mergeEmpty'), 'err'); return; }
+        if (src.kind !== 'zone' && src.kind !== 'arrow') { toast(t('admin.mergeKind'), 'err'); return; }
+
+        const above = Object.values(state.layers)
+            .filter(o => o.kind === src.kind && o.id !== src.id && o.z > src.z)
+            .sort((a, b) => a.z - b.z)[0];
+        if (!above) { toast(t('admin.mergeNone'), 'err'); return; }
+
+        pushUndo();
+        above.data.features = above.data.features.concat(src.data.features);
+
+        const masks = maskIds(above).concat(maskIds(src)).filter(x => x !== above.id);
+        above.style.maskTargets = Array.from(new Set(masks));
+        above.style.maskTarget = '';
+        if (src.style.hard) above.style.hard = true;
+
+        delete state.layers[src.id];
+        dropMaskRefs([src.id]);
+        if (state.activeId === src.id) state.activeId = above.id;
+
+        if (above.kind === 'arrow') rebuildArrows(above);
+        syncMapLayers();
+        applyLayer(above);
+        restack();
+        uiLayers();
+        uiStyle();
+        autoSave();
+        toast(t('admin.merged', { name: above.name }));
     }
 
     function uiStyle() {
@@ -1504,6 +1539,8 @@
                     moveLayerZ(l, 1);
                 } else if (act.dataset.act === 'dn') {
                     moveLayerZ(l, -1);
+                } else if (act.dataset.act === 'mrg') {
+                    mergeLayerUp(id);
                 } else if (act.dataset.act === 'del') {
                     if (!confirm(t('confirm.deleteLayer', { name: l.name }))) return;
                     pushUndo();

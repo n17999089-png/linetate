@@ -12,7 +12,7 @@
     const SALT = ['f401ef53', '29b7b000'];
     const FILES = [
         '../assets/regions.js?v=23',
-        '../assets/core.js?v=49',
+        '../assets/core.js?v=51',
         '../assets/map-tools.js?v=40',
         '../assets/admin.js?v=32'
     ];
