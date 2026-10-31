@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>LINESTATE — оперативна карта</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Handjet:wght@400;700;900&family=Tektur:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="assets/vendor/maplibre-gl.css" rel="stylesheet">
+<script src="assets/vendor/maplibre-gl.js"></script>
+<script src="assets/vendor/turf.min.js"></script>
+<link rel="stylesheet" href="assets/theme.css?v=28">
+<link rel="stylesheet" href="assets/viewer.css?v=35">
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topbar" class="panel">
+    <div class="brand">
+        <b>LINESTATE</b>
+        <small data-i18n="viewer.tagline">ОПЕРАТИВНА КАРТА</small>
+    </div>
+</div>
+
+<div id="top-actions">
+    <button class="hud-btn lang-btn" id="lang-btn" title="Мова" data-i18n-title="app.langHint">UK</button>
+    <button class="hud-btn search-btn" id="search-btn" aria-controls="place-search" aria-expanded="false">
+        <svg class="hud-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.6 4.6"/></svg>
+        <span class="lb-txt" data-i18n="search.title">Пошук</span>
+    </button>
+    <button class="hud-btn layers-btn" id="viewer-menu-toggle" aria-controls="legend" aria-expanded="false">
+        <span class="lb-ico" aria-hidden="true">▤</span>
+        <span class="lb-txt" data-i18n="viewer.menu">Шари</span>
+        <span class="count-pill" id="legend-count">0</span>
+    </button>
+</div>
+
+<div id="tools" class="panel" role="toolbar" aria-label="Інструменти карти">
+    <button class="tool-tab" id="tool-draw" title="Малювання" data-i18n-title="tools.draw" aria-controls="draw-panel" aria-expanded="false" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4.4-1L19 8.4a2.2 2.2 0 0 0-3.1-3.1L5.3 15.9z"/><path d="M13.4 6.6l4 4"/></svg>
+        <i class="tt-dot" aria-hidden="true"></i>
+    </button>
+    <span class="tool-sep" aria-hidden="true"></span>
+    <button class="tool-btn" id="tool-ruler" title="Лінійка" data-i18n-title="tools.rulerHint" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 15.4 15.4 3.6l5 5L8.6 20.4z"/><path d="M7.2 11.8l2 2M10.2 8.8l1.5 1.5M13.2 5.8l2.8 2.8"/></svg>
+    </button>
+</div>
+
+<div id="draw-panel" class="panel" aria-hidden="true">
+    <div class="dp-head">
+        <span class="label" data-i18n="tools.draw">МАЛЮВАННЯ</span>
+        <button type="button" class="legend-close" id="dp-close" title="Закрити" aria-label="Закрити" data-i18n-title="viewer.close">×</button>
+    </div>
+    <div class="dp-tools" id="dp-tools">
+        <button type="button" class="dp-tool" data-tool="pen" title="Олівець" data-i18n-title="tools.penHint" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4.4-1L19 8.4a2.2 2.2 0 0 0-3.1-3.1L5.3 15.9z"/><path d="M13.4 6.6l4 4"/></svg>
+            <span data-i18n="tools.pen">РУЧКА</span>
+        </button>
+        <button type="button" class="dp-tool" data-tool="arrow" title="Стрілка" data-i18n-title="tools.arrowHint" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19.5 19 5"/><path d="M11.6 4.6H19.4V12.4"/></svg>
+            <span data-i18n="tools.arrow">СТРІЛКА</span>
+        </button>
+        <button type="button" class="dp-tool" data-tool="rect" title="Прямокутник" data-i18n-title="tools.rectHint" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="1.6"/></svg>
+            <span data-i18n="tools.rect">ПРЯМОКУТНИК</span>
+        </button>
+        <button type="button" class="dp-tool" data-tool="circle" title="Коло" data-i18n-title="tools.circleHint" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="7.6"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/></svg>
+            <span data-i18n="tools.circle">КОЛО</span>
+        </button>
+        <button type="button" class="dp-tool" data-tool="zone" title="Зона" data-i18n-title="tools.zoneHint" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3.6 20.3 9.4l-3.2 10.2H6.9L3.7 9.4z"/><circle cx="12" cy="3.6" r="1.5" fill="currentColor" stroke="none"/><circle cx="20.3" cy="9.4" r="1.5" fill="currentColor" stroke="none"/><circle cx="6.9" cy="19.6" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <span data-i18n="tools.zone">ЗОНА</span>
+        </button>
+        <button type="button" class="dp-tool" data-tool="erase" title="Ластик" data-i18n-title="tools.eraseHint" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20h13"/><path d="M14.6 4.4l5 5a2 2 0 0 1 0 2.9l-6.3 6.3a2 2 0 0 1-2.9 0l-5-5a2 2 0 0 1 0-2.9l6.3-6.3a2 2 0 0 1 2.9 0z"/><path d="M7.5 12.6l4.9 4.9"/></svg>
+            <span data-i18n="tools.erase">ЛАСТИК</span>
+        </button>
+    </div>
+    <div class="dp-sec">
+        <div class="dp-lab"><span data-i18n="tools.width">ТОВЩИНА</span><output id="draw-width-val">2.6</output></div>
+        <input type="range" class="dp-range" id="draw-width" min="1" max="8" step="0.2" value="2.6" aria-label="Товщина ліній">
+    </div>
+    <div class="dp-sec" id="dp-head-sec">
+        <div class="dp-lab"><span data-i18n="tools.head">НАКОНЕЧНИК</span><output id="draw-head-val">15</output></div>
+        <input type="range" class="dp-range" id="draw-head" min="8" max="30" step="1" value="15" aria-label="Розмір наконечника">
+    </div>
+    <div class="dp-sec">
+        <div class="dp-lab"><span data-i18n="tools.color">КОЛІР</span></div>
+        <div class="dp-colors" id="dp-colors">
+            <button type="button" class="dp-sw" data-color="#ffffff" style="--sw:#ffffff" title="Колір малюнка" data-i18n-title="tools.colorHint" aria-label="Білий"></button>
+            <button type="button" class="dp-sw" data-color="#ffd45e" style="--sw:#ffd45e" title="Колір малюнка" data-i18n-title="tools.colorHint" aria-label="Жовтий"></button>
+            <button type="button" class="dp-sw" data-color="#ff6b6b" style="--sw:#ff6b6b" title="Колір малюнка" data-i18n-title="tools.colorHint" aria-label="Червоний"></button>
+            <button type="button" class="dp-sw" data-color="#7ef0a8" style="--sw:#7ef0a8" title="Колір малюнка" data-i18n-title="tools.colorHint" aria-label="Зелений"></button>
+            <button type="button" class="dp-sw" data-color="#66c9ff" style="--sw:#66c9ff" title="Колір малюнка" data-i18n-title="tools.colorHint" aria-label="Синій"></button>
+            <button type="button" class="dp-sw" data-color="#b78bff" style="--sw:#b78bff" title="Колір малюнка" data-i18n-title="tools.colorHint" aria-label="Фіолетовий"></button>
+            <label class="dp-custom" title="Свій колір" data-i18n-title="tools.colorHint">
+                <input type="color" id="draw-color" value="#ffffff" aria-label="Колір малюнка">
+                <span class="dp-custom-dot" aria-hidden="true"></span>
+            </label>
+        </div>
+    </div>
+    <div class="dp-actions">
+        <button type="button" class="dp-btn" id="dp-clear" title="Прибрати всі малюнки" data-i18n-title="tools.clearHint">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9.5 7V4.6h5V7M6.6 7l1 13h8.8l1-13"/><path d="M10.2 11v5M13.8 11v5"/></svg>
+            <span data-i18n="tools.clear">ОЧИСТИТИ</span>
+        </button>
+    </div>
+    <div class="dp-hint" id="dp-hint" data-i18n="tools.drawHint">Виберіть інструмент і малюйте поверх карти</div>
+</div>
+
+<div id="place-search" class="panel" aria-hidden="true">
+    <div class="ps-head">
+        <span class="label" data-i18n="search.title">ПОШУК</span>
+        <button type="button" class="legend-close" id="ps-close" title="Закрити" aria-label="Закрити" data-i18n-title="viewer.close">×</button>
+    </div>
+    <div class="ps-row">
+        <input id="ps-q" class="input" type="search" autocomplete="off" placeholder="Місто, село, район, область" data-i18n-ph="search.placeholder">
+        <button class="btn" id="ps-go" data-i18n="search.go">Знайти</button>
+    </div>
+    <div id="ps-results"></div>
+    <div class="ps-hint" id="ps-hint" data-i18n="search.viewerHint">Клікніть по результату, щоб показати територію.</div>
+</div>
+
+<div id="legend-backdrop"></div>
+<aside id="legend" class="panel">
+    <div class="panel-head">
+        <span class="label" data-i18n="viewer.layers">ШАРИ</span>
+        <button type="button" class="legend-close" id="legend-close" title="Закрити" aria-label="Закрити" data-i18n-title="viewer.close">×</button>
+    </div>
+    <div id="legend-list"></div>
+    <div class="legend-foot">
+        <div class="seg" id="base-seg">
+            <button data-base="dark" data-i18n="base.dark">Темна</button>
+            <button class="active" data-base="hybrid" data-i18n="base.hybrid">Гибрид</button>
+        </div>
+        <div class="mode-row">
+            <button class="mode-btn" id="view-labels" aria-pressed="false">
+                <span class="mode-ico" aria-hidden="true">◎</span>
+                <span data-i18n="viewer.labels">ПІДПИСИ</span>
+            </button>
+            <button class="mode-btn active" id="view-regions" aria-pressed="true">
+                <span class="mode-ico" aria-hidden="true">⌗</span>
+                <span data-i18n="map.regions">ОБЛАСТІ</span>
+            </button>
+        </div>
+        <div class="legend-hint" data-i18n="viewer.labelsHint">Увімкніть підписи й тягніть їх просто по карті. ◎ повертає підпис у центр шару.</div>
+        <div class="legend-note" id="legend-foot">ОНОВЛЕНО —</div>
+    </div>
+</aside>
+
+<div id="bottombar" class="panel">
+    <button class="btn nav" id="prev-date" title="Попередній день" data-i18n-title="nav.prev">‹</button>
+    <button class="date-trigger" id="date-trigger">—</button>
+    <button class="btn nav" id="next-date" title="Наступний день" data-i18n-title="nav.next">›</button>
+    <span class="bb-div" aria-hidden="true"></span>
+    <button class="btn" id="play-btn">Пуск</button>
+    <button class="btn adv-btn" id="advance-btn" aria-pressed="false" data-i18n-title="viewer.advanceHint">
+        <span class="adv-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l7-7 7 7"/><path d="M5 19l7-7 7 7"/></svg></span>
+        <span data-i18n="viewer.advance">Просування</span>
+    </button>
+    <button class="btn" id="photo-btn" title="Зберегти знімок карти" data-i18n-title="viewer.photoHint" data-i18n="viewer.photo">Фото</button>
+</div>
+
+<div id="cal" class="cal"></div>
+
+<a class="tg-fab" href="https://t.me/+C1G5KVWOMyI4NTE0" target="_blank" rel="noopener"
+   title="Telegram" aria-label="Telegram" data-i18n-title="app.telegramHint">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor">
+        <path d="M21.9 4.3 18.6 20c-.2 1.1-.9 1.4-1.8.9l-5-3.7-2.4 2.3c-.3.3-.5.5-1 .5l.4-5.1L18 6.6c.4-.3-.1-.5-.6-.2L6.3 13.2l-4.9-1.5c-1.1-.3-1.1-1.1.2-1.6l19.1-7.4c.9-.3 1.7.2 1.2 2.6z"/>
+    </svg>
+    <span>Telegram</span>
+</a>
+
+<div id="empty" class="panel hidden">
+    <b data-i18n="viewer.noData">НЕМАЄ ДАНИХ</b>
+    <span data-i18n-html="viewer.noDataText">На вибрану дату карта не заповнена.<br>Виберіть інший день.</span>
+</div>
+
+<script src="assets/regions.js?v=23"></script>
+<script src="assets/core.js?v=49"></script>
+<script src="assets/map-tools.js?v=40"></script>
+<script src="assets/viewer.js?v=49"></script>
+</body>
+</html>
