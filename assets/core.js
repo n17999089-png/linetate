@@ -560,6 +560,24 @@
         try { return (deviceState || detectDevice()).mobile; } catch (e) { return false; }
     }
 
+    // слабкий телефон: 3 ГБ пам'яті чи 4 ядра. На них коштує малювати грубіше
+    // і в меншій роздільності — інакше жести дають пропуски кадрів
+    function lowEndDevice() {
+        try {
+            if (!docMobile()) return false;
+            return (navigator.deviceMemory || 4) <= 3 || (navigator.hardwareConcurrency || 4) <= 4;
+        } catch (e) { return false; }
+    }
+
+    // Чи полотно, відмальоване для попередньої камери, ще покриває екран після
+    // подібності (зсув b, масштаб k). Додатковий запас — pad пікселів навколо кадру.
+    // Зум-ін (k>1) нічого не оголює; зум-аут і панорама оголюють краї.
+    function coverGap(k, bx, by, cssW, cssH, pad) {
+        const mx = (k - 1) * cssW / 2 + pad;
+        const my = (k - 1) * cssH / 2 + pad;
+        return Math.abs(bx) - mx > 4 || Math.abs(by) - my > 4;
+    }
+
     // спадна роздільність: якщо під час руху камера стабільно не встигає,
     // крок за кроком знижуємо pixelRatio; назад не піднімаємо, щоб не гойдатись
     function adaptResolution(map, start) {
@@ -679,7 +697,12 @@
                 });
                 n++;
             });
-            if (n) remoteVersion++;
+            if (n) {
+                remoteVersion++;
+                // версія сховища йде вгору і на віддалених даних: відкрита вкладка
+                // перегляду сама помічає свіжу публікацію (watchLive) без перезавантаження
+                try { mem.set(VER_KEY, String(Date.now())); } catch (e) { }
+            }
             return n;
         } catch (e) {
             return 0;
@@ -687,14 +710,23 @@
     }
 
     function load(date) {
+        let local = null;
         try {
             const raw = mem.get(PREFIX + date);
             if (raw) {
                 const doc = JSON.parse(raw);
-                if (doc && doc.layers) return doc;
+                if (doc && doc.layers) local = doc;
             }
         } catch (e) { }
-        return remoteDocs.get(date) || null;
+        const remote = remoteDocs.get(date) || null;
+        // свіжа опублікована версія перемагає над засніженою локальною копією:
+        // інакше телефон, де колись відкривали редактор, не бачить оновлення дати
+        if (local && remote) {
+            const ls = Number(local.savedAt) || 0;
+            const rs = Number(remote.savedAt) || 0;
+            return rs > ls ? remote : local;
+        }
+        return local || remote || null;
     }
 
     // позиция подписи переживает перезагрузку и попадает в экспорт для сайта
@@ -1352,7 +1384,7 @@
             const s = viewSize();
             // шрифт на оверлее перерисовывается каждый кадр при панораме:
             // на телефоне 3x DPR тут лишний, фото-режим всё равно задаёт свой DPR
-            const cap = docMobile() ? 1.6 : 2;
+            const cap = docMobile() ? (lowEndDevice() ? 1.35 : 1.6) : 2;
             const dpr = placeDprOverride || Math.min(window.devicePixelRatio || 1, cap);
             const w = Math.max(2, Math.round(s.x)), h = Math.max(2, Math.round(s.y));
             if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
@@ -2569,14 +2601,15 @@
 
     // рамка в экранных координатах канваса; null — если хоть один угол ушёл
     // за горизонт/за пределы проекции: такой объект не отсекаем, рисуем как есть
-    function boxRect(map, box, rx, ry) {
+    // ox/oy — зсув початку координат: полотно більше за в'юпорт і малює з запасом
+    function boxRect(map, box, rx, ry, ox, oy) {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         const corners = [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]];
         for (let i = 0; i < 4; i++) {
             let p;
             try { p = map.project(corners[i]); } catch (e) { return null; }
             if (!isFinite(p.x) || !isFinite(p.y) || Math.abs(p.x) > 1e6 || Math.abs(p.y) > 1e6) return null;
-            const x = p.x * rx, y = p.y * ry;
+            const x = p.x * rx + (ox || 0), y = p.y * ry + (oy || 0);
             if (x < x0) x0 = x;
             if (x > x1) x1 = x;
             if (y < y0) y0 = y;
@@ -2585,15 +2618,29 @@
         return [x0, y0, x1, y1];
     }
 
-    function onScreen(map, box, rx, ry, w, h, pad) {
-        const r = boxRect(map, box, rx, ry);
+    function onScreen(map, box, rx, ry, w, h, pad, ox, oy) {
+        const r = boxRect(map, box, rx, ry, ox, oy);
         if (!r) return true;
         return !(r[2] < -pad || r[0] > w + pad || r[3] < -pad || r[1] > h + pad);
+    }
+
+    // На скільки пікселів полотно НЕ докриває в'юпорт після подібності
+    // (зсув b, масштаб k). F — у скільки разів полніше більше за в'юпорт, тобто
+    // який запас з'їдається зум-аутом і панорамою, перш ніж відкриється край.
+    function coverGap(k, bx, by, cssW, cssH, F) {
+        const gx = (1 - k * F) * cssW / 2 + Math.abs(bx);
+        const gy = (1 - k * F) * cssH / 2 + Math.abs(by);
+        return gx > gy ? gx : gy;
     }
 
     function blendEngine(map, getLayers, isVisible, displayFC) {
         let host = null;
         const items = new Map();
+        // склеєне полотно для шарів зі звичайним змішуванням
+        let flat = null;
+        let flatOn = false;
+        // активні полотна у порядку z — так само склеюємо їх в один шар
+        const order = [];
         let queued = false;
         let forced = true;
         let camKey = '';
@@ -2606,6 +2653,23 @@
 
         function isMobile() {
             try { return (deviceState || detectDevice()).mobile; } catch (e) { return false; }
+        }
+
+        // полотно більше за в'юпорт на OVER з кожного боку. Під час швидкого
+        // зум-ауту чи панорами css-трансформація не встигає за камерою і з краю
+        // відкривався б неприкритий шматок підкладки — запас з'їдає його повністю.
+        // Поза в'юпортом полотно не композитується, тому на плавність руху це
+        // не впливає, дорожчає лише сам перемальовування
+        const OVER = 0.1;
+        const BOXF = 1 + OVER * 2;
+        // фактичний запас поточних полотен (1 під час знімка)
+        let boxF = BOXF;
+
+        // запас геометрії навколо кадру: на телефоні менший — більше шматків
+        // відкидається ще до проєкції, тож кожен кадр дешевший
+        function padPx() {
+            if (!isMobile()) return 90;
+            return lowEndDevice() ? 48 : 56;
         }
 
         // на телефоне заливки перерисовываем реже и в половинном разрешении:
@@ -2623,6 +2687,7 @@
         // чи will-change на host створюють stacking context і ізолюють
         // mix-blend-mode полотен від мапи — заливки зникають
         function applyFollow(t) {
+            if (flatOn && flat) { flat.canvas.style.transform = t; return; }
             items.forEach(it => { it.canvas.style.transform = t; });
         }
 
@@ -2651,11 +2716,21 @@
                 + ' rotate(' + (dth * 180 / Math.PI).toFixed(3) + 'deg)'
                 + ' scale(' + k.toFixed(4) + ')');
             followOn = true;
-            // полотно вже не покриває екран (зум-аут оголяє край, пан вичерпує
-            // запас під світіння) — термінова свіжа відмальовка
+            // свіжа відмальовка тоді, коли запас полотна вичерпаний і край
+            // починає оголюватися (coverGap), а не за таймером: так артефакт
+            // обмежений кількома пікселями, а кадрів-перемальовок менше
             const bx = pc.x - cssW / 2, by = pc.y - cssH / 2;
-            const uncovered = k > 1.35 || k < 0.88 || (bx * bx + by * by) > 12100;
-            if (uncovered && performance.now() - lastPaint > (isMobile() ? 340 : 190)) {
+            const mob = isMobile();
+            const now = performance.now();
+            const since = now - lastPaint;
+            const gap = coverGap(k, bx, by, cssW, cssH, boxF);
+            const bare = gap > (mob ? 20 : 12)
+                && since > (mob ? (lowEndDevice() ? 210 : 150) : 110);
+            // м'який поріг: полотно сильно розтягнуте — межі стають м'якими,
+            // на місці це видно, тому дозріває повільніше
+            const soft = k > (mob ? (lowEndDevice() ? 1.9 : 1.7) : 1.35)
+                && since > (mob ? 380 : 190);
+            if (bare || soft) {
                 paint();
                 followReset();
             }
@@ -2686,6 +2761,18 @@
                 .sort((a, b) => a.z - b.z);
         }
 
+        function blendOf(l) {
+            const b = l && l.style && l.style.blend;
+            return b && b !== 'normal' ? b : 'normal';
+        }
+
+        function boxStyle(st, cssW, cssH, mw, mh) {
+            st.left = (-mw) + 'px';
+            st.top = (-mh) + 'px';
+            st.width = (cssW + mw * 2) + 'px';
+            st.height = (cssH + mh * 2) + 'px';
+        }
+
         function syncCanvases(ratioOverride) {
             ensureHost();
             const src = map.getCanvas();
@@ -2693,11 +2780,24 @@
             const cssW = src.clientWidth || src.width;
             const cssH = src.clientHeight || src.height;
             const dpr = cssW ? src.width / cssW : 1;
-            const cap = ratioOverride ? ratioOverride : (isMobile() ? 1.2 : Math.min(dpr, 1.75));
-            const w = Math.max(1, Math.round(cssW * cap));
-            const h = Math.max(1, Math.round(cssH * cap));
+            // щільність: полотно-пікселів на один css-піксель в'юпорта. Разом із
+            // запасом OVER це той самий обсяг пам'яті, що в полотна рівного
+            // в'юпорту, але край закритий під час швидких жестів
+            const cap = ratioOverride ? ratioOverride
+                : (isMobile() ? (lowEndDevice() ? 0.85 : 1) : Math.min(dpr, 1.75));
+            // у режимі знімка запас не малюємо: фото = рівно в'юпорт
+            boxF = ratioOverride ? 1 : BOXF;
+            const mw = cssW * (boxF - 1) / 2, mh = cssH * (boxF - 1) / 2;
+            const w = Math.max(1, Math.round((cssW + mw * 2) * cap));
+            const h = Math.max(1, Math.round((cssH + mh * 2) * cap));
+            const act = activeLayers();
+            order.length = 0;
+            // звичайне змішування (normal) асоціативне: чотири полотна поверх
+            // мапи = одне склеєне полотно. Композитор тримає тоді один шар
+            // замість чотирьох — на телефоні це головна ціна кадру
+            flatOn = act.length > 1 && act.every(l => blendOf(l) === 'normal');
 
-            activeLayers().forEach(l => {
+            act.forEach(l => {
                 alive.add(l.id);
                 let it = items.get(l.id);
                 if (!it) {
@@ -2706,33 +2806,66 @@
                     it = { canvas, ctx: canvas.getContext('2d') };
                     items.set(l.id, it);
                 }
+                order.push(it);
                 it.layer = l;
-                it.canvas.style.mixBlendMode = l.style.blend && l.style.blend !== 'normal' ? l.style.blend : 'normal';
+                const st = it.canvas.style;
+                st.mixBlendMode = blendOf(l);
+                boxStyle(st, cssW, cssH, mw, mh);
                 if (it.canvas.width !== w || it.canvas.height !== h) {
                     it.canvas.width = w;
                     it.canvas.height = h;
                 }
-                host.appendChild(it.canvas);
+                if (flatOn) it.canvas.remove();
+                else host.appendChild(it.canvas);
             });
+
+            if (flatOn) {
+                if (!flat) {
+                    const canvas = document.createElement('canvas');
+                    canvas.className = 'lt-blend-c';
+                    flat = { canvas, ctx: canvas.getContext('2d') };
+                }
+                const st = flat.canvas.style;
+                st.mixBlendMode = 'normal';
+                boxStyle(st, cssW, cssH, mw, mh);
+                if (flat.canvas.width !== w || flat.canvas.height !== h) {
+                    flat.canvas.width = w;
+                    flat.canvas.height = h;
+                }
+                host.appendChild(flat.canvas);
+            } else if (flat) {
+                flat.canvas.remove();
+            }
 
             items.forEach((it, id) => {
                 if (alive.has(id)) return;
                 it.canvas.remove();
                 items.delete(id);
+                const i = order.indexOf(it);
+                if (i >= 0) order.splice(i, 1);
             });
             forced = true;
         }
 
         // LOD: чим ширший огляд, тим грубіша геометрія — як у deepstatemap.
-        //tol у градусах, кроки фіксовані, щоб кеш не розростався з кожним зумом
+        // tol у градусах, кроки фіксовані, щоб кеш не розростався з кожним зумом
         const lodCache = new Map();
-        function lodTol(z) {
+        function lodTolRaw(z) {
             if (z >= 12) return 0;
             if (z >= 10) return 0.0003;
             if (z >= 8.5) return 0.0009;
             if (z >= 7) return 0.002;
             if (z >= 5.5) return 0.005;
             return 0.012;
+        }
+        // телефон малює на сходинку грубіше (це головна ціна кадру), слабкий
+        // пристрій — ще на одній; посеред жесту додається ще крок, бо там
+        // рахуються тисячі вершин на кожді 60 Гц
+        function lodTol(z, inMotion) {
+            if (!isMobile()) return lodTolRaw(z);
+            let shift = lowEndDevice() ? 2.5 : 1.3;
+            if (inMotion) shift += 1.5;
+            return lodTolRaw(z - shift);
         }
         function lodRing(ring, tol) {
             if (tol <= 0) return ring;
@@ -2760,7 +2893,15 @@
                 z: map.getZoom(), cx: c.lng, cy: c.lat,
                 br: map.getBearing ? map.getBearing() : 0, w: cssW, h: cssH
             };
-            const tol = lodTol(map.getZoom());
+            const tol = lodTol(map.getZoom(), moving);
+            // на телефоні посеред жесту: грубіший LOD, менший запас і без кромки
+            // світіння — це другий прохід по тих самих вершинах. Як тільки камера
+            // стає, приходять тригери й повний кадр: рух плавний, картинка точна
+            const mobMotion = moving && isMobile();
+            const pad = padPx();
+            const tinyPx = isMobile() ? 3.4 : 2.4;
+            const rimMinPx = lowEndDevice() ? 13 : 7;
+            const wantRim = !mobMotion;
 
             items.forEach(it => {
                 const ctx = it.ctx;
@@ -2773,23 +2914,26 @@
                 const fc = displayFC ? displayFC(l) : l.data;
                 const feats = (fc && fc.features) || [];
                 if (!feats.length) return;
-                const rx = cv.width / cssW;
-                const ry = cv.height / cssH;
-                // запас на свечение и размытые контуры вокруг видимой области
-                const pad = 90;
+                const rx = cv.width / (cssW * boxF);
+                const ry = cv.height / (cssH * boxF);
+                // полотно більше за в'юпорт — екранні координати входять зі зсувом
+                const offX = cssW * (boxF - 1) / 2 * rx;
+                const offY = cssH * (boxF - 1) / 2 * ry;
+                // запас на светіння і розмиті контури навколо видимої області
+                // + дрібні шматки на слабкому телефоні не светяться взагалі
 
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.fillStyle = hexA(l.style.color, l.style.alpha);
                 ctx.beginPath();
                 let pts = 0;
-                const rimPts = [];
+                const rimPts = wantRim ? [] : null;
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
                 feats.forEach(f => {
                     // умная прорисовка: фича целиком вне экрана не проектируется
                     // и не попадает в путь — на фронте это половина слоёв
                     const bb = featBox(f);
-                    if (bb && !onScreen(map, bb, rx, ry, cv.width, cv.height, pad)) return;
+                    if (bb && !onScreen(map, bb, rx, ry, cv.width, cv.height, pad, offX, offY)) return;
 
                     const g = f.geometry || {};
                     const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
@@ -2798,14 +2942,14 @@
                         const rb = ringBox(ring);
                         let rim = rimPts;
                         if (rb) {
-                            const rr = boxRect(map, rb, rx, ry);
+                            const rr = boxRect(map, rb, rx, ry, offX, offY);
                             if (rr) {
                                 // частина поза екраном або мікроскопічна на цьому
                                 // огляді — не малюємо і в градієнт не рахуємо
                                 if (rr[2] < -pad || rr[0] > cv.width + pad || rr[3] < -pad || rr[1] > cv.height + pad) return;
-                                if (rr[2] - rr[0] < 2.4 && rr[3] - rr[1] < 2.4) return;
+                                if (rr[2] - rr[0] < tinyPx && rr[3] - rr[1] < tinyPx) return;
                                 // кромку світіння на дрібних частинах не малюємо
-                                if (rr[2] - rr[0] < 7 && rr[3] - rr[1] < 7) rim = null;
+                                if (rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx) rim = null;
                             }
                         }
                         const ring2 = lodRing(ring, tol);
@@ -2816,8 +2960,8 @@
                             const c = ring2[i];
                             if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
                             const p = map.project(c);
-                            const x = p.x * rx;
-                            const y = p.y * ry;
+                            const x = p.x * rx + offX;
+                            const y = p.y * ry + offY;
                             if (x < minX) minX = x;
                             if (x > maxX) maxX = x;
                             if (y < minY) minY = y;
@@ -2852,7 +2996,7 @@
 
                     // светлая кромка по контуру: читается граница зоны на снимке;
                     // отдельный путь — только крупные части, без мелких пятен
-                    if (rimPts.length) {
+                    if (rimPts && rimPts.length) {
                         ctx.globalCompositeOperation = 'lighter';
                         ctx.strokeStyle = hexA(lightHex(l.style.color, 0.62), Math.min(0.5, Number(l.style.alpha) * 0.55));
                         ctx.lineWidth = Math.max(1.2, 2.2 * rx);
@@ -2870,6 +3014,16 @@
                     }
                 }
             });
+
+            // склеюємо шари в один композитний шар (звичайне змішування —
+            // асоціативне, картинка виходить піксель-в-піксель та сама)
+            if (flatOn && flat) {
+                const fc = flat.ctx;
+                fc.setTransform(1, 0, 0, 1, 0, 0);
+                fc.globalCompositeOperation = 'source-over';
+                fc.clearRect(0, 0, flat.canvas.width, flat.canvas.height);
+                order.forEach(it => { fc.drawImage(it.canvas, 0, 0); });
+            }
         }
 
         function schedule() {

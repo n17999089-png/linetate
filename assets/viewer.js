@@ -2609,6 +2609,24 @@
         if (mapReady) refresh();
     });
 
+    // телефон повертається до вкладки через години: свіжа публікація має
+    // прийти одразу, а не після перезавантаження сторінки
+    let lastCheck = Date.now();
+    function recheckRemote() {
+        const now = Date.now();
+        if (now - lastCheck < 15000) return;
+        lastCheck = now;
+        LT.store.loadRemoteData('data/map.json').then(n => {
+            if (!n || !mapReady) return;
+            if (!dateHasData(state.date)) state.date = clampDate(pickDate());
+            refresh();
+        });
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) recheckRemote();
+    });
+    window.addEventListener('focus', recheckRemote);
+
     map.once('style.load', markStyleReady);
     // style.load приходит раньше, чем догружаются глифы; подписи не должны держать карту закрытой
     const bootPoll = setInterval(() => {
