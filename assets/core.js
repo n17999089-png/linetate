@@ -2509,6 +2509,28 @@
         return box;
     }
 
+    // рамка однієї лінії (кільця) мультиполігона: частини нерідко живуть зовсім
+    // в різних кутах світу, і без цього відсікання одна смітинка розтягує градієнт
+    const partBoxes = new WeakMap();
+
+    function ringBox(ring) {
+        if (!ring || typeof ring !== 'object') return null;
+        const hit = partBoxes.get(ring);
+        if (hit !== undefined) return hit;
+        let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+        for (let i = 0; i < ring.length; i++) {
+            const c = ring[i];
+            if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
+            if (c[0] < w) w = c[0];
+            if (c[0] > e) e = c[0];
+            if (c[1] < s) s = c[1];
+            if (c[1] > n) n = c[1];
+        }
+        const box = isFinite(w) && isFinite(s) && isFinite(e) && isFinite(n) ? [w, s, e, n] : null;
+        partBoxes.set(ring, box);
+        return box;
+    }
+
     // рамка в экранных координатах канваса; null — если хоть один угол ушёл
     // за горизонт/за пределы проекции: такой объект не отсекаем, рисуем как есть
     function boxRect(map, box, rx, ry) {
@@ -2657,8 +2679,10 @@
 
                     const g = f.geometry || {};
                     const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
-                    polys.forEach(poly => (poly || []).forEach((ring, ri) => {
+                    polys.forEach(poly => (poly || []).forEach(ring => {
                         if (!ring || ring.length < 3) return;
+                        const rb = ringBox(ring);
+                        if (rb && !onScreen(map, rb, rx, ry, cv.width, cv.height, pad)) return;
                         for (let i = 0; i < ring.length; i++) {
                             const c = ring[i];
                             if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
@@ -2669,7 +2693,9 @@
                             if (x > maxX) maxX = x;
                             if (y < minY) minY = y;
                             if (y > maxY) maxY = y;
-                            if (ri === 0 && i === 0) ctx.moveTo(x, y);
+                            // кожна лінія — окремий підшлях: інакше канвас тягне
+                            // прямі сполучні лінії між далекими частинами фронту
+                            if (i === 0) ctx.moveTo(x, y);
                             else ctx.lineTo(x, y);
                             pts++;
                         }

@@ -6,6 +6,10 @@
     const { store, esc, toast, t } = LT;
     const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
+    // опубліковані дані (data/map.json) вантажимо одразу, паралельно зі стилем мапи:
+    // без цього редактор на чистому браузері бачить порожню карту
+    const remoteReady = store.loadRemoteData('../data/map.json');
+
     const state = {
         date: null,
         layers: {},
@@ -2138,6 +2142,11 @@
         map.on('mousemove', onMove);
         map.on('mouseup', onUp);
 
+        remoteReady.then(startUp);
+    }
+
+    // дата-залежна частина: вже відомо, які дати існують (локально + опубліковані)
+    function startUp() {
         const start = initialDate();
         loadDate(start < LT.MIN_DATE ? LT.MIN_DATE : start);
         uiUsage();
@@ -2150,6 +2159,7 @@
         blend = LT.blendEngine(map, () => state.layers, l => l.style.visible, l => shownFC.get(l.id) || displayFC(l));
         blend.sync();
         LT.startAnimations(map, () => state.layers, l => l.style.visible);
+        if (cal) cal.refresh();
     }
 
     map.once('style.load', boot);
