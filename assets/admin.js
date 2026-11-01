@@ -1436,11 +1436,18 @@
     /* ============================ ПУБЛІКАЦІЯ НА GITHUB ============================ */
     const GH_CFG = 'LINETATE:__gh';
     const GH_TOKEN = 'LINETATE:__ghtok';
-    const GH_DEFAULT = { repo: 'n17999089-png/Linestate-MAP', branch: 'main', path: 'data/map.json' };
+    const GH_DEFAULT = { repo: 'n17999089-png/linetate', branch: 'main', path: 'data/map.json' };
 
     function ghCfg() {
-        try { return Object.assign({}, GH_DEFAULT, JSON.parse(sessionStorage.getItem(GH_CFG) || localStorage.getItem(GH_CFG) || '{}')); }
-        catch (e) { return Object.assign({}, GH_DEFAULT); }
+        let cfg;
+        try { cfg = Object.assign({}, GH_DEFAULT, JSON.parse(sessionStorage.getItem(GH_CFG) || localStorage.getItem(GH_CFG) || '{}')); }
+        catch (e) { cfg = Object.assign({}, GH_DEFAULT); }
+        // репозиторій перейменовано — стара назва в пам'яті браузера більше не існує
+        if (/^n17999089-png\/linestate-map$/i.test(cfg.repo)) {
+            cfg.repo = GH_DEFAULT.repo;
+            ghSaveCfg(cfg);
+        }
+        return cfg;
     }
 
     function ghSaveCfg(cfg) {

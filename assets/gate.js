@@ -14,7 +14,7 @@
         '../assets/regions.js?v=23',
         '../assets/core.js?v=53',
         '../assets/map-tools.js?v=40',
-        '../assets/admin.js?v=34'
+        '../assets/admin.js?v=35'
     ];
 
     function rotr(x, n) {
