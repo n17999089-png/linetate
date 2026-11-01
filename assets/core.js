@@ -2562,6 +2562,11 @@
         let forced = true;
         let camKey = '';
         let lastPaint = 0;
+        // поки камера рухається, полотно не перемальовується, а зсувається
+        // css-трансформацією: контури приклеєні до мапи і не відстають
+        let moving = false;
+        let followOn = false;
+        let paintCam = null;
 
         function isMobile() {
             try { return (deviceState || detectDevice()).mobile; } catch (e) { return false; }
@@ -2578,13 +2583,58 @@
                 + '|' + cv.width + 'x' + cv.height;
         }
 
+        // трансформацію застосовуємо до самих канвасів, а не до host: transform
+        // чи will-change на host створюють stacking context і ізолюють
+        // mix-blend-mode полотен від мапи — заливки зникають
+        function applyFollow(t) {
+            items.forEach(it => { it.canvas.style.transform = t; });
+        }
+
+        function followReset() {
+            applyFollow('');
+            followOn = false;
+        }
+
+        // подібність камер: M1(p) = R(Δθ)·k·M0(p) + b, де k = 2^(z1-z0).
+        // b = project(центр відмальовки) - центр екрана; поворот навколо центру
+        function followCamera() {
+            if (!host || !paintCam || !moving) return;
+            let cv;
+            try { cv = map.getCanvas(); } catch (e) { return; }
+            const cssW = cv.clientWidth || cv.width || 1;
+            const cssH = cv.clientHeight || cv.height || 1;
+            if (cssW !== paintCam.w || cssH !== paintCam.h) {
+                moving = false; followReset(); forced = true; schedule(); return;
+            }
+            const k = Math.pow(2, map.getZoom() - paintCam.z);
+            const dth = ((map.getBearing ? map.getBearing() : 0) - paintCam.br) * Math.PI / 180;
+            let pc;
+            try { pc = map.project([paintCam.cx, paintCam.cy]); } catch (e) { return; }
+            if (!pc || !isFinite(pc.x) || !isFinite(pc.y) || Math.abs(pc.x) > 1e6 || Math.abs(pc.y) > 1e6) return;
+            applyFollow('translate(' + (pc.x - cssW / 2).toFixed(2) + 'px,' + (pc.y - cssH / 2).toFixed(2) + 'px)'
+                + ' rotate(' + (dth * 180 / Math.PI).toFixed(3) + 'deg)'
+                + ' scale(' + k.toFixed(4) + ')');
+            followOn = true;
+            // полотно вже не покриває екран (зум-аут оголяє край, пан вичерпує
+            // запас під світіння) — термінова свіжа відмальовка
+            const bx = pc.x - cssW / 2, by = pc.y - cssH / 2;
+            const uncovered = k > 1.35 || k < 0.88 || (bx * bx + by * by) > 12100;
+            if (uncovered && performance.now() - lastPaint > (isMobile() ? 340 : 190)) {
+                paint();
+                followReset();
+            }
+        }
+
         function ensureHost() {
             if (host) return host;
             host = document.createElement('div');
             host.id = 'lt-blend';
             document.body.appendChild(host);
-            map.on('resize', () => { syncCanvases(); schedule(); });
+            map.on('resize', () => { syncCanvases(); followReset(); schedule(); });
             map.on('render', schedule);
+            map.on('movestart', () => { moving = true; });
+            map.on('move', followCamera);
+            map.on('moveend', () => { moving = false; followReset(); forced = true; schedule(); });
             return host;
         }
 
@@ -2637,6 +2687,26 @@
             forced = true;
         }
 
+        // LOD: чим ширший огляд, тим грубіша геометрія — як у deepstatemap.
+        //tol у градусах, кроки фіксовані, щоб кеш не розростався з кожним зумом
+        const lodCache = new Map();
+        function lodTol(z) {
+            if (z >= 12) return 0;
+            if (z >= 10) return 0.0003;
+            if (z >= 8.5) return 0.0009;
+            if (z >= 7) return 0.002;
+            if (z >= 5.5) return 0.005;
+            return 0.012;
+        }
+        function lodRing(ring, tol) {
+            if (tol <= 0) return ring;
+            let m = lodCache.get(tol);
+            if (!m) { m = new WeakMap(); lodCache.set(tol, m); }
+            let hit = m.get(ring);
+            if (hit === undefined) { hit = dpSimplify(ring, tol); m.set(ring, hit); }
+            return hit;
+        }
+
         function paint() {
             if (!host) return;
             const key = cameraKey();
@@ -2648,6 +2718,13 @@
             const src = map.getCanvas();
             const cssW = src.clientWidth || src.width || 1;
             const cssH = src.clientHeight || src.height || 1;
+            let c;
+            try { c = map.getCenter(); } catch (e) { c = null; }
+            if (c) paintCam = {
+                z: map.getZoom(), cx: c.lng, cy: c.lat,
+                br: map.getBearing ? map.getBearing() : 0, w: cssW, h: cssH
+            };
+            const tol = lodTol(map.getZoom());
 
             items.forEach(it => {
                 const ctx = it.ctx;
@@ -2669,6 +2746,7 @@
                 ctx.fillStyle = hexA(l.style.color, l.style.alpha);
                 ctx.beginPath();
                 let pts = 0;
+                const rimPts = [];
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
                 feats.forEach(f => {
@@ -2682,9 +2760,24 @@
                     polys.forEach(poly => (poly || []).forEach(ring => {
                         if (!ring || ring.length < 3) return;
                         const rb = ringBox(ring);
-                        if (rb && !onScreen(map, rb, rx, ry, cv.width, cv.height, pad)) return;
-                        for (let i = 0; i < ring.length; i++) {
-                            const c = ring[i];
+                        let rim = rimPts;
+                        if (rb) {
+                            const rr = boxRect(map, rb, rx, ry);
+                            if (rr) {
+                                // частина поза екраном або мікроскопічна на цьому
+                                // огляді — не малюємо і в градієнт не рахуємо
+                                if (rr[2] < -pad || rr[0] > cv.width + pad || rr[3] < -pad || rr[1] > cv.height + pad) return;
+                                if (rr[2] - rr[0] < 2.4 && rr[3] - rr[1] < 2.4) return;
+                                // кромку світіння на дрібних частинах не малюємо
+                                if (rr[2] - rr[0] < 7 && rr[3] - rr[1] < 7) rim = null;
+                            }
+                        }
+                        const ring2 = lodRing(ring, tol);
+                        if (ring2.length < 3) return;
+                        const rpts = rim === null ? null : [];
+                        if (rpts) rimPts.push(rpts);
+                        for (let i = 0; i < ring2.length; i++) {
+                            const c = ring2[i];
                             if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
                             const p = map.project(c);
                             const x = p.x * rx;
@@ -2697,6 +2790,7 @@
                             // прямі сполучні лінії між далекими частинами фронту
                             if (i === 0) ctx.moveTo(x, y);
                             else ctx.lineTo(x, y);
+                            if (rpts) rpts.push(x, y);
                             pts++;
                         }
                         ctx.closePath();
@@ -2720,18 +2814,32 @@
                     }
                     try { ctx.fill('evenodd'); } catch (e) { ctx.fill(); }
 
-                    // светлая кромка по контуру: читается граница зоны на снимке
-                    ctx.globalCompositeOperation = 'lighter';
-                    ctx.strokeStyle = hexA(lightHex(l.style.color, 0.62), Math.min(0.5, Number(l.style.alpha) * 0.55));
-                    ctx.lineWidth = Math.max(1.2, 2.2 * rx);
-                    ctx.lineJoin = 'round';
-                    ctx.stroke();
-                    ctx.globalCompositeOperation = 'source-over';
+                    // светлая кромка по контуру: читается граница зоны на снимке;
+                    // отдельный путь — только крупные части, без мелких пятен
+                    if (rimPts.length) {
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.strokeStyle = hexA(lightHex(l.style.color, 0.62), Math.min(0.5, Number(l.style.alpha) * 0.55));
+                        ctx.lineWidth = Math.max(1.2, 2.2 * rx);
+                        ctx.lineJoin = 'round';
+                        ctx.beginPath();
+                        rimPts.forEach(r => {
+                            for (let i = 0; i < r.length; i += 2) {
+                                if (i === 0) ctx.moveTo(r[0], r[1]);
+                                else ctx.lineTo(r[i], r[i + 1]);
+                            }
+                            ctx.closePath();
+                        });
+                        ctx.stroke();
+                        ctx.globalCompositeOperation = 'source-over';
+                    }
                 }
             });
         }
 
         function schedule() {
+            // під час руху камери полотно веде трансформація — повна
+            // відмальовка лише на місці або при втраті покриття
+            if (moving && followOn && paintCam) return;
             if (queued) return;
             if (!forced && cameraKey() === camKey) return;
             queued = true;
