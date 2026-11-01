@@ -22,7 +22,123 @@
         .replace(/[.,]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const clone = o => JSON.parse(JSON.stringify(o));
-    const round6 = (k, v) => (typeof v === 'number' && !Number.isInteger(v)) ? Math.round(v * 1e6) / 1e6 : v;
+    // 1e-5° ≈ 1 м — за межами видимості на карті, але кожна координата коротша на символ
+    const round5 = (k, v) => (typeof v === 'number' && !Number.isInteger(v)) ? Math.round(v * 1e5) / 1e5 : v;
+
+    /* --------- компактна геометрія: Дуглас–Пекер, щоб дати не розпухали в квоті --------- */
+
+    function dpSimplify(ring, tol) {
+        const n = ring.length;
+        if (!n || n < 5) return ring;
+        const keep = new Uint8Array(n);
+        keep[0] = keep[n - 1] = 1;
+        const stack = [[0, n - 1]];
+        while (stack.length) {
+            const seg = stack.pop();
+            const a = seg[0], b = seg[1];
+            if (b - a < 2) continue;
+            const ax = ring[a][0], ay = ring[a][1];
+            const dx = ring[b][0] - ax, dy = ring[b][1] - ay;
+            const len2 = dx * dx + dy * dy;
+            let best = -1, bestD = -1;
+            for (let i = a + 1; i < b; i++) {
+                const px = ring[i][0] - ax, py = ring[i][1] - ay;
+                let d;
+                if (len2 < 1e-15) d = px * px + py * py;
+                else {
+                    const t = (px * dx + py * dy) / len2;
+                    const ex = px - t * dx, ey = py - t * dy;
+                    d = ex * ex + ey * ey;
+                }
+                if (d > bestD) { bestD = d; best = i; }
+            }
+            if (best > 0 && bestD > tol * tol) {
+                keep[best] = 1;
+                stack.push([a, best], [best, b]);
+            }
+        }
+        const out = [];
+        for (let i = 0; i < n; i++) if (keep[i]) out.push(ring[i]);
+        return out;
+    }
+
+    function simplifyGeom(geo, tol) {
+        if (!geo || !geo.type) return geo;
+        const simp = ring => (Array.isArray(ring) && ring.length > 4) ? dpSimplify(ring, tol) : ring;
+        if (geo.type === 'Polygon') {
+            const cs = (geo.coordinates || []).map(simp);
+            if (cs.some((r, i) => r !== geo.coordinates[i] && r && r.length < 4)) return geo;
+            return { type: 'Polygon', coordinates: cs };
+        }
+        if (geo.type === 'MultiPolygon') {
+            return {
+                type: 'MultiPolygon',
+                coordinates: (geo.coordinates || []).map(p => (p || []).map(simp))
+            };
+        }
+        if (geo.type === 'LineString') {
+            const r = simp(geo.coordinates || []);
+            return { type: 'LineString', coordinates: r };
+        }
+        if (geo.type === 'MultiLineString') {
+            return { type: 'MultiLineString', coordinates: (geo.coordinates || []).map(simp) };
+        }
+        return geo;
+    }
+
+    // tol у градусах: 1e-4 ≈ 11 м — непомітно на оперативній карті, економить мегабайти
+    function simplifyLayers(layers, tol) {
+        const out = {};
+        Object.keys(layers || {}).forEach(id => {
+            const l = layers[id];
+            if (!l || !l.data || !Array.isArray(l.data.features)) { out[id] = l; return; }
+            const features = l.data.features.map(f => {
+                const g = f && f.geometry;
+                if (!g) return f;
+                const next = { ...f, geometry: simplifyGeom(g, tol) };
+                const path = f && f.properties && f.properties.path;
+                if (Array.isArray(path) && path.length > 4) next.properties = { ...f.properties, path: dpSimplify(path, tol) };
+                return next;
+            });
+            const clean = Object.assign({}, l, { data: { type: 'FeatureCollection', features } });
+            // старі збережені документи могли тягнути кеш центру як звичайне поле — це подвоює вагу
+            ['_ltCenterRef', '_ltCenterLen', '_ltCenterVal', '_ltDfc'].forEach(k => delete clean[k]);
+            out[id] = clean;
+        });
+        return out;
+    }
+
+    function storageUsage() {
+        let bytes = 0, dates = 0;
+        mem.keys().forEach(k => {
+            const v = mem.get(k) || '';
+            bytes += v.length + k.length;
+            if (k.indexOf(PREFIX) === 0) dates++;
+        });
+        return { kb: Math.round(bytes / 1024), dates };
+    }
+
+    // при переповненні переписуємо всі збережені дати компактніше й пробуємо знову
+    function compactAll(skipDate) {
+        let freed = 0;
+        mem.keys().forEach(key => {
+            if (key.indexOf(PREFIX) !== 0) return;
+            if (skipDate && key === PREFIX + skipDate) return;
+            const raw = mem.get(key);
+            if (!raw) return;
+            try {
+                const doc = JSON.parse(raw);
+                if (!doc || !doc.layers) return;
+                const small = JSON.stringify({ date: doc.date, savedAt: doc.savedAt, layers: simplifyLayers(doc.layers, 2e-4) }, round5);
+                if (small.length < raw.length) {
+                    if (mem.set(key, small)) freed += raw.length - small.length;
+                }
+            } catch (e) { }
+        });
+        if (freed > 0) mem.set(VER_KEY, String(Date.now()));
+        return freed;
+    }
+
 
     /* ------------------------------ языки ------------------------------ */
 
@@ -86,6 +202,11 @@
             'admin.addZone': '+ ПОЛІГОН', 'admin.addArrow': '+ Стрілки',
             'admin.layersHint': 'Малювання продовжує область: нові штрихи об’єднуються з намальованим, старі не зникають. Гумка чистить лише вибраний шар. За замовчуванням малюється лише по суші; у налаштуваннях шару можна дозволити малювання по воді.',
             'admin.noLayers': 'НЕМАЄ ШАРІВ', 'admin.hardMark': 'ТВ.', 'admin.featArrow': 'стр.', 'admin.featZone': 'обл.', 'admin.emptyWord': 'порожньо',
+            'admin.merge': 'Об’єднати з шаром вище',
+            'admin.mergeNone': 'ВИЩЕ НЕМАЄ ШАРУ ДЛЯ ОБ’ЄДНАННЯ',
+            'admin.mergeKind': 'ОБ’ЄДНАТИ МОЖНА ЛИШЕ ЗОНИ З ЗОНАМИ АБО СТРІЛКИ ЗІ СТРІЛКАМИ',
+            'admin.mergeEmpty': 'У ЦЬОМУ ШАРІ НЕМАЄ ГЕОМЕТРІЇ',
+            'admin.merged': 'ШАРИ ОБ’ЄДНАНО → {name}',
             'admin.up': 'Вище', 'admin.down': 'Нижче', 'admin.visibility': 'Видимість', 'admin.delete': 'Видалити',
             'style.pick': 'ВИБЕРІТЬ ШАР У СПИСКУ', 'style.name': 'Позивний', 'style.fill': 'Заливка', 'style.stroke': 'Контур',
             'style.alpha': 'Прозорість', 'style.bw': 'Товщина', 'style.mask': 'Маски', 'style.none': 'НЕМАЄ',
@@ -134,6 +255,17 @@
             'file.copyNext': 'Копіювати на наст. день', 'file.deleteMap': 'Видалити карту за дату',
             'file.hint': 'GeoJSON (наприклад, межі області) завантажується окремим шаром, файл можна просто перетягнути на карту. Дані лежать у localStorage браузера.',
             'file.reset': 'Повне скидання даних', 'file.deleteAll': 'Видалити всі дати',
+            'file.optimize': 'Оптимізувати пам’ять браузера',
+            'file.optimized': 'ОПТИМІЗОВАНО · ЗВІЛЬНЕНО {kb} KB',
+            'file.optimizedNone': 'ПАМ’ЯТЬ ВЖЕ ОПТИМІЗОВАНА · {kb} KB · {dates} дат',
+            'file.usage': 'У пам’яті браузера: {kb} KB · {dates} дат',
+            'gh.title': 'Публікація на GitHub', 'gh.tokenPh': 'Токен (contents: write)',
+            'gh.publish': 'Опублікувати карту', 'gh.publishing': 'Публікація…',
+            'gh.hint': 'Токен живе лише до закриття вкладки — він не потрапляє у файл, сховище чи історію браузера.',
+            'gh.need': 'Вкажіть токен і репозиторій owner/name', 'gh.badRepo': 'Репозиторій у форматі owner/name',
+            'gh.ok': 'ОПУБЛІКОВАНО · {dates} дат · {kb} KB', 'gh.denied': 'ТОКЕН НЕ ПРИЙНЯТО — потрібне право contents: write',
+            'gh.forbidden': 'ДОСТУП ЗАБОРОНЕНИЙ — перевірте токен і права на репозиторій',
+            'gh.fail': 'НЕ ОПУБЛІКОВАНО · {code}', 'gh.empty': 'НЕМАЄ ДАНИХ ДЛЯ ПУБЛІКАЦІЇ',
             'dock.zone': 'ЗОНА', 'dock.arrow': 'СТРІЛКА', 'dock.erase': 'ЛАСТИК', 'dock.pan': 'ПАНОРАМА',
             'search.placeholder': 'Місто, село, район, область', 'search.go': 'Знайти', 'search.add': 'До шару',
             'search.notFound': 'НІЧОГО НЕ ЗНАЙДЕНО', 'search.unavailable': 'ПОШУК НЕДОСТУПНИЙ',
@@ -226,6 +358,11 @@
             'admin.addZone': '+ POLYGON', 'admin.addArrow': '+ Arrows',
             'admin.layersHint': 'Drawing extends the area: new strokes merge with what is already drawn and old ones stay. The eraser only clears the selected layer. By default drawing is land-only; a layer can be switched to draw over water.',
             'admin.noLayers': 'NO LAYERS', 'admin.hardMark': 'HARD', 'admin.featArrow': 'arr.', 'admin.featZone': 'areas', 'admin.emptyWord': 'empty',
+            'admin.merge': 'Merge with layer above',
+            'admin.mergeNone': 'NO LAYER ABOVE TO MERGE INTO',
+            'admin.mergeKind': 'ONLY ZONES MERGE WITH ZONES, ARROWS WITH ARROWS',
+            'admin.mergeEmpty': 'THIS LAYER HAS NO GEOMETRY',
+            'admin.merged': 'LAYERS MERGED → {name}',
             'admin.up': 'Up', 'admin.down': 'Down', 'admin.visibility': 'Visibility', 'admin.delete': 'Delete',
             'style.pick': 'SELECT A LAYER IN THE LIST', 'style.name': 'Callsign', 'style.fill': 'Fill', 'style.stroke': 'Outline',
             'style.alpha': 'Opacity', 'style.bw': 'Width', 'style.mask': 'Masks', 'style.none': 'NONE',
@@ -274,6 +411,17 @@
             'file.copyNext': 'Copy to next day', 'file.deleteMap': 'Delete map for date',
             'file.hint': 'GeoJSON (e.g. a region boundary) loads as a separate layer; you can also drop the file onto the map. Data lives in the browser localStorage.',
             'file.reset': 'Reset all data', 'file.deleteAll': 'Delete all dates',
+            'file.optimize': 'Optimise browser storage',
+            'file.optimized': 'OPTIMISED · FREED {kb} KB',
+            'file.optimizedNone': 'STORAGE ALREADY OPTIMISED · {kb} KB · {dates} dates',
+            'file.usage': 'In browser storage: {kb} KB · {dates} dates',
+            'gh.title': 'Publish to GitHub', 'gh.tokenPh': 'Token (contents: write)',
+            'gh.publish': 'Publish the map', 'gh.publishing': 'Publishing…',
+            'gh.hint': 'The token lives only until this tab closes — it never lands in a file, storage, or browser history.',
+            'gh.need': 'Need a token and a repository owner/name', 'gh.badRepo': 'Repository must be owner/name',
+            'gh.ok': 'PUBLISHED · {dates} dates · {kb} KB', 'gh.denied': 'TOKEN REJECTED — contents: write is required',
+            'gh.forbidden': 'ACCESS FORBIDDEN — check the token and repository rights',
+            'gh.fail': 'NOT PUBLISHED · {code}', 'gh.empty': 'NOTHING TO PUBLISH',
             'dock.zone': 'ZONE', 'dock.arrow': 'ARROW', 'dock.erase': 'ERASER', 'dock.pan': 'PAN',
             'search.placeholder': 'City, village, district, region', 'search.go': 'Search', 'search.add': 'To layer',
             'search.notFound': 'NOTHING FOUND', 'search.unavailable': 'SEARCH UNAVAILABLE',
@@ -408,6 +556,43 @@
     window.addEventListener('resize', () => { initDevice(); });
     window.addEventListener('orientationchange', () => { initDevice(); });
 
+    function docMobile() {
+        try { return (deviceState || detectDevice()).mobile; } catch (e) { return false; }
+    }
+
+    // спадна роздільність: якщо під час руху камера стабільно не встигає,
+    // крок за кроком знижуємо pixelRatio; назад не піднімаємо, щоб не гойдатись
+    function adaptResolution(map, start) {
+        const steps = [start, 1.5, 1.25, 1.0]
+            .filter((v, i, a) => v <= start + 0.01 && a.indexOf(v) === i);
+        let idx = 0;
+        let frames = [];
+        let moving = false;
+        let last = 0;
+        let lastChange = 0;
+        const begin = () => { moving = true; last = performance.now(); };
+        const end = () => { moving = false; };
+        map.on('movestart', begin);
+        map.on('zoomstart', begin);
+        map.on('moveend', end);
+        map.on('zoomend', end);
+        map.on('remove', end);
+        map.on('render', () => {
+            if (!moving) return;
+            const now = performance.now();
+            const gap = now - last;
+            last = now;
+            if (gap > 0 && gap < 500) frames.push(gap);
+            if (frames.length < 40) return;
+            const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
+            frames = [];
+            if (avg < 42 || now - lastChange < 6000 || idx >= steps.length - 1) return;
+            idx++;
+            lastChange = now;
+            try { map.setPixelRatio(steps[idx]); } catch (e) { }
+        });
+    }
+
     /* ------------------------------ даты ------------------------------ */
 
     function dateBounds() {
@@ -525,7 +710,7 @@
             if (ok) layer.style.labelPos = [Math.round(+pos[0] * 1e6) / 1e6, Math.round(+pos[1] * 1e6) / 1e6];
             else delete layer.style.labelPos;
             doc.savedAt = Date.now();
-            if (!mem.set(PREFIX + date, JSON.stringify(doc, round6))) return false;
+            if (!mem.set(PREFIX + date, JSON.stringify(doc, round5))) return false;
             mem.set(VER_KEY, String(Date.now()));
             return true;
         } catch (e) {
@@ -534,12 +719,42 @@
     }
 
     function save(date, layers) {
-        const payload = JSON.stringify({ date, savedAt: Date.now(), layers }, round6);
+        // геометрію зберігаємо спрощеною: намальовані від руки контури мають
+        // сотні надлишкових точок, які не видно на масштабі карти
+        const payload = JSON.stringify({ date, savedAt: Date.now(), layers: simplifyLayers(layers, 1e-4) }, round5);
         if (!mem.set(PREFIX + date, payload)) {
-            throw new Error(t('err.memFull'));
+            compactAll(date);
+            for (const tol of [2e-4, 5e-4]) {
+                const retry = JSON.stringify({ date, savedAt: Date.now(), layers: simplifyLayers(layers, tol) }, round5);
+                if (mem.set(PREFIX + date, retry)) {
+                    mem.set(VER_KEY, String(Date.now()));
+                    return retry.length;
+                }
+            }
+            const u = storageUsage();
+            throw new Error(t('err.memFull') + ' · ' + u.kb + ' KB · ' + u.dates);
         }
         mem.set(VER_KEY, String(Date.now()));
         return payload.length;
+    }
+
+    // примусова перепаковка всіх дат: звільняє місце після довгої роботи в редакторі
+    function optimizeStorage() {
+        const before = storageUsage();
+        let freed = compactAll(null);
+        mem.keys().forEach(key => {
+            if (key.indexOf(PREFIX) !== 0) return;
+            const raw = mem.get(key);
+            if (!raw) return;
+            try {
+                const doc = JSON.parse(raw);
+                if (!doc || !doc.layers) return;
+                const small = JSON.stringify({ date: doc.date, savedAt: doc.savedAt, layers: simplifyLayers(doc.layers, 3e-4) }, round5);
+                if (small.length < raw.length && mem.set(key, small)) freed += raw.length - small.length;
+            } catch (e) { }
+        });
+        const after = storageUsage();
+        return { before, after, freedKB: Math.round(freed / 1024) };
     }
 
     function remove(date) {
@@ -576,7 +791,7 @@
             if (!DATE_RE.test(date)) return;
             try {
                 const doc = JSON.parse(mem.get(key));
-                maps[date] = { savedAt: doc.savedAt || 0, layers: doc.layers || {} };
+                maps[date] = { savedAt: doc.savedAt || 0, layers: simplifyLayers(doc.layers || {}, 0) };
             } catch (e) { }
         });
         return { app: 'linetate', version: 1, exportedAt: new Date().toISOString(), maps };
@@ -592,7 +807,7 @@
             if (!DATE_RE.test(date)) return;
             const layers = maps[date] && maps[date].layers;
             if (!layers || typeof layers !== 'object') return;
-            mem.set(PREFIX + date, JSON.stringify({ date, savedAt: Date.now(), layers }, round6));
+            mem.set(PREFIX + date, JSON.stringify({ date, savedAt: Date.now(), layers: simplifyLayers(layers, 1e-4) }, round5));
             count++;
         });
         mem.set(VER_KEY, String(Date.now()));
@@ -842,15 +1057,20 @@
                 }
             },
             layers: [
+                { id: 'lt-bg', type: 'background', paint: { 'background-color': '#070a0e' } },
                 {
+                    // підкладку навмисно притлумлено: на яскравому супутнику кольорові зони
+                    // зливаються з полем, а на темній базі межі фронту читаються одразу
                     id: 'hybrid-sat', type: 'raster', source: 'sat',
                     paint: {
-                        'raster-saturation': -0.12,
-                        'raster-contrast': 0.05,
-                        'raster-brightness-max': 0.92
+                        'raster-saturation': -0.55,
+                        'raster-contrast': 0.16,
+                        'raster-brightness-max': 0.62,
+                        'raster-brightness-min': 0.12,
+                        'raster-opacity': 0.88
                     }
                 },
-                { id: 'hybrid-roads', type: 'raster', source: 'roads', paint: { 'raster-opacity': 0.62 } }
+                { id: 'hybrid-roads', type: 'raster', source: 'roads', paint: { 'raster-opacity': 0.42, 'raster-saturation': -0.4 } }
             ]
         }
     };
@@ -887,7 +1107,10 @@
             maxPitch: 0,
             maxBounds: MAP_BOUNDS,
             antialias: !dev.mobile,
-            preserveDrawingBuffer: true,
+            // на телефоне preserveDrawingBuffer — лишняя копия кадра каждый тик;
+            // снимок там снимается синхронно внутри события render (см. photo)
+            preserveDrawingBuffer: !dev.mobile,
+            refreshExpiredTiles: false,
             dragRotate: false,
             fadeDuration: dev.mobile ? 120 : 300
         }, options || {}));
@@ -936,11 +1159,16 @@
         map.on('moveend', queueClamp);
         map.on('remove', () => { if (camRaf) cancelAnimationFrame(camRaf); });
 
-        // на телефонах 3x DPR — це мільйони пікселів на кадр; 2x достатньо
+        // на телефонах 3x DPR — це мільйони пікселів на кадр; 2x достатньо,
+        // а на слабших пристроях ріжемо сильніше — камера рухається помітно рівніше
         if (dev.mobile) {
             try {
+                const mem = navigator.deviceMemory || 4;
+                const cores = navigator.hardwareConcurrency || 4;
+                const cap = (mem <= 3 || cores <= 4) ? 1.5 : 1.8;
                 const pr = map.getPixelRatio();
-                if (pr > 2) map.setPixelRatio(2);
+                if (pr > cap) map.setPixelRatio(cap);
+                adaptResolution(map, Math.min(cap, map.getPixelRatio()));
             } catch (e) { }
         }
 
@@ -1119,7 +1347,10 @@
 
         function syncCanvas() {
             const s = viewSize();
-            const dpr = placeDprOverride || window.devicePixelRatio || 1;
+            // шрифт на оверлее перерисовывается каждый кадр при панораме:
+            // на телефоне 3x DPR тут лишний, фото-режим всё равно задаёт свой DPR
+            const cap = docMobile() ? 1.6 : 2;
+            const dpr = placeDprOverride || Math.min(window.devicePixelRatio || 1, cap);
             const w = Math.max(2, Math.round(s.x)), h = Math.max(2, Math.round(s.y));
             if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
                 cv.width = Math.round(w * dpr);
@@ -1258,9 +1489,11 @@
                 }
 
                 // мягкое свечение широким штрихом: дешевле, чем shadowBlur на сотнях подписей
-                ctx.strokeStyle = it.cap ? 'rgba(255, 186, 74, .28)' : 'rgba(0, 0, 0, .3)';
-                ctx.lineWidth = (big ? 3.4 : 2.6) + 3.6;
-                ctx.strokeText(it.name, it.x, ty);
+                if (!docMobile()) {
+                    ctx.strokeStyle = it.cap ? 'rgba(255, 186, 74, .28)' : 'rgba(0, 0, 0, .3)';
+                    ctx.lineWidth = (big ? 3.4 : 2.6) + 3.6;
+                    ctx.strokeText(it.name, it.x, ty);
+                }
 
                 ctx.strokeStyle = 'rgba(0, 0, 0, .92)';
                 ctx.lineWidth = big ? 3.4 : 2.6;
@@ -1291,6 +1524,7 @@
         }
 
         let lastSig = '';
+        let lastPos = 0;
         function rebuild() {
             // не перестраиваем подписи, если вид и язык не изменились
             const size0 = viewSize();
@@ -1304,11 +1538,14 @@
             extraDots = [];
             const list = collect();
             const size = size0;
-            const limit = Math.max(PLACE_MIN_LIMIT, Math.min(PLACE_MAX_LIMIT, Math.round(size.x * size.y / 1000)));
+            const limit = docMobile()
+                ? Math.max(140, Math.min(300, Math.round(size.x * size.y / 1500)))
+                : Math.max(PLACE_MIN_LIMIT, Math.min(PLACE_MAX_LIMIT, Math.round(size.x * size.y / 1000)));
             const zoom = map.getZoom();
             const boxes = [];
+            const dotLimit = docMobile() ? 220 : PLACE_DOT_LIMIT;
             const addDot = (it, p) => {
-                if (extraDots.length >= PLACE_DOT_LIMIT) return;
+                if (extraDots.length >= dotLimit) return;
                 extraDots.push({ coord: it.coord, x: p.x, y: p.y, cap: it.cap });
             };
             list.forEach(it => {
@@ -1356,6 +1593,13 @@
 
         map.on('move', () => {
             if (raf) return;
+            if (docMobile()) {
+                const now = performance.now();
+                if (now - lastPos < 30) return;
+                lastPos = now;
+                raf = setTimeout(() => { raf = 0; reposition(); }, 30);
+                return;
+            }
             raf = requestAnimationFrame(() => { raf = 0; reposition(); });
         });
         map.on('moveend', () => scheduleBuild(40));
@@ -1721,10 +1965,13 @@
             ? [+p[0], +p[1]] : null;
     }
 
+    const layerCenterCache = new WeakMap();
+
     function layerCenter(l) {
         const feats = (l.data && l.data.features) || [];
         if (!feats.length) return null;
-        if (l._ltCenterRef === feats && l._ltCenterLen === feats.length) return l._ltCenterVal;
+        const memo = layerCenterCache.get(l);
+        if (memo && memo.ref === feats && memo.len === feats.length) return memo.val;
         let c = null;
         try {
             let u = feats[0];
@@ -1748,9 +1995,7 @@
                 c = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
             }
         } catch (e) { c = null; }
-        l._ltCenterRef = feats;
-        l._ltCenterLen = feats.length;
-        l._ltCenterVal = c;
+        layerCenterCache.set(l, { ref: feats, len: feats.length, val: c });
         return c;
     }
 
@@ -2034,6 +2279,11 @@
             paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.95 }
         });
         map.addLayer({
+            id: 'sh_' + l.id, type: 'line', source: srcId,
+            layout: { visibility: 'none' },
+            paint: { 'line-color': '#04060a', 'line-width': 14, 'line-blur': 9, 'line-opacity': 0.4, 'line-offset': 7 }
+        });
+        map.addLayer({
             id: 'f_' + l.id, type: 'fill', source: srcId,
             paint: { 'fill-color': s.color, 'fill-opacity': s.alpha, 'fill-outline-color': s.bcol }
         });
@@ -2041,6 +2291,11 @@
             id: 'p_' + l.id, type: 'fill', source: srcId,
             layout: { visibility: 'none' },
             paint: { 'fill-pattern': 'lt-empty', 'fill-opacity': s.alpha }
+        });
+        map.addLayer({
+            id: 'gw_' + l.id, type: 'line', source: srcId,
+            layout: { visibility: 'none' },
+            paint: { 'line-color': s.bcol, 'line-width': 26, 'line-blur': 20, 'line-opacity': 0.16 }
         });
         map.addLayer({
             id: 'g_' + l.id, type: 'line', source: srcId,
@@ -2062,11 +2317,16 @@
             id: 'l_' + l.id, type: 'line', source: srcId,
             paint: { 'line-color': s.bcol, 'line-width': s.bw }
         });
+        map.addLayer({
+            id: 'rh_' + l.id, type: 'line', source: srcId,
+            layout: { visibility: 'none' },
+            paint: { 'line-color': '#ffffff', 'line-width': 1.4, 'line-opacity': 0.5, 'line-offset': -1.2 }
+        });
     }
 
     function removeLayerObjects(map, id) {
         if (map._ltObjects) map._ltObjects.drop(id);
-        ['l_', 'xh_', 'ig_', 'g_', 'p_', 'f_', 'xs_', 'xb_'].forEach(p => {
+        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'f_', 'sh_', 'xs_', 'xb_'].forEach(p => {
             if (map.getLayer(p + id)) map.removeLayer(p + id);
         });
         dropLayerLabel(map, id);
@@ -2095,6 +2355,10 @@
         map.setLayoutProperty('l_' + l.id, 'visibility', vis);
         map.setLayoutProperty('g_' + l.id, 'visibility', glow ? vis : 'none');
         map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 ? vis : 'none');
+        const zone = l.kind === 'zone';
+        map.setLayoutProperty('sh_' + l.id, 'visibility', zone ? vis : 'none');
+        map.setLayoutProperty('gw_' + l.id, 'visibility', glow ? vis : 'none');
+        map.setLayoutProperty('rh_' + l.id, 'visibility', zone ? vis : 'none');
 
         map.setPaintProperty('f_' + l.id, 'fill-color', s.color);
         map.setPaintProperty('f_' + l.id, 'fill-opacity', s.alpha);
@@ -2125,6 +2389,25 @@
         // отрицательный сдвиг уходит внутрь контура при обходе CCW (см. rewindFC)
         map.setPaintProperty('ig_' + l.id, 'line-offset', -Math.max(2, igW * 0.34));
 
+        // тень снаружи контура — зона получает «вес» над подложкой
+        map.setPaintProperty('sh_' + l.id, 'line-color', '#04060a');
+        map.setPaintProperty('sh_' + l.id, 'line-width', Math.max(12, s.bw * 3.4));
+        map.setPaintProperty('sh_' + l.id, 'line-blur', Math.max(7, s.bw * 2.6));
+        map.setPaintProperty('sh_' + l.id, 'line-opacity', Math.min(0.5, 0.22 + s.alpha * 0.3));
+        map.setPaintProperty('sh_' + l.id, 'line-offset', Math.max(3, s.bw * 1.7));
+
+        // широкое гало под узким свечением: глубина свечения в два слоя
+        map.setPaintProperty('gw_' + l.id, 'line-color', s.bcol);
+        map.setPaintProperty('gw_' + l.id, 'line-width', Math.max(14, s.bw * 9) * (0.6 + gAmt));
+        map.setPaintProperty('gw_' + l.id, 'line-blur', Math.max(10, s.bw * 7) * (0.6 + gAmt));
+        map.setPaintProperty('gw_' + l.id, 'line-opacity', Math.min(0.3, 0.2 * gAmt + s.alpha * 0.06));
+
+        // светлая кромка изнутри: резкий блик по границе зоны
+        map.setPaintProperty('rh_' + l.id, 'line-color', lightHex(s.bcol, 0.6));
+        map.setPaintProperty('rh_' + l.id, 'line-width', Math.max(1, s.bw * 0.7));
+        map.setPaintProperty('rh_' + l.id, 'line-opacity', Math.min(0.75, 0.28 + s.alpha * 0.45));
+        map.setPaintProperty('rh_' + l.id, 'line-offset', -Math.max(1.1, s.bw * 0.55));
+
         if (arrow3d) {
             map.setPaintProperty('xb_' + l.id, 'fill-opacity', Math.min(0.5, 0.16 + s.alpha * 0.35));
             map.setPaintProperty('xs_' + l.id, 'fill-opacity', Math.min(1, 0.55 + s.alpha * 0.4));
@@ -2146,7 +2429,7 @@
         Object.values(layers)
             .sort((a, b) => a.z - b.z)
             .forEach(l => {
-                ['xb_', 'xs_', 'f_', 'p_', 'ig_', 'g_', 'xh_', 'l_'].forEach(p => {
+                ['xb_', 'xs_', 'sh_', 'f_', 'p_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
                     if (map.getLayer(p + l.id)) map.moveLayer(p + l.id);
                 });
             });
@@ -2172,10 +2455,106 @@
         return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
     }
 
+    function parseHex(hex) {
+        const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || ''));
+        if (!m) return null;
+        let h = m[1];
+        if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+        const n = parseInt(h, 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+
+    // светлый оттенок цвета — для кромки и блика контура
+    function lightHex(hex, amt) {
+        const c = parseHex(hex);
+        if (!c) return '#ffffff';
+        const k = Math.max(0, Math.min(1, Number(amt) || 0));
+        const h = v => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0');
+        return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+    }
+
+    // средний цвет — средний стоп трёхстопового градиента
+    function midHex(a, b) {
+        const ca = parseHex(a), cb = parseHex(b);
+        if (!ca || !cb) return '#0a1622';
+        const h = v => Math.round((ca[v] + cb[v]) / 2).toString(16).padStart(2, '0');
+        return '#' + h(0) + h(1) + h(2);
+    }
+
+    // гео-бокс фичи считаем один раз и держим в WeakMap: в JSON он не попадает,
+    // а каждая перерисовка экономит проектирование тысяч точек
+    const geoBoxes = new WeakMap();
+
+    function featBox(f) {
+        if (!f || typeof f !== 'object') return null;
+        const hit = geoBoxes.get(f);
+        if (hit !== undefined) return hit;
+        let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+        const eat = c => {
+            if (!c || !isFinite(c[0]) || !isFinite(c[1])) return;
+            if (c[0] < w) w = c[0];
+            if (c[0] > e) e = c[0];
+            if (c[1] < s) s = c[1];
+            if (c[1] > n) n = c[1];
+        };
+        const g = f.geometry || {};
+        const t = g.type;
+        if (t === 'Polygon') (g.coordinates || []).forEach(r => (r || []).forEach(eat));
+        else if (t === 'MultiPolygon') (g.coordinates || []).forEach(p => (p || []).forEach(r => (r || []).forEach(eat)));
+        else if (t === 'LineString') (g.coordinates || []).forEach(eat);
+        else if (t === 'MultiLineString') (g.coordinates || []).forEach(l => (l || []).forEach(eat));
+        else if (t === 'Point') eat(g.coordinates);
+        const box = isFinite(w) && isFinite(s) && isFinite(e) && isFinite(n) ? [w, s, e, n] : null;
+        geoBoxes.set(f, box);
+        return box;
+    }
+
+    // рамка в экранных координатах канваса; null — если хоть один угол ушёл
+    // за горизонт/за пределы проекции: такой объект не отсекаем, рисуем как есть
+    function boxRect(map, box, rx, ry) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        const corners = [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]];
+        for (let i = 0; i < 4; i++) {
+            let p;
+            try { p = map.project(corners[i]); } catch (e) { return null; }
+            if (!isFinite(p.x) || !isFinite(p.y) || Math.abs(p.x) > 1e6 || Math.abs(p.y) > 1e6) return null;
+            const x = p.x * rx, y = p.y * ry;
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+        }
+        return [x0, y0, x1, y1];
+    }
+
+    function onScreen(map, box, rx, ry, w, h, pad) {
+        const r = boxRect(map, box, rx, ry);
+        if (!r) return true;
+        return !(r[2] < -pad || r[0] > w + pad || r[3] < -pad || r[1] > h + pad);
+    }
+
     function blendEngine(map, getLayers, isVisible, displayFC) {
         let host = null;
         const items = new Map();
         let queued = false;
+        let forced = true;
+        let camKey = '';
+        let lastPaint = 0;
+
+        function isMobile() {
+            try { return (deviceState || detectDevice()).mobile; } catch (e) { return false; }
+        }
+
+        // на телефоне заливки перерисовываем реже и в половинном разрешении:
+        // mix-blend по всему экрану каждый кадр — главный источник просадок
+        function cameraKey() {
+            let c, cv;
+            try { c = map.getCenter(); cv = map.getCanvas(); } catch (e) { return ''; }
+            return c.lng.toFixed(5) + '|' + c.lat.toFixed(5) + '|' + map.getZoom().toFixed(4)
+                + '|' + (map.getBearing ? map.getBearing().toFixed(2) : '0')
+                + '|' + (map.getPitch ? map.getPitch().toFixed(2) : '0')
+                + '|' + cv.width + 'x' + cv.height;
+        }
 
         function ensureHost() {
             if (host) return host;
@@ -2199,10 +2578,16 @@
                 .sort((a, b) => a.z - b.z);
         }
 
-        function syncCanvases() {
+        function syncCanvases(ratioOverride) {
             ensureHost();
             const src = map.getCanvas();
             const alive = new Set();
+            const cssW = src.clientWidth || src.width;
+            const cssH = src.clientHeight || src.height;
+            const dpr = cssW ? src.width / cssW : 1;
+            const cap = ratioOverride ? ratioOverride : (isMobile() ? 1.2 : Math.min(dpr, 1.75));
+            const w = Math.max(1, Math.round(cssW * cap));
+            const h = Math.max(1, Math.round(cssH * cap));
 
             activeLayers().forEach(l => {
                 alive.add(l.id);
@@ -2215,9 +2600,9 @@
                 }
                 it.layer = l;
                 it.canvas.style.mixBlendMode = l.style.blend && l.style.blend !== 'normal' ? l.style.blend : 'normal';
-                if (it.canvas.width !== src.width || it.canvas.height !== src.height) {
-                    it.canvas.width = src.width;
-                    it.canvas.height = src.height;
+                if (it.canvas.width !== w || it.canvas.height !== h) {
+                    it.canvas.width = w;
+                    it.canvas.height = h;
                 }
                 host.appendChild(it.canvas);
             });
@@ -2227,12 +2612,20 @@
                 it.canvas.remove();
                 items.delete(id);
             });
+            forced = true;
         }
 
         function paint() {
+            if (!host) return;
+            const key = cameraKey();
+            if (!forced && key === camKey) return;
+            camKey = key;
+            forced = false;
+            lastPaint = performance.now();
+
             const src = map.getCanvas();
-            const rect = src.getBoundingClientRect ? src.getBoundingClientRect() : { width: src.clientWidth || 1 };
-            const ratio = rect.width ? src.width / rect.width : 1;
+            const cssW = src.clientWidth || src.width || 1;
+            const cssH = src.clientHeight || src.height || 1;
 
             items.forEach(it => {
                 const ctx = it.ctx;
@@ -2245,6 +2638,10 @@
                 const fc = displayFC ? displayFC(l) : l.data;
                 const feats = (fc && fc.features) || [];
                 if (!feats.length) return;
+                const rx = cv.width / cssW;
+                const ry = cv.height / cssH;
+                // запас на свечение и размытые контуры вокруг видимой области
+                const pad = 90;
 
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.fillStyle = hexA(l.style.color, l.style.alpha);
@@ -2253,6 +2650,11 @@
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
                 feats.forEach(f => {
+                    // умная прорисовка: фича целиком вне экрана не проектируется
+                    // и не попадает в путь — на фронте это половина слоёв
+                    const bb = featBox(f);
+                    if (bb && !onScreen(map, bb, rx, ry, cv.width, cv.height, pad)) return;
+
                     const g = f.geometry || {};
                     const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
                     polys.forEach(poly => (poly || []).forEach((ring, ri) => {
@@ -2261,8 +2663,8 @@
                             const c = ring[i];
                             if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
                             const p = map.project(c);
-                            const x = p.x * ratio;
-                            const y = p.y * ratio;
+                            const x = p.x * rx;
+                            const y = p.y * ry;
                             if (x < minX) minX = x;
                             if (x > maxX) maxX = x;
                             if (y < minY) minY = y;
@@ -2282,26 +2684,42 @@
                         const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
                         const half = Math.abs((maxX - minX) * dx) / 2 + Math.abs((maxY - minY) * dy) / 2;
                         if (half > 0.5) {
-                            const g = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
-                            g.addColorStop(0, hexA(l.style.color, l.style.alpha));
-                            g.addColorStop(1, hexA(l.style.gcol || '#04101c', l.style.alpha));
-                            ctx.fillStyle = g;
+                            const g2 = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
+                            const a = Number(l.style.alpha);
+                            g2.addColorStop(0, hexA(l.style.color, Math.min(1, a * 1.12)));
+                            g2.addColorStop(0.52, hexA(midHex(l.style.color, l.style.gcol || '#04101c'), a * 0.92));
+                            g2.addColorStop(1, hexA(l.style.gcol || '#04101c', Math.max(0, a * 0.86)));
+                            ctx.fillStyle = g2;
                         }
                     }
                     try { ctx.fill('evenodd'); } catch (e) { ctx.fill(); }
+
+                    // светлая кромка по контуру: читается граница зоны на снимке
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.strokeStyle = hexA(lightHex(l.style.color, 0.62), Math.min(0.5, Number(l.style.alpha) * 0.55));
+                    ctx.lineWidth = Math.max(1.2, 2.2 * rx);
+                    ctx.lineJoin = 'round';
+                    ctx.stroke();
+                    ctx.globalCompositeOperation = 'source-over';
                 }
             });
         }
 
         function schedule() {
             if (queued) return;
+            if (!forced && cameraKey() === camKey) return;
             queued = true;
-            requestAnimationFrame(() => { queued = false; paint(); });
+            if (isMobile()) {
+                const wait = Math.max(0, 34 - (performance.now() - lastPaint));
+                setTimeout(() => { queued = false; paint(); }, wait);
+            } else {
+                requestAnimationFrame(() => { queued = false; paint(); });
+            }
         }
 
         return {
-            sync() { syncCanvases(); paint(); },
-            draw: schedule
+            sync(ratio) { syncCanvases(ratio); forced = true; paint(); },
+            draw() { forced = true; schedule(); }
         };
     }
 
@@ -2380,11 +2798,32 @@
 
     function startAnimations(map, getLayers, isVisible) {
         let phase = 0;
-        let last = 0;
+        let lastFlow = 0;
         let tick = 0;
         let flowOn = false;
+        let animOn = true;
+        let last = 0;
+
+        // раньше rAF крутился всегда и каждый кадр перекрашивал слои, даже когда
+        // анимаций нет — карта рендерилась бесконечно и грела телефон.
+        const probe = () => {
+            try {
+                animOn = Object.values(getLayers() || {}).some(l => l && l.style.anim && l.style.anim !== 'none' && isVisible(l));
+            } catch (e) { animOn = false; }
+        };
+        probe();
+        const probeTimer = setInterval(probe, 700);
+        const onVis = () => probe();
+        document.addEventListener('visibilitychange', onVis);
+        const gap = () => (docMobile() ? 40 : 20);
 
         const step = t => {
+            if (document.hidden || !animOn) {
+                setTimeout(() => requestAnimationFrame(step), 600);
+                return;
+            }
+            if (t - last < gap()) { requestAnimationFrame(step); return; }
+            last = t;
             try {
                 const p = (Math.sin(t / 420) + 1) / 2;
                 const layers = getLayers();
@@ -2393,8 +2832,8 @@
                     if (l.style.anim === 'pulse' && isVisible(l)) pulseLayer(map, l, 0.45 + 0.55 * p);
                 });
 
-                if (t - last > 110) {
-                    last = t;
+                if (t - lastFlow > (docMobile() ? 240 : 110)) {
+                    lastFlow = t;
                     phase = (phase + 0.018) % 1;
                     tick++;
 
@@ -2420,6 +2859,11 @@
             requestAnimationFrame(step);
         };
         requestAnimationFrame(step);
+
+        map.once('remove', () => {
+            clearInterval(probeTimer);
+            document.removeEventListener('visibilitychange', onVis);
+        });
     }
 
     /* ------------------------------ GeoJSON ------------------------------ */
@@ -2531,13 +2975,13 @@
         isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger,
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,
-        store: { listDates, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll },
+        store: { listDates, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, optimizeStorage, storageUsage },
         Calendar, BASE, createMap, baseSwitcher,
         flagSVG: key => FLAG_SVG[key], pixelLabels, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,
         syncLayerLabel, setLayerLabelDrag,
-        blendEngine,
+        blendEngine, featBox, onScreen,
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,
         loadFX, saveFX, applyFX, initFX,

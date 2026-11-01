@@ -13,7 +13,7 @@
 <script src="../assets/vendor/turf.min.js"></script>
 <script src="../assets/vendor/topojson-client.min.js"></script>
 <link rel="stylesheet" href="../assets/theme.css?v=28">
-<link rel="stylesheet" href="../assets/admin.css?v=29">
+<link rel="stylesheet" href="../assets/admin.css?v=31">
 </head>
 <body>
 
@@ -227,6 +227,22 @@
             <button class="btn wide danger" id="btn-del-imported" data-i18n="file.delImported">Видалити імпортовані шари</button>
             <button class="btn wide" id="btn-export-json" data-i18n="file.exportAll">Экспорт всех дат</button>
             <button class="btn wide" id="btn-export-site" data-i18n="file.exportSite">Экспорт для сайта (data/map.json)</button>
+            <button class="btn wide" id="btn-optimize" data-i18n="file.optimize">Оптимізувати пам'ять браузера</button>
+            <div class="hint" id="usage-line"></div>
+
+            <div class="gh-box" id="gh-box">
+                <div class="gh-title" data-i18n="gh.title">Публикация на GitHub</div>
+                <input type="password" id="gh-token" class="input gh-in" autocomplete="off" spellcheck="false"
+                       data-i18n-ph="gh.tokenPh" placeholder="Токен (contents: write)">
+                <div class="gh-row">
+                    <input type="text" id="gh-repo" class="input gh-in" autocomplete="off" spellcheck="false" placeholder="owner/repo">
+                    <input type="text" id="gh-branch" class="input gh-in" autocomplete="off" spellcheck="false" placeholder="main">
+                </div>
+                <input type="text" id="gh-path" class="input gh-in" autocomplete="off" spellcheck="false" placeholder="data/map.json">
+                <button class="btn wide primary" id="btn-gh-publish" data-i18n="gh.publish">Опубликовать карту</button>
+                <div class="hint" id="gh-hint" data-i18n="gh.hint">Токен живёт только до закрытия вкладки.</div>
+            </div>
+
             <button class="btn wide" id="btn-import-json" data-i18n="file.importFile">Импорт файла</button>
             <input type="file" id="import-file" accept=".json,application/json" hidden>
             <button class="btn wide" id="btn-export-geo" data-i18n="file.exportGeo">Экспорт GeoJSON</button>

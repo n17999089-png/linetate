@@ -832,3 +832,8 @@
     top: 68px; left: 8px; right: 8px; width: auto;
     max-height: min(62vh, 480px);
 }
+/* меньше 16px iOS зумит страницу при фокусе и ломает поиск */
+.dev-mobile #ps-q { font-size: 16px; }
+.dev-mobile #ps-results .sr { padding: 10px 11px; }
+.dev-mobile #ps-results .sr b { font-size: 15px; }
+.dev-mobile #ps-results .sr small { font-size: 11px; }

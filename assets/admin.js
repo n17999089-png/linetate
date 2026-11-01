@@ -273,7 +273,7 @@
         if (!src) return;
         const fc = displayFC(l);
         shownFC.set(l.id, fc);
-        src.setData(l.style.iglow > 0 ? LT.rewindFC(fc) : fc);
+        src.setData(l.kind === 'zone' ? LT.rewindFC(fc) : fc);
         LT.applyLayerPaint(map, l, l.style.visible);
         LT.syncLayerDecor(map, l, fc, l.style.visible);
         if (blend) blend.draw();
@@ -664,6 +664,7 @@
                 store.save(state.date, state.layers);
                 savePending = false;
                 setStatus('saved');
+                uiUsage();
                 if (cal) cal.refresh();
             } catch (e) {
                 savePending = false;
@@ -723,6 +724,7 @@
         uiStyle();
         uiDate();
         setStatus(has ? 'saved' : 'newDate');
+        uiUsage();
         if (cal) cal.refresh();
     }
 
@@ -909,6 +911,7 @@
                 <span class="meta">${meta}${fx}${hard}${bm}${gr}${geo}</span>
                 <button class="act" data-act="up" title="${t('admin.up')}">▲</button>
                 <button class="act" data-act="dn" title="${t('admin.down')}">▼</button>
+                <button class="act" data-act="mrg" title="${t('admin.merge')}">⇧</button>
                 <button class="act" data-act="vis" title="${t('admin.visibility')}">${l.style.visible ? '◉' : '○'}</button>
                 <button class="act del" data-act="del" title="${t('admin.delete')}">✕</button>
             </div>`;
@@ -932,6 +935,40 @@
         restack();
         uiLayers();
         autoSave();
+    }
+
+    // слияние слоя с соседним сверху: геометрия и маски переезжают, стиль — у цели
+    function mergeLayerUp(id) {
+        const src = state.layers[id];
+        if (!src) return;
+        if (!src.data.features.length) { toast(t('admin.mergeEmpty'), 'err'); return; }
+        if (src.kind !== 'zone' && src.kind !== 'arrow') { toast(t('admin.mergeKind'), 'err'); return; }
+
+        const above = Object.values(state.layers)
+            .filter(o => o.kind === src.kind && o.id !== src.id && o.z > src.z)
+            .sort((a, b) => a.z - b.z)[0];
+        if (!above) { toast(t('admin.mergeNone'), 'err'); return; }
+
+        pushUndo();
+        above.data.features = above.data.features.concat(src.data.features);
+
+        const masks = maskIds(above).concat(maskIds(src)).filter(x => x !== above.id);
+        above.style.maskTargets = Array.from(new Set(masks));
+        above.style.maskTarget = '';
+        if (src.style.hard) above.style.hard = true;
+
+        delete state.layers[src.id];
+        dropMaskRefs([src.id]);
+        if (state.activeId === src.id) state.activeId = above.id;
+
+        if (above.kind === 'arrow') rebuildArrows(above);
+        syncMapLayers();
+        applyLayer(above);
+        restack();
+        uiLayers();
+        uiStyle();
+        autoSave();
+        toast(t('admin.merged', { name: above.name }));
     }
 
     function uiStyle() {
@@ -1380,6 +1417,140 @@
         toast(t('toast.exported'));
     }
 
+    function uiUsage() {
+        const el = $('usage-line');
+        if (!el || !store.storageUsage) return;
+        const u = store.storageUsage();
+        el.textContent = t('file.usage', { kb: u.kb, dates: u.dates });
+    }
+
+    function optimizeStorage() {
+        flushSave();
+        const r = store.optimizeStorage();
+        toast(r.freedKB > 8 ? t('file.optimized', { kb: r.freedKB })
+            : t('file.optimizedNone', { kb: r.after.kb, dates: r.after.dates }));
+        uiUsage();
+        if (cal) cal.refresh();
+    }
+
+    /* ============================ ПУБЛІКАЦІЯ НА GITHUB ============================ */
+    const GH_CFG = 'LINETATE:__gh';
+    const GH_TOKEN = 'LINETATE:__ghtok';
+    const GH_DEFAULT = { repo: 'n17999089-png/Linestate-MAP', branch: 'main', path: 'data/map.json' };
+
+    function ghCfg() {
+        try { return Object.assign({}, GH_DEFAULT, JSON.parse(sessionStorage.getItem(GH_CFG) || localStorage.getItem(GH_CFG) || '{}')); }
+        catch (e) { return Object.assign({}, GH_DEFAULT); }
+    }
+
+    function ghSaveCfg(cfg) {
+        try { localStorage.setItem(GH_CFG, JSON.stringify(cfg)); } catch (e) { }
+    }
+
+    function ghToken(value) {
+        if (value !== undefined) {
+            try {
+                if (value) sessionStorage.setItem(GH_TOKEN, value); else sessionStorage.removeItem(GH_TOKEN);
+            } catch (e) { }
+            return;
+        }
+        try { return sessionStorage.getItem(GH_TOKEN) || ''; } catch (e) { return ''; }
+    }
+
+    function uiGh() {
+        const cfg = ghCfg();
+        $('gh-repo').value = cfg.repo || '';
+        $('gh-branch').value = cfg.branch || '';
+        $('gh-path').value = cfg.path || '';
+        $('gh-token').value = ghToken();
+    }
+
+    // base64 для кирилиці/емодзі у імені коміту
+    function b64utf8(str) {
+        const bytes = new TextEncoder().encode(str);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        }
+        return btoa(bin);
+    }
+
+    let publishing = false;
+
+    async function ghPublish() {
+        if (publishing) return;
+        const token = ($('gh-token').value || '').trim();
+        const cfg = {
+            repo: ($('gh-repo').value || '').trim(),
+            branch: ($('gh-branch').value || '').trim() || GH_DEFAULT.branch,
+            path: ($('gh-path').value || '').trim() || GH_DEFAULT.path
+        };
+        if (!token || !cfg.repo) { toast(t('gh.need'), 'err'); return; }
+        if (!/^[\w.-]+\/[\w.-]+$/.test(cfg.repo)) { toast(t('gh.badRepo'), 'err'); return; }
+        ghSaveCfg(cfg);
+        ghToken(token);
+
+        flushSave();
+        const data = store.exportAll();
+        const dates = Object.keys(data.maps || {});
+        if (!dates.length) { toast(t('gh.empty'), 'err'); return; }
+        const json = JSON.stringify(data);
+
+        const btn = $('btn-gh-publish');
+        publishing = true;
+        btn.disabled = true;
+        const label = btn.textContent;
+        btn.textContent = t('gh.publishing');
+
+        const api = 'https://api.github.com/repos/' + cfg.repo + '/contents/' +
+            cfg.path.split('/').map(encodeURIComponent).join('/');
+        const headers = {
+            Authorization: 'Bearer ' + token,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+        };
+        try {
+            let sha = null;
+            const get = await fetch(api + '?ref=' + encodeURIComponent(cfg.branch), { headers });
+            if (get.status === 404) sha = null;
+            else {
+                const meta = await get.json();
+                if (!get.ok) throw new Error(t('gh.fail', { code: get.status }) + ' · ' + (meta.message || ''));
+                sha = meta.sha;
+            }
+            const body = {
+                message: 'linestate: оновити карту (' + dates.length + ' дат)',
+                content: b64utf8(json),
+                branch: cfg.branch
+            };
+            if (sha) body.sha = sha;
+            const put = await fetch(api, {
+                method: 'PUT',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+                body: JSON.stringify(body)
+            });
+            if (put.status === 401 || put.status === 403) {
+                ghToken('');
+                $('gh-token').value = '';
+                throw new Error(t(put.status === 401 ? 'gh.denied' : 'gh.forbidden'));
+            }
+            if (!put.ok) {
+                const err = await put.json().catch(() => ({}));
+                throw new Error(t('gh.fail', { code: put.status }) + ' · ' + (err.message || ''));
+            }
+            const res = await put.json();
+            if (res.commit && res.commit.html_url) window.open(res.commit.html_url, '_blank', 'noopener');
+            toast(t('gh.ok', { dates: dates.length, kb: Math.round(json.length / 1024) }));
+        } catch (e) {
+            toast(String(e && e.message || e).slice(0, 160), 'err');
+        } finally {
+            publishing = false;
+            btn.disabled = false;
+            btn.textContent = label;
+        }
+    }
+
+
     function importJson(file) {
         const reader = new FileReader();
         reader.onload = () => {
@@ -1504,6 +1675,8 @@
                     moveLayerZ(l, 1);
                 } else if (act.dataset.act === 'dn') {
                     moveLayerZ(l, -1);
+                } else if (act.dataset.act === 'mrg') {
+                    mergeLayerUp(id);
                 } else if (act.dataset.act === 'del') {
                     if (!confirm(t('confirm.deleteLayer', { name: l.name }))) return;
                     pushUndo();
@@ -1794,6 +1967,17 @@
 
         $('btn-export-json').addEventListener('click', exportJson);
         $('btn-export-site').addEventListener('click', exportSite);
+        const optBtn = $('btn-optimize');
+        if (optBtn) optBtn.addEventListener('click', optimizeStorage);
+        $('btn-gh-publish').addEventListener('click', ghPublish);
+        $('gh-token').addEventListener('input', e => ghToken(e.target.value.trim()));
+        ['gh-repo', 'gh-branch', 'gh-path'].forEach(id => $(id).addEventListener('change', () => {
+            ghSaveCfg({
+                repo: ($('gh-repo').value || '').trim(),
+                branch: ($('gh-branch').value || '').trim() || GH_DEFAULT.branch,
+                path: ($('gh-path').value || '').trim() || GH_DEFAULT.path
+            });
+        }));
         $('btn-export-geo').addEventListener('click', exportGeo);
         $('btn-import-json').addEventListener('click', () => $('import-file').click());
         $('import-file').addEventListener('change', e => {
@@ -1898,6 +2082,7 @@
 
     function syncLangUI() {
         $('lang-btn').innerHTML = LT.flagSVG(LT.lang()).replace('<svg ', '<svg width="22" height="15" ') + '<span>' + LT.lang().toUpperCase() + '</span>';
+        uiUsage();
         if (!mapReady) return;
         LT.applyMapLang(map);
         LT.ensurePlaceLabels(map, state.base);
@@ -1931,6 +2116,8 @@
         searchDashLoop();
 
         bindUI();
+        uiGh();
+        uiUsage();
         cal = LT.Calendar({
             el: $('cal'),
             trigger: $('date-trigger'),
@@ -1946,6 +2133,7 @@
 
         const start = initialDate();
         loadDate(start < LT.MIN_DATE ? LT.MIN_DATE : start);
+        uiUsage();
         setMode('draw');
         $('play-btn').textContent = t('viewer.play');
         $('btn-ghost').textContent = t(state.ghost ? 'fx.ghostOn' : 'fx.ghostOff');
