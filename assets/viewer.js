@@ -2370,9 +2370,32 @@
     let dataReady = false;
     let styleReady = false;
 
+    // чорна завіса на старті: під нею мапа розмита і в чорно-білому, тому
+    // перші кадри не показують сирі тайли. знімаємо коли є кадр полів
+    let veilLifted = false;
+    const veilStart = Date.now();
+    function bootStage(key) {
+        const el = $('boot-state');
+        if (el && !veilLifted) el.textContent = LT.t(key);
+    }
+    function liftVeil() {
+        if (veilLifted) return;
+        const veil = $('boot');
+        if (!veil) return;
+        veilLifted = true;
+        // на швидкій мережі завіса мигнула б за сто мілісекунд — тримаємо
+        // мінімум, щоб перехід читався як завантаження, а не як глітч
+        setTimeout(() => {
+            veil.classList.add('done');
+            setTimeout(() => veil.remove(), 700);
+        }, Math.max(0, 620 - (Date.now() - veilStart)));
+    }
+    setTimeout(liftVeil, 14000);
+
     function markStyleReady() {
         if (styleReady) return;
         styleReady = true;
+        bootStage('boot.data');
         boot();
     }
 
@@ -2392,6 +2415,8 @@
 
         readDate();
         uiDate();
+        const bootDate = $('boot-date');
+        if (bootDate) bootDate.textContent = LT.fmtTrigger(state.date);
         $('play-btn').textContent = LT.t('viewer.play');
         LT.applyMapLang(map);
         LT.ensurePlaceLabels(map, state.base);
@@ -2598,11 +2623,15 @@
                 LT.ensurePlaceLabels(map, state.base);
             });
         });
+
+        // завіса падає через два кадри: полотно зон уже намальоване
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(liftVeil, 220)));
     }
 
     // опубликованные данные лежат рядом с сайтом: data/map.json
     LT.store.loadRemoteData('data/map.json').then(() => {
         dataReady = true;
+        bootStage('boot.render');
         if (!mapReady) state.date = clampDate(pickDate());
         else if (!dateHasData(state.date)) state.date = clampDate(pickDate());
         boot();

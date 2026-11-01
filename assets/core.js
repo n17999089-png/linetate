@@ -170,6 +170,7 @@
             'viewer.menu': 'Шари', 'viewer.labels': 'Підписи', 'viewer.labelsHint': 'Увімкніть підписи й тягніть їх просто по карті. ◎ повертає підпис у центр шару.',
             'viewer.center': 'Підпис у центр шару', 'viewer.advance': 'Просування', 'viewer.advanceHint': 'Підсвітити зміни проти сусідньої дати',
             'viewer.advanceNone': 'НЕМАЄ СУСІДНЬОЇ ДАТИ ДЛЯ ПОРІВНЯННЯ', 'viewer.tagline': 'ОПЕРАТИВНА КАРТА', 'dock.point': 'ТОЧКА',
+            'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
             'tools.rectHint': 'Прямокутник: протягніть по карті', 'tools.circleHint': 'Коло: протягніть по карті',
             'tools.arrowHint': 'Стрілка: протягніть від початку до кінця', 'tools.arrow': 'СТРІЛКА',
@@ -329,6 +330,7 @@
             'viewer.menu': 'Layers', 'viewer.labels': 'Labels', 'viewer.labelsHint': 'Turn labels on and drag them right on the map. ◎ snaps a label back to the layer centre.',
             'viewer.center': 'Label to layer centre', 'viewer.advance': 'Advance', 'viewer.advanceHint': 'Highlight changes against the neighbouring date',
             'viewer.advanceNone': 'NO NEIGHBOURING DATE TO COMPARE', 'viewer.tagline': 'OPERATIONAL MAP', 'dock.point': 'POINT',
+            'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.render': 'ZONES AND LINES',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
             'tools.rectHint': 'Rectangle: drag on the map', 'tools.circleHint': 'Circle: drag on the map',
             'tools.arrowHint': 'Arrow: drag from start to end', 'tools.arrow': 'ARROW',
@@ -1666,8 +1668,13 @@
             followOn = true;
             const bx = pc.x - w / 2;
             const by = pc.y - h / 2;
-            const uncovered = k > 1.35 || k < 0.88 || (bx * bx + by * by) > 12100;
-            if (uncovered && performance.now() - lastPaint > (docMobile() ? 340 : 190)) reposition();
+            // на близькому огляді підписи великі й розтяг одразу видно — там
+            // перепроекція дешева, тому поріг жорсткий і частий
+            const closeLbl = Math.max(paintCam.z, map.getZoom()) >= 10.2;
+            const uncovered = closeLbl
+                ? (k > 1.12 || k < 0.9 || (bx * bx + by * by) > 3600)
+                : (k > 1.35 || k < 0.88 || (bx * bx + by * by) > 12100);
+            if (uncovered && performance.now() - lastPaint > (closeLbl ? 60 : (docMobile() ? 340 : 190))) reposition();
         }
 
         map.on('movestart', () => { moving = true; });
@@ -2713,7 +2720,8 @@
             if (cssW !== paintCam.w || cssH !== paintCam.h) {
                 moving = false; followReset(); forced = true; schedule(); return;
             }
-            const k = Math.pow(2, map.getZoom() - paintCam.z);
+            const zNow = map.getZoom();
+            const k = Math.pow(2, zNow - paintCam.z);
             const dth = ((map.getBearing ? map.getBearing() : 0) - paintCam.br) * Math.PI / 180;
             let pc;
             try { pc = map.project([paintCam.cx, paintCam.cy]); } catch (e) { return; }
@@ -2730,15 +2738,27 @@
             const now = performance.now();
             const since = now - lastPaint;
             const gap = coverGap(k, bx, by, cssW, cssH, boxF);
-            const bare = gap > (mob ? 20 : 12)
-                && since > (mob ? (lowEndDevice() ? 210 : 150) : 110);
+            // на близькому огляді (масштаб міста) feature після culling
+            // лишається кілька, тому перемальовка дешевша за розтяг:
+            // розтягнуте полотно дає м'яку нечітку кромку і «повзучі» зони
+            const close = Math.max(paintCam.z, zNow) >= 10.2;
+            // на близькому огляді перемальовуємо ледь полотно почне їхати:
+            // 60 мс — це стеля ~16 фарб на секунду, дешевше за будь-яке
+            // розтягнення; далеко — фарба рідкісна, бо коштує вона дорого
+            const floor = close ? (mob ? 60 : 40) : (mob ? (lowEndDevice() ? 210 : 150) : 110);
+            const bare = gap > (close ? 8 : (mob ? 20 : 12)) && since > floor;
             // м'який поріг: полотно сильно розтягнуте — межі стають м'якими,
             // на місці це видно, тому дозріває повільніше
-            const soft = k > (mob ? (lowEndDevice() ? 1.9 : 1.7) : 1.35)
-                && since > (mob ? 380 : 190);
+            const soft = k > (close ? 1.15 : (mob ? (lowEndDevice() ? 1.9 : 1.7) : 1.35))
+                && since > (close ? floor : (mob ? 380 : 190));
             if (bare || soft) {
                 paint();
-                followReset();
+                // фарба тривала й камера за цей час зрушила: трансформацію
+                // не знімаємо, а перераховуємо від свіжого paintCam. інакше
+                // один кадр показує полотно без масштабу — це миготіння
+                // посеред жесту, і наступний виклик не фарбує вдруге
+                lastPaint = performance.now();
+                followCamera();
             }
         }
 
@@ -2751,7 +2771,16 @@
             map.on('render', schedule);
             map.on('movestart', () => { moving = true; });
             map.on('move', followCamera);
-            map.on('moveend', () => { moving = false; followReset(); forced = true; schedule(); });
+            map.on('moveend', () => {
+                moving = false;
+                // спершу свіжий кадр під кінцеву камеру, і лише потім
+                // знімаємо трансформацію: інакше мить показуємо геометрію
+                // початку жесту без масштабу — стрибок в кінці руху
+                if (followOn) { forced = true; paint(); }
+                followReset();
+                forced = true;
+                schedule();
+            });
             return host;
         }
 
@@ -2866,12 +2895,26 @@
         }
         // телефон малює на сходинку грубіше (це головна ціна кадру), слабкий
         // пристрій — ще на одній; посеред жесту додається ще крок, бо там
-        // рахуються тисячі вершин на кожді 60 Гц
+        // рахуються тисячі вершин на кожді 60 Гц. На близькому огляді вершин
+        // лишається мало (culling), тому там грубість не економить кадр, а
+        // псує форму — там тільки точна сходи
         function lodTol(z, inMotion) {
             if (!isMobile()) return lodTolRaw(z);
+            if (z >= 10.2) return lodTolRaw(z);
             let shift = lowEndDevice() ? 2.5 : 1.3;
             if (inMotion) shift += 1.5;
             return lodTolRaw(z - shift);
+        }
+        // стеля на зсув точки від спрощення: півтора css-пікселя на поточному
+        // масштабі. Далі спрощення вже видно оком — контур «їде» за пальцем.
+        // масштаб беремо з кроком 0.5 і в більший бік, щоб кеш спрощень не
+        // перебудовувався на кождому пікселі скролу
+        function tolCap(map) {
+            let z = 9;
+            try { z = map.getZoom(); } catch (e) { }
+            z = Math.ceil(z * 2) / 2;
+            const deg = 1.6 / (0.711 * Math.pow(2, z));
+            return deg > 0 ? deg : 1;
         }
         function lodRing(ring, tol) {
             if (tol <= 0) return ring;
@@ -2899,15 +2942,12 @@
                 z: map.getZoom(), cx: c.lng, cy: c.lat,
                 br: map.getBearing ? map.getBearing() : 0, w: cssW, h: cssH
             };
-            const tol = lodTol(map.getZoom(), moving);
-            // на телефоні посеред жесту: грубіший LOD, менший запас і без кромки
-            // світіння — це другий прохід по тих самих вершинах. Як тільки камера
-            // стає, приходять тригери й повний кадр: рух плавний, картинка точна
-            const mobMotion = moving && isMobile();
+            // жорсткіша стеля на близькому огляді: там спрощення видно оком,
+            // воно не економить кадр (вершин і так мало після culling)
+            const tol = Math.min(lodTol(map.getZoom(), moving), tolCap(map));
             const pad = padPx();
             const tinyPx = isMobile() ? 3.4 : 2.4;
             const rimMinPx = lowEndDevice() ? 13 : 7;
-            const wantRim = !mobMotion;
 
             items.forEach(it => {
                 const ctx = it.ctx;
@@ -2932,7 +2972,7 @@
                 ctx.fillStyle = hexA(l.style.color, l.style.alpha);
                 ctx.beginPath();
                 let pts = 0;
-                const rimPts = wantRim ? [] : null;
+                const rimPts = [];
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
                 feats.forEach(f => {
