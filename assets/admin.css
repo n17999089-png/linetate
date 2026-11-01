@@ -237,3 +237,11 @@ textarea.input { width: 100%; height: auto; min-height: 72px; padding: 10px 11px
 .gh-box .btn.wide { margin-top: 3px; }
 .gh-box .hint { line-height: 1.55; }
 #gh-token { letter-spacing: 3px; }
+.gh-keep { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: -2px; }
+.gh-keep-lbl { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); cursor: pointer; }
+.gh-keep-lbl input { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+.gh-keep-btn {
+    border: 1px solid var(--line-2); border-radius: 8px; background: transparent; cursor: pointer;
+    padding: 4px 9px; font-family: var(--title); font-size: 10px; letter-spacing: 1.2px; color: var(--text-2);
+}
+.gh-keep-btn:hover { color: var(--text); border-color: var(--line-3); }

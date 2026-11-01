@@ -13,7 +13,7 @@
 <script src="../assets/vendor/turf.min.js"></script>
 <script src="../assets/vendor/topojson-client.min.js"></script>
 <link rel="stylesheet" href="../assets/theme.css?v=28">
-<link rel="stylesheet" href="../assets/admin.css?v=31">
+<link rel="stylesheet" href="../assets/admin.css?v=32">
 </head>
 <body>
 
@@ -234,6 +234,11 @@
                 <div class="gh-title" data-i18n="gh.title">Публикация на GitHub</div>
                 <input type="password" id="gh-token" class="input gh-in" autocomplete="off" spellcheck="false"
                        data-i18n-ph="gh.tokenPh" placeholder="Токен (contents: write)">
+                <div class="gh-keep">
+                    <label class="gh-keep-lbl"><input type="checkbox" id="gh-remember"><span
+                            data-i18n="gh.remember">Запам'ятати на цьому пристрої</span></label>
+                    <button class="gh-keep-btn" id="btn-gh-forget" data-i18n="gh.forget">Забути</button>
+                </div>
                 <div class="gh-row">
                     <input type="text" id="gh-repo" class="input gh-in" autocomplete="off" spellcheck="false" placeholder="owner/repo">
                     <input type="text" id="gh-branch" class="input gh-in" autocomplete="off" spellcheck="false" placeholder="main">
@@ -318,6 +323,6 @@
     </form>
 </div>
 
-<script src="../assets/gate.js?v=3"></script>
+<script src="../assets/gate.js?v=4"></script>
 </body>
 </html>

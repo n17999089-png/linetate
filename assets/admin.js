@@ -1440,6 +1440,8 @@
     /* ============================ ПУБЛІКАЦІЯ НА GITHUB ============================ */
     const GH_CFG = 'LINETATE:__gh';
     const GH_TOKEN = 'LINETATE:__ghtok';
+    const GH_TOKEN_DEV = 'LINETATE:__ghtokd';
+    const GH_VAULT = 'linetate-device-vault';
     const GH_DEFAULT = { repo: 'n17999089-png/linetate', branch: 'main', path: 'data/map.json' };
 
     function ghCfg() {
@@ -1458,14 +1460,45 @@
         try { localStorage.setItem(GH_CFG, JSON.stringify(cfg)); } catch (e) { }
     }
 
-    function ghToken(value) {
+    // токен ховаємо від сторонніх очей у цьому ж браузері. Це не шифрування:
+    // мета в тім, щоб він не світився у сховищі як звичайний рядок
+    function vault(text, back) {
+        try {
+            const key = new TextEncoder().encode(GH_VAULT);
+            const src = back ? atob(text) : String(text);
+            let out = '';
+            for (let i = 0; i < src.length; i++) {
+                out += String.fromCharCode(src.charCodeAt(i) ^ key[i % key.length]);
+            }
+            return back ? out : btoa(out);
+        } catch (e) { return ''; }
+    }
+
+    function ghRemembered() {
+        try { return !!localStorage.getItem(GH_TOKEN_DEV); } catch (e) { return false; }
+    }
+
+    function ghForget() {
+        try { localStorage.removeItem(GH_TOKEN_DEV); } catch (e) { }
+    }
+
+    // без галочки — до закриття вкладки; з галочкою — доки не натиснуть «забути»
+    function ghToken(value, remember) {
         if (value !== undefined) {
             try {
-                if (value) sessionStorage.setItem(GH_TOKEN, value); else sessionStorage.removeItem(GH_TOKEN);
+                if (value) {
+                    if (remember) localStorage.setItem(GH_TOKEN_DEV, vault(value));
+                    else sessionStorage.setItem(GH_TOKEN, value);
+                } else {
+                    sessionStorage.removeItem(GH_TOKEN);
+                    localStorage.removeItem(GH_TOKEN_DEV);
+                }
             } catch (e) { }
             return;
         }
-        try { return sessionStorage.getItem(GH_TOKEN) || ''; } catch (e) { return ''; }
+        try {
+            return sessionStorage.getItem(GH_TOKEN) || vault(localStorage.getItem(GH_TOKEN_DEV) || '', true);
+        } catch (e) { return ''; }
     }
 
     function uiGh() {
@@ -1473,7 +1506,15 @@
         $('gh-repo').value = cfg.repo || '';
         $('gh-branch').value = cfg.branch || '';
         $('gh-path').value = cfg.path || '';
-        $('gh-token').value = ghToken();
+        const kept = ghRemembered();
+        const box = $('gh-remember');
+        if (box) box.checked = kept;
+        const field = $('gh-token');
+        const typed = (field.value || '').trim();
+        // збережений токен не потрапляє в поле: поле лишається порожнім під маскою
+        field.placeholder = kept && !typed ? t('gh.saved') : t('gh.tokenPh');
+        const forget = $('btn-gh-forget');
+        if (forget) forget.style.display = kept ? '' : 'none';
     }
 
     // base64 для кирилиці/емодзі у імені коміту
@@ -1490,7 +1531,8 @@
 
     async function ghPublish() {
         if (publishing) return;
-        const token = ($('gh-token').value || '').trim();
+        const typed = ($('gh-token').value || '').trim();
+        const token = typed || ghToken();
         const cfg = {
             repo: ($('gh-repo').value || '').trim(),
             branch: ($('gh-branch').value || '').trim() || GH_DEFAULT.branch,
@@ -1499,7 +1541,7 @@
         if (!token || !cfg.repo) { toast(t('gh.need'), 'err'); return; }
         if (!/^[\w.-]+\/[\w.-]+$/.test(cfg.repo)) { toast(t('gh.badRepo'), 'err'); return; }
         ghSaveCfg(cfg);
-        ghToken(token);
+        if (typed) ghToken(typed, $('gh-remember').checked);
 
         flushSave();
         const data = store.exportAll();
@@ -1543,6 +1585,7 @@
             if (put.status === 401 || put.status === 403) {
                 ghToken('');
                 $('gh-token').value = '';
+                uiGh();
                 throw new Error(t(put.status === 401 ? 'gh.denied' : 'gh.forbidden'));
             }
             if (!put.ok) {
@@ -1982,6 +2025,28 @@
         if (optBtn) optBtn.addEventListener('click', optimizeStorage);
         $('btn-gh-publish').addEventListener('click', ghPublish);
         $('gh-token').addEventListener('input', e => ghToken(e.target.value.trim()));
+        // галочка = один і той самий токен живе на пристрої; зняв — він забувається
+        $('gh-remember').addEventListener('change', e => {
+            const v = ($('gh-token').value || '').trim() || ghToken();
+            if (e.target.checked) {
+                if (!v) { e.target.checked = false; toast(t('gh.need'), 'err'); return; }
+                try { sessionStorage.removeItem(GH_TOKEN); } catch (err) { }
+                ghToken(v, true);
+                $('gh-token').value = '';
+                toast(t('gh.kept'));
+            } else {
+                ghForget();
+            }
+            uiGh();
+        });
+        $('btn-gh-forget').addEventListener('click', () => {
+            ghForget();
+            try { sessionStorage.removeItem(GH_TOKEN); } catch (e) { }
+            $('gh-token').value = '';
+            $('gh-remember').checked = false;
+            uiGh();
+            toast(t('gh.forgot'));
+        });
         ['gh-repo', 'gh-branch', 'gh-path'].forEach(id => $(id).addEventListener('change', () => {
             ghSaveCfg({
                 repo: ($('gh-repo').value || '').trim(),
