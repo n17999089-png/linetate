@@ -311,6 +311,7 @@
     let drawW = 2.6;
     let drawHead = 15;
     let drawPanelOpen = false;
+    let drawFold = false;
     let zonePts = [];
     let drawColor = DRAW_DEFAULT;
     const clampNum = (v, min, max, fallback) => {
@@ -1319,10 +1320,19 @@
         updateDrawHint();
     }
 
+    function setDrawFold(fold) {
+        drawFold = !!fold;
+        const box = $('draw-panel');
+        if (box) box.classList.toggle('folded', drawFold);
+        const btn = $('dp-fold');
+        if (btn) btn.setAttribute('aria-expanded', String(!drawFold));
+    }
+
     function setDrawPanel(open, keepTool) {
         open = !!open;
         if (open === drawPanelOpen) return;
         drawPanelOpen = open;
+        if (open) setDrawFold(false);
         const box = $('draw-panel');
         if (box) {
             box.classList.toggle('open', open);
@@ -2500,6 +2510,8 @@
 
         $('tool-draw').addEventListener('click', () => setDrawPanel(!drawPanelOpen));
         $('dp-close').addEventListener('click', () => setDrawPanel(false));
+        const foldBtn = $('dp-fold');
+        if (foldBtn) foldBtn.addEventListener('click', () => setDrawFold(!drawFold));
         $('tool-ruler').addEventListener('click', () => setTool('ruler'));
         document.querySelectorAll('#dp-tools .dp-tool').forEach(b => {
             b.addEventListener('click', () => {

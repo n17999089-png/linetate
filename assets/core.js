@@ -177,7 +177,7 @@
             'tools.circle': 'КОЛО', 'tools.zone': 'ЗОНА', 'tools.erase': 'ЛАСТИК',
             'tools.width': 'ТОВЩИНА', 'tools.head': 'НАКОНЕЧНИК', 'tools.color': 'КОЛІР',
             'tools.clear': 'ОЧИСТИТИ', 'tools.drawHint': 'Виберіть інструмент і малюйте по карті',
-            'tools.colorHint': 'Колір малюнків',
+            'tools.colorHint': 'Колір малюнків', 'tools.fold': 'Згорнути / розгорнути панель',
             'tools.zoneHint': 'Зона: кліки по карті, клік по першій точці або подвійний клік — завершити', 'tools.eraseHint': 'Ластик: клікніть по малюнку, щоб видалити',
             'tools.clearHint': 'Прибрати всі малюнки за цю дату', 'tools.clearAsk': 'Прибрати всі малюнки за цю дату?',
             'tools.cleared': 'МАЛЮНКИ ПРИБРАНО', 'tools.km': 'км', 'tools.m': 'м', 'tools.tooShort': 'ЗАКОРОТКО — НАМАЛЮЙТЕ ДОВШЕ',
@@ -333,7 +333,7 @@
             'tools.circle': 'CIRCLE', 'tools.zone': 'ZONE', 'tools.erase': 'ERASER',
             'tools.width': 'WIDTH', 'tools.head': 'HEAD', 'tools.color': 'COLOUR',
             'tools.clear': 'CLEAR', 'tools.drawHint': 'Pick a tool and draw right on the map',
-            'tools.colorHint': 'Drawing colour',
+            'tools.colorHint': 'Drawing colour', 'tools.fold': 'Collapse / expand panel',
             'tools.zoneHint': 'Zone: click the map, click the first point or double-click to finish', 'tools.eraseHint': 'Eraser: click a drawing to remove it',
             'tools.clearHint': 'Remove all drawings for this date', 'tools.clearAsk': 'Remove all drawings for this date?',
             'tools.cleared': 'DRAWINGS CLEARED', 'tools.km': 'km', 'tools.m': 'm', 'tools.tooShort': 'TOO SHORT — DRAW LONGER',
@@ -1335,8 +1335,11 @@
         let lang = currentLang;
         let items = [];
         let extraDots = [];
-        let raf = 0;
         let timer = 0;
+        let moving = false;
+        let followOn = false;
+        let paintCam = null;
+        let lastPaint = 0;
         const ctx = cv.getContext('2d');
         const widths = new Map();
 
@@ -1454,6 +1457,8 @@
 
         function paint() {
             const s = syncCanvas();
+            if (cv.style.transform) cv.style.transform = '';
+            followOn = false;
             ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
             ctx.clearRect(0, 0, s.x, s.y);
             ctx.textAlign = 'center';
@@ -1521,6 +1526,16 @@
             });
 
             try { ctx.letterSpacing = '0px'; } catch (e) { }
+
+            // камера останньої відмальовки: на її основі під час руху рахується
+            // подібність transform-ом, як у blend-канвасів
+            lastPaint = performance.now();
+            let c0 = null;
+            try { c0 = map.getCenter ? map.getCenter() : null; } catch (e) { }
+            paintCam = c0 ? {
+                z: map.getZoom(), cx: c0.lng, cy: c0.lat,
+                br: map.getBearing ? map.getBearing() : 0, w: s.x, h: s.y
+            } : null;
         }
 
         let lastSig = '';
@@ -1591,20 +1606,41 @@
             timer = setTimeout(() => { timer = 0; rebuild(); }, delay);
         }
 
-        map.on('move', () => {
-            if (raf) return;
-            if (docMobile()) {
-                const now = performance.now();
-                if (now - lastPos < 30) return;
-                lastPos = now;
-                raf = setTimeout(() => { raf = 0; reposition(); }, 30);
-                return;
-            }
-            raf = requestAnimationFrame(() => { raf = 0; reposition(); });
+        // під час руху полотно підписів зсувається тим самим transform-ом, що й
+        // blend-канваси (transform на самому полотні не ізолює його від мапи).
+        // Репроєкція — лише коли кадр вже не покриває видимість або рух завершився:
+        // жодних project() на кожен кадр панорами/зуму.
+        function applyFollow(t) { cv.style.transform = t; }
+        function followReset() { if (followOn) { cv.style.transform = ''; followOn = false; } }
+        function followCamera() {
+            if (!paintCam || !moving) return;
+            let mcv; try { mcv = map.getCanvas(); } catch (e) { return; }
+            const w = mcv.clientWidth || mcv.width || 1;
+            const h = mcv.clientHeight || mcv.height || 1;
+            if (w !== paintCam.w || h !== paintCam.h) { moving = false; followReset(); scheduleBuild(0); return; }
+            const k = Math.pow(2, map.getZoom() - paintCam.z);
+            const dth = ((map.getBearing ? map.getBearing() : 0) - paintCam.br) * Math.PI / 180;
+            let pc; try { pc = map.project([paintCam.cx, paintCam.cy]); } catch (e) { return; }
+            if (!pc || !isFinite(pc.x) || !isFinite(pc.y) || Math.abs(pc.x) > 1e6 || Math.abs(pc.y) > 1e6) return;
+            applyFollow('translate(' + (pc.x - w / 2).toFixed(2) + 'px,' + (pc.y - h / 2).toFixed(2) + 'px)'
+                + ' rotate(' + (dth * 180 / Math.PI).toFixed(3) + 'deg)'
+                + ' scale(' + k.toFixed(4) + ')');
+            followOn = true;
+            const bx = pc.x - w / 2;
+            const by = pc.y - h / 2;
+            const uncovered = k > 1.35 || k < 0.88 || (bx * bx + by * by) > 12100;
+            if (uncovered && performance.now() - lastPaint > (docMobile() ? 340 : 190)) reposition();
+        }
+
+        map.on('movestart', () => { moving = true; });
+        map.on('move', followCamera);
+        map.on('moveend', () => {
+            moving = false;
+            if (followOn) { followReset(); reposition(); }
+            scheduleBuild(40);
         });
-        map.on('moveend', () => scheduleBuild(40));
         map.on('zoomend', () => scheduleBuild(40));
-        map.on('resize', () => scheduleBuild(40));
+        map.on('resize', () => { followReset(); scheduleBuild(40); });
         map.on('idle', () => scheduleBuild(120));
 
         // сторож: если подписей нет, а зум позволяет — пробуем снова,

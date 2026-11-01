@@ -522,6 +522,14 @@
 }
 .dp-head .label { color: #ffd45e; letter-spacing: 2px; }
 .dp-head .legend-close { width: 26px; height: 26px; font-size: 16px; }
+.dp-head-btns { display: flex; align-items: center; gap: 6px; }
+.dp-fold svg { width: 15px; height: 15px; display: block; transition: transform .22s var(--ease); }
+#draw-panel.folded .dp-fold svg { transform: rotate(-180deg); }
+/* згорнута панель — лише заголовок: одним дотиком ховає інструменти, поки малюєш */
+#draw-panel.folded { gap: 0; padding-bottom: 0; }
+#draw-panel.folded .dp-tools, #draw-panel.folded .dp-row, #draw-panel.folded .dp-sec,
+#draw-panel.folded .dp-actions, #draw-panel.folded .dp-hint { display: none; }
+#draw-panel.folded .dp-head { border-bottom-color: transparent; background: transparent; border-radius: 12px; }
 .dp-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding-top: 10px; }
 .dp-tool {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
@@ -569,7 +577,9 @@
     overflow: hidden; max-height: 56px; opacity: 1;
     transition: max-height .24s var(--ease), opacity .18s ease, margin .24s var(--ease);
 }
-#dp-head-sec.collapsed { max-height: 0; opacity: 0; margin-top: -11px; }
+.dp-row { display: flex; gap: 10px; }
+.dp-row .dp-sec { flex: 1 1 0; min-width: 0; }
+.dp-row #dp-head-sec.collapsed { display: none; }
 .dp-lab {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     font-family: var(--pixel); font-size: 9px; letter-spacing: 1.4px; color: var(--dim);
@@ -811,15 +821,23 @@
     left: 8px; right: 8px; top: auto;
     bottom: calc(118px + env(safe-area-inset-bottom));
     width: auto; max-height: min(58vh, 470px);
+    gap: 7px; padding: 0 9px 9px;
     overflow-y: auto; overscroll-behavior: contain;
     transform: translateY(14px) scale(.99); transform-origin: bottom center;
 }
 .dev-mobile #draw-panel.open { transform: none; }
-.dev-mobile .dp-tool { height: 50px; }
-.dev-mobile .dp-tool span { font-size: 8.5px; }
+.dev-mobile .dp-head { margin: 0 -9px; padding: 7px 7px 7px 12px; }
+/* інструменти в один ряд іконок: панель займає ~3 екранні смуги менше */
+.dev-mobile .dp-tools { grid-template-columns: repeat(6, 1fr); gap: 4px; padding-top: 8px; }
+.dev-mobile .dp-tool { height: 44px; gap: 0; border-radius: 9px; }
+.dev-mobile .dp-tool span { display: none; }
+.dev-mobile .dp-tool svg { width: 20px; height: 20px; }
+.dev-mobile .dp-sec { gap: 3px; }
+.dev-mobile .dp-lab { font-size: 8px; letter-spacing: 1px; }
+.dev-mobile .dp-lab output { min-width: 38px; padding: 0 5px; font-size: 10px; }
+.dev-mobile .dp-range { height: 24px; }
 .dev-mobile .dp-hint { display: none; }
-.dev-mobile .dp-btn { height: 38px; }
-.dev-mobile .dp-range { height: 26px; }
+.dev-mobile .dp-btn { height: 34px; }
 .dev-mobile .dp-range::-webkit-slider-thumb { width: 19px; height: 19px; margin-top: -6.5px; }
 .dev-mobile .dp-sw { width: 30px; height: 30px; }
 .dev-mobile .dp-custom { width: 32px; height: 32px; }

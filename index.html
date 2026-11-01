@@ -12,7 +12,7 @@
 <script src="assets/vendor/maplibre-gl.js"></script>
 <script src="assets/vendor/turf.min.js"></script>
 <link rel="stylesheet" href="assets/theme.css?v=28">
-<link rel="stylesheet" href="assets/viewer.css?v=36">
+<link rel="stylesheet" href="assets/viewer.css?v=37">
 </head>
 <body>
 
@@ -52,7 +52,12 @@
 <div id="draw-panel" class="panel" aria-hidden="true">
     <div class="dp-head">
         <span class="label" data-i18n="tools.draw">МАЛЮВАННЯ</span>
-        <button type="button" class="legend-close" id="dp-close" title="Закрити" aria-label="Закрити" data-i18n-title="viewer.close">×</button>
+        <div class="dp-head-btns">
+            <button type="button" class="legend-close dp-fold" id="dp-fold" title="Згорнути / розгорнути панель" data-i18n-title="tools.fold" aria-label="Згорнути / розгорнути панель" aria-expanded="true">
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <button type="button" class="legend-close" id="dp-close" title="Закрити" aria-label="Закрити" data-i18n-title="viewer.close">×</button>
+        </div>
     </div>
     <div class="dp-tools" id="dp-tools">
         <button type="button" class="dp-tool" data-tool="pen" title="Олівець" data-i18n-title="tools.penHint" aria-pressed="false">
@@ -80,13 +85,15 @@
             <span data-i18n="tools.erase">ЛАСТИК</span>
         </button>
     </div>
-    <div class="dp-sec">
-        <div class="dp-lab"><span data-i18n="tools.width">ТОВЩИНА</span><output id="draw-width-val">2.6</output></div>
-        <input type="range" class="dp-range" id="draw-width" min="1" max="8" step="0.2" value="2.6" aria-label="Товщина ліній">
-    </div>
-    <div class="dp-sec" id="dp-head-sec">
-        <div class="dp-lab"><span data-i18n="tools.head">НАКОНЕЧНИК</span><output id="draw-head-val">15</output></div>
-        <input type="range" class="dp-range" id="draw-head" min="8" max="30" step="1" value="15" aria-label="Розмір наконечника">
+    <div class="dp-row">
+        <div class="dp-sec">
+            <div class="dp-lab"><span data-i18n="tools.width">ТОВЩИНА</span><output id="draw-width-val">2.6</output></div>
+            <input type="range" class="dp-range" id="draw-width" min="1" max="8" step="0.2" value="2.6" aria-label="Товщина ліній">
+        </div>
+        <div class="dp-sec" id="dp-head-sec">
+            <div class="dp-lab"><span data-i18n="tools.head">НАКОНЕЧНИК</span><output id="draw-head-val">15</output></div>
+            <input type="range" class="dp-range" id="draw-head" min="8" max="30" step="1" value="15" aria-label="Розмір наконечника">
+        </div>
     </div>
     <div class="dp-sec">
         <div class="dp-lab"><span data-i18n="tools.color">КОЛІР</span></div>
@@ -181,8 +188,8 @@
 </div>
 
 <script src="assets/regions.js?v=23"></script>
-<script src="assets/core.js?v=55"></script>
+<script src="assets/core.js?v=56"></script>
 <script src="assets/map-tools.js?v=40"></script>
-<script src="assets/viewer.js?v=53"></script>
+<script src="assets/viewer.js?v=54"></script>
 </body>
 </html>
