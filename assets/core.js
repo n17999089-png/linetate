@@ -1202,11 +1202,13 @@
                 // jumpTo тут обриває анімацію. Після завершення спрацює
                 // moveend і кадр доклампується.
                 if (map.isEasing && map.isEasing()) return;
+                if (map.handlers && map.handlers.isActive()) return;
                 const el = map.getContainer();
                 const c = map.getCenter();
-                const world = 512 * Math.pow(2, map.getZoom());
-                const halfLon = (el.clientWidth / 2) * 360 / world;
-                const halfLat = (el.clientHeight / 2) * 360 * Math.cos(c.lat * Math.PI / 180) / world;
+                const nw = map.unproject([0, 0]);
+                const se = map.unproject([el.clientWidth, el.clientHeight]);
+                const halfLon = (se.lng - nw.lng) / 2;
+                const halfLat = (nw.lat - se.lat) / 2;
                 const lo = MAP_BOUNDS[0], hi = MAP_BOUNDS[1];
                 const midLon = (lo[0] + hi[0]) / 2, midLat = (lo[1] + hi[1]) / 2;
                 let lng = c.lng, lat = c.lat;
@@ -1629,7 +1631,11 @@
 
         // розчинення живе на власному rAF, бо мапа у спокої не генерує кадрів:
         // без цього новий підпис завмер би напівпрозорим назавжди
+        const FADE_MS = docMobile() ? 240 : 180;
+        const FADE_OUT_MS = docMobile() ? 260 : 200;
+        const GHOST_LIMIT = docMobile() ? 180 : 500;
         let fadeRaf = 0;
+        let ghosts = [];
         function tickFade() {
             fadeRaf = 0;
             const now = performance.now();
@@ -1640,6 +1646,14 @@
                 it.a = Math.min(1, (now - it.rec.t0) / FADE_MS);
                 it.rec.a = it.a;
                 if (it.a < 1) left++;
+            }
+            for (let i = ghosts.length - 1; i >= 0; i--) {
+                const it = ghosts[i];
+                it.a = Math.max(0, 1 - (now - it.outAt) / FADE_OUT_MS);
+                if (it.a <= 0) {
+                    fadeOf.delete(it.key);
+                    ghosts.splice(i, 1);
+                } else left++;
             }
             paint();
             if (left) fadeRaf = requestAnimationFrame(tickFade);
@@ -1665,6 +1679,12 @@
                 ctx.stroke();
             });
 
+            for (let i = 0; i < ghosts.length; i++) {
+                const it = ghosts[i];
+                if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
+                ctx.globalAlpha = it.a;
+                ctx.drawImage(it.sp.cv, it.x + it.sp.x, it.y + it.sp.y, it.sp.w, it.sp.h);
+            }
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
                 if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
@@ -1672,13 +1692,13 @@
                 ctx.drawImage(it.sp.cv, it.x + it.sp.x, it.y + it.sp.y, it.sp.w, it.sp.h);
                 if (it.a < 1) ctx.globalAlpha = 1;
             }
+            if (ghosts.length) ctx.globalAlpha = 1;
         }
 
         let lastSig = '';
         // Смале місто не повинно вискакувати на мапі різким плямим: підпис
         // розчинається, а вже знайомий продовжує з того ж місця, а не спалахує
         // наново на кожній перебудові набору.
-        const FADE_MS = docMobile() ? 240 : 180;
         const fadeOf = new Map();
 
         function rebuild() {
@@ -1689,9 +1709,11 @@
             const c = map.getCenter ? map.getCenter() : { lng: 0, lat: 0 };
             const sig = lang + '|' + map.getZoom().toFixed(3) + '|' + c.lng.toFixed(3) + ',' + c.lat.toFixed(3) +
                 '|' + Math.round(size0.x) + 'x' + Math.round(size0.y);
-            if (sig === lastSig && items.length) return;
+            if (sig === lastSig && (items.length || ghosts.length)) return;
             lastSig = sig;
 
+            const prevItems = items;
+            const keptKeys = new Set();
             items = [];
             extraDots = [];
             const list = collect();
@@ -1758,13 +1780,32 @@
                 pushBox({ x0: x0, x1: x1, y0: y0, y1: y1 });
                 const key = it.name + '@' + Math.round(it.coord[0] * 1e4) + ',' + Math.round(it.coord[1] * 1e4);
                 let rec = fadeOf.get(key);
-                if (!rec) { rec = { a: 0, t0: now0 }; fadeOf.set(key, rec); }
+                if (!rec) {
+                    rec = { a: 0, t0: now0 };
+                    fadeOf.set(key, rec);
+                } else {
+                    rec.t0 = now0 - rec.a * FADE_MS;
+                }
                 const item = {
-                    coord: it.coord, mx: mx, my: my, rec: rec, a: rec.a,
+                    key: key, coord: it.coord, mx: mx, my: my, rec: rec, a: rec.a,
                     name: it.name, rank: it.rank, cap: it.cap, x: px, y: py, w: w, h: h, dot: dotEligible
                 };
                 item.sp = spriteOf(item);
                 items.push(item);
+                keptKeys.add(key);
+            }
+            // зникаючі назви не видаляються одним кадром — вони догортають
+            // камеру та плавно розчиняються; нові перекривають їх зверху
+            ghosts = ghosts.filter(g => !keptKeys.has(g.key));
+            for (let i = 0; i < prevItems.length && ghosts.length < GHOST_LIMIT; i++) {
+                const old = prevItems[i];
+                if (keptKeys.has(old.key)) continue;
+                old.rec.a = old.a;
+                ghosts.push({
+                    key: old.key, sp: old.sp, mx: old.mx, my: old.my,
+                    x: old.x, y: old.y, a: old.a,
+                    outAt: now0 - (1 - old.a) * FADE_OUT_MS
+                });
             }
             if (fadeOf.size > 6000) fadeOf.clear();
             kickFade();
@@ -1781,6 +1822,11 @@
             }
             for (let i = 0; i < extraDots.length; i++) {
                 const d = extraDots[i];
+                d.x = fr.px0 + d.mx * fr.ws;
+                d.y = fr.py0 + d.my * fr.ws;
+            }
+            for (let i = 0; i < ghosts.length; i++) {
+                const d = ghosts[i];
                 d.x = fr.px0 + d.mx * fr.ws;
                 d.y = fr.py0 + d.my * fr.ws;
             }
@@ -1827,6 +1873,7 @@
             refresh() {
                 lang = currentLang;
                 lastSig = '';
+                ghosts = [];
                 placeSprites.clear();
                 spritePx = 0;
                 widths.clear();
@@ -1836,6 +1883,7 @@
             destroy() {
                 clearInterval(watchdog);
                 if (fadeRaf) cancelAnimationFrame(fadeRaf);
+                ghosts = [];
                 if (cv.parentNode) cv.parentNode.removeChild(cv);
                 placeEngines.delete(map);
             }

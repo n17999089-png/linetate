@@ -411,6 +411,8 @@
     let drawFold = false;
     let zonePts = [];
     let drawColor = DRAW_DEFAULT;
+    let touchTap = null;
+    let suppressClick = null;
     const clampNum = (v, min, max, fallback) => {
         const n = Number(v);
         return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
@@ -2531,6 +2533,11 @@
         ensureDrawCanvas();
 
         map.on('click', e => {
+            if (suppressClick) {
+                const s = suppressClick;
+                suppressClick = null;
+                if (performance.now() - s.time < 700 && e.point && Math.hypot(e.point.x - s.x, e.point.y - s.y) < 24) return;
+            }
             if (menuOpen) setMenu(false);
             if (tool) { toolClick(e); return; }
             const id = pickLayer(e.point);
@@ -2561,8 +2568,19 @@
             if (arrow) arrowEnd();
         });
         map.on('touchstart', e => {
-            if (!e.lngLats || e.lngLats.length !== 1) return;
+            if (!e.lngLats || e.lngLats.length !== 1) {
+                touchTap = null;
+                if (pen || shape || arrow) {
+                    pen = null;
+                    shape = null;
+                    arrow = null;
+                    setDraft([]);
+                }
+                return;
+            }
             collapseForMap();
+            touchTap = (tool === 'ruler' || tool === 'zone' || tool === 'erase') && e.point
+                ? { tool, x: e.point.x, y: e.point.y } : null;
             if (tool === 'pen') {
                 pen = { pts: [e.lngLats[0].toArray()] };
                 drawPenDraft();
@@ -2577,15 +2595,31 @@
             }
         });
         map.on('touchmove', e => {
-            if (!e.lngLats || e.lngLats.length !== 1) return;
+            if (!e.lngLats || e.lngLats.length !== 1) { touchTap = null; return; }
+            if (touchTap && e.point && Math.hypot(e.point.x - touchTap.x, e.point.y - touchTap.y) > 10) touchTap = null;
             if (pen) penMove({ lngLat: e.lngLats[0], point: e.points && e.points[0] });
             else if (arrow) arrowMove({ lngLat: e.lngLats[0], point: e.points && e.points[0] });
             else if (shape) shapeMove({ lngLat: e.lngLats[0], point: e.points && e.points[0] });
         });
-        map.on('touchend', () => {
-            if (pen) penEnd();
-            if (shape) shapeEnd();
-            if (arrow) arrowEnd();
+        map.on('touchend', e => {
+            if (touchTap && e.point && tool === touchTap.tool && Math.hypot(e.point.x - touchTap.x, e.point.y - touchTap.y) <= 12) {
+                suppressClick = { time: performance.now(), x: e.point.x, y: e.point.y };
+                toolClick(e.lngLat ? e : { lngLat: map.unproject(e.point), point: e.point });
+            }
+            touchTap = null;
+            const touches = e.originalEvent && e.originalEvent.touches;
+            if (!touches || !touches.length) {
+                if (pen) penEnd();
+                if (shape) shapeEnd();
+                if (arrow) arrowEnd();
+            }
+        });
+        map.on('touchcancel', () => {
+            touchTap = null;
+            pen = null;
+            shape = null;
+            arrow = null;
+            setDraft([]);
         });
 
         let hoverTimer = 0;
