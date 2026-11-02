@@ -170,7 +170,7 @@
             'viewer.menu': 'Шари', 'viewer.labels': 'Підписи', 'viewer.labelsHint': 'Увімкніть підписи й тягніть їх просто по карті. ◎ повертає підпис у центр шару.',
             'viewer.center': 'Підпис у центр шару', 'viewer.advance': 'Просування', 'viewer.advanceHint': 'Підсвітити зміни проти сусідньої дати',
             'viewer.advanceNone': 'НЕМАЄ СУСІДНЬОЇ ДАТИ ДЛЯ ПОРІВНЯННЯ', 'viewer.tagline': 'ОПЕРАТИВНА КАРТА', 'dock.point': 'ТОЧКА',
-            'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
+            'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
             'tools.rectHint': 'Прямокутник: протягніть по карті', 'tools.circleHint': 'Коло: протягніть по карті',
             'tools.arrowHint': 'Стрілка: протягніть від початку до кінця', 'tools.arrow': 'СТРІЛКА',
@@ -330,7 +330,7 @@
             'viewer.menu': 'Layers', 'viewer.labels': 'Labels', 'viewer.labelsHint': 'Turn labels on and drag them right on the map. ◎ snaps a label back to the layer centre.',
             'viewer.center': 'Label to layer centre', 'viewer.advance': 'Advance', 'viewer.advanceHint': 'Highlight changes against the neighbouring date',
             'viewer.advanceNone': 'NO NEIGHBOURING DATE TO COMPARE', 'viewer.tagline': 'OPERATIONAL MAP', 'dock.point': 'POINT',
-            'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.render': 'ZONES AND LINES',
+            'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
             'tools.rectHint': 'Rectangle: drag on the map', 'tools.circleHint': 'Circle: drag on the map',
             'tools.arrowHint': 'Arrow: drag from start to end', 'tools.arrow': 'ARROW',
@@ -650,20 +650,42 @@
         }
     };
 
+    // Метадані дат калькулятор і панелі перелічують дуже часто, а раніше кожен
+    // виклик повністю розбирав би кожен збережений GeoJSON з нуля. Кеш живе, поки
+    // не зміниться версія сховища — її піднімає будь-який save() і будь-яка публікація.
+    let metaCache = new Map();
+    let metaStamp = '';
+
     function listDates() {
+        const stamp = (mem.get(VER_KEY) || '') + '|' + remoteVersion;
+        if (stamp !== metaStamp) {
+            metaStamp = stamp;
+            metaCache.clear();
+        }
         const seen = new Set();
         const out = [];
         const add = (date, doc) => {
             if (seen.has(date)) return;
             seen.add(date);
-            const layers = doc && doc.layers && typeof doc.layers === 'object' ? doc.layers : {};
-            const ids = Object.keys(layers);
-            out.push({
-                date,
-                layers: ids.length,
-                arrows: ids.reduce((n, id) => n + (layers[id].kind === 'arrow' ? (layers[id].data.features || []).length : 0), 0),
-                updatedAt: doc && doc.savedAt ? doc.savedAt : 0
-            });
+            let meta = metaCache.get(date);
+            if (!meta) {
+                const layers = doc && doc.layers && typeof doc.layers === 'object' ? doc.layers : {};
+                const ids = Object.keys(layers);
+                let features = 0;
+                ids.forEach(id => {
+                    const l = layers[id] || {};
+                    features += (l.data && Array.isArray(l.data.features)) ? l.data.features.length : 0;
+                });
+                meta = {
+                    date,
+                    layers: ids.length,
+                    features: features,
+                    arrows: ids.reduce((n, id) => n + (layers[id].kind === 'arrow' ? (layers[id].data.features || []).length : 0), 0),
+                    updatedAt: doc && doc.savedAt ? doc.savedAt : 0
+                };
+                metaCache.set(date, meta);
+            }
+            out.push(meta);
         };
         mem.keys().forEach(key => {
             if (!key.startsWith(PREFIX)) return;
@@ -676,6 +698,14 @@
         remoteDocs.forEach((doc, date) => add(date, doc));
         out.sort((a, b) => a.date.localeCompare(b.date));
         return out;
+    }
+
+    // календар і перевірка «чи є дані» питають сотні дат підряд. Без цього вікна
+    // кожен такий запит повністю розбирав би кожен збережений GeoJSON.
+    function dateInfo(date) {
+        if (!DATE_RE.test(date || '')) return null;
+        listDates();
+        return metaCache.get(date) || null;
     }
 
     // данные, опубликованные вместе с сайтом (data/map.json), доступны даже без localStorage
@@ -1359,6 +1389,15 @@
         return '700 ' + PLACE_SIZE[rank] + "px 'Handjet', 'Tektur', monospace";
     }
 
+    // Підпис готується ОДИН раз: текст, крапка і ромб столиці лягають у власний
+    // маленький canvas-спрайт. У кожному кадрі лишаємо лише той спрайт у точку,
+    // куди мапа проектує координату міста. Це прибирає з гарячого шляху
+    // strokeText/measureText (головний витрата_JS під час зуму) і водночас
+    // робить неможливим «розтяг» підписів: полотно ніколи не має CSS-трансформації.
+    const placeSprites = new Map();
+    const PLACE_SPRITE_MAX = 2600;
+    let spritePx = 0;
+
     function placeEngine(map) {
         // подписи рисуются на отдельном canvas-оверлее: не зависят от CSS страницы,
         // шрифтов из сети и тёмного режима браузера
@@ -1376,12 +1415,10 @@
         let items = [];
         let extraDots = [];
         let timer = 0;
-        let moving = false;
-        let followOn = false;
-        let paintCam = null;
-        let lastPaint = 0;
+        let needFrame = false;
         const ctx = cv.getContext('2d');
         const widths = new Map();
+        let dprNow = 1;
 
         function viewSize() {
             const r = map.getCanvas().getBoundingClientRect();
@@ -1401,6 +1438,7 @@
             }
             cv.style.width = w + 'px';
             cv.style.height = h + 'px';
+            dprNow = dpr;
             return { x: w, y: h, dpr };
         }
 
@@ -1454,13 +1492,22 @@
 
                 const b = map.getBounds ? map.getBounds() : null;
                 if (!b || !b.getWest || !Number.isFinite(b.getWest()) || !Number.isFinite(b.getNorth())) return [];
-                const pad = 0.6;
-                const west = b.getWest() - pad, east = b.getEast() + pad;
-                const south = b.getSouth() - pad, north = b.getNorth() + pad;
+                // запас пошуку — частка кадру, а не фіксовані півградуса: на
+                // близькому огляді 0.6° это ціла область, і набір завалений
+                // великими містами далеко звідси, а свої маленькі до нього
+                // просто не встигають потрапити
+                const padX = Math.max(0.01, Math.min(0.6, (b.getEast() - b.getWest()) * 0.18));
+                const padY = Math.max(0.01, Math.min(0.6, (b.getNorth() - b.getSouth()) * 0.18));
+                const west = b.getWest() - padX, east = b.getEast() + padX;
+                const south = b.getSouth() - padY, north = b.getNorth() + padY;
                 const wrap = west > east;
 
                 const idx = placeIndex();
-                const maxMz = zoom + 2;
+                // на телефон не тягнемо сільський «хвіст»: candidate-набір
+                // у zoom+2 — це тисячі назв, які потім усі перебираються і
+                // відсіюються колізіями. велике місто з'явиться все одно,
+                // мале — коли наблизять
+                const maxMz = docMobile() ? zoom + 0.5 : zoom + 2;
                 const southMs = Math.round(south * PLACE_SCALE), northMs = Math.round(north * PLACE_SCALE);
                 const seen = new Set();
                 const out = [];
@@ -1495,17 +1542,120 @@
             }
         }
 
+        // спрайт підпису: текст, крапка і ромб столиці, намальовані відносно
+        // точної координати міста — це (0,0) спрайта. далі по кадрі лише drawImage
+        function buildSprite(name, rank, cap, dot, dpr) {
+            const fsz = PLACE_SIZE[rank];
+            const big = rank <= 1;
+            const tw = measure(name, rank);
+            const pad = 4 + (docMobile() ? 0 : 4);
+            const ty = dot ? -7 : 0;
+            let top = ty - fsz - pad;
+            if (cap) top = Math.min(top, ty - fsz / 2 - 6 - (big ? 3.4 : 2.9) - pad);
+            const bottom = ty + fsz * 0.32 + pad;
+            const left = -tw / 2 - pad, right = tw / 2 + pad;
+            const w = Math.max(2, Math.ceil(right - left)), h = Math.max(2, Math.ceil(bottom - top));
+            const c = document.createElement('canvas');
+            c.width = Math.round(w * dpr);
+            c.height = Math.round(h * dpr);
+            const k = c.getContext('2d');
+            k.setTransform(dpr, 0, 0, dpr, 0, 0);
+            k.translate(-left, -top);
+            k.textAlign = 'center';
+            k.textBaseline = dot ? 'bottom' : 'middle';
+            k.lineJoin = 'round';
+            k.font = placeFont(rank);
+            try { k.letterSpacing = (big ? 0.9 : 0.5) + 'px'; } catch (e) { }
+
+            if (dot) {
+                // точка на точній координаті: підпис висить над нею, центр тексту
+                // не видає місце
+                k.beginPath();
+                k.arc(0, 0, big ? 2.6 : 2.2, 0, Math.PI * 2);
+                k.fillStyle = cap ? PLACE_CAP : '#e8eef5';
+                k.fill();
+                k.strokeStyle = 'rgba(0, 0, 0, .88)';
+                k.lineWidth = 1;
+                k.stroke();
+            }
+            // м'яке світіння широким штрихом: дешевше за shadowBlur на сотнях підписів
+            if (!docMobile()) {
+                k.strokeStyle = cap ? 'rgba(255, 186, 74, .28)' : 'rgba(0, 0, 0, .3)';
+                k.lineWidth = (big ? 3.4 : 2.6) + 3.6;
+                k.strokeText(name, 0, ty);
+            }
+            k.strokeStyle = 'rgba(0, 0, 0, .92)';
+            k.lineWidth = big ? 3.4 : 2.6;
+            k.strokeText(name, 0, ty);
+            k.fillStyle = cap ? PLACE_CAP : PLACE_FILL[rank];
+            k.fillText(name, 0, ty);
+
+            if (cap) {
+                // ромб над столицею — картографічний маркер статусу
+                const d = big ? 3.4 : 2.9;
+                const my = ty - fsz / 2 - 6;
+                k.beginPath();
+                k.moveTo(0, my - d);
+                k.lineTo(d, my);
+                k.lineTo(0, my + d);
+                k.lineTo(-d, my);
+                k.closePath();
+                k.fillStyle = 'rgba(255, 212, 137, .95)';
+                k.fill();
+                k.strokeStyle = 'rgba(0, 0, 0, .8)';
+                k.lineWidth = 1;
+                k.stroke();
+            }
+            try { k.letterSpacing = '0px'; } catch (e) { }
+            return { cv: c, x: left, y: top, w, h };
+        }
+
+        function spriteOf(it) {
+            const key = lang + '|' + it.name + '|' + it.rank + '|' + (it.cap ? 1 : 0) + '|'
+                + (it.dot ? 1 : 0) + '|' + (docMobile() ? 'm' : 'd') + '|' + dprNow.toFixed(2);
+            let sp = placeSprites.get(key);
+            if (sp) return sp;
+            sp = buildSprite(it.name, it.rank, it.cap, it.dot, dprNow);
+            spritePx += sp.cv.width * sp.cv.height;
+            // пам'ять телефону не може тримати нескінченний склад підписів:
+            // переповнили — скидаємо склад, дешевше перебудувати, ніж заглухнути
+            if (placeSprites.size > PLACE_SPRITE_MAX || spritePx > (docMobile() ? 3.6e6 : 9e6)) {
+                placeSprites.clear();
+                spritePx = sp.cv.width * sp.cv.height;
+            }
+            placeSprites.set(key, sp);
+            return sp;
+        }
+
+        // розчинення живе на власному rAF, бо мапа у спокої не генерує кадрів:
+        // без цього новий підпис завмер би напівпрозорим назавжди
+        let fadeRaf = 0;
+        function tickFade() {
+            fadeRaf = 0;
+            const now = performance.now();
+            let left = 0;
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                if (it.a >= 1) continue;
+                it.a = Math.min(1, (now - it.rec.t0) / FADE_MS);
+                it.rec.a = it.a;
+                if (it.a < 1) left++;
+            }
+            paint();
+            if (left) fadeRaf = requestAnimationFrame(tickFade);
+        }
+        function kickFade() {
+            if (!fadeRaf) fadeRaf = requestAnimationFrame(tickFade);
+        }
+
         function paint() {
             const s = syncCanvas();
-            if (cv.style.transform) cv.style.transform = '';
-            followOn = false;
             ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
             ctx.clearRect(0, 0, s.x, s.y);
-            ctx.textAlign = 'center';
-            ctx.lineJoin = 'round';
 
             // точки сёл без подписи (подпись не влезла в коллизии) — координата есть у каждого
             extraDots.forEach(d => {
+                if (d.x < -8 || d.y < -8 || d.x > s.x + 8 || d.y > s.y + 8) return;
                 ctx.beginPath();
                 ctx.arc(d.x, d.y, 1.6, 0, Math.PI * 2);
                 ctx.fillStyle = d.cap ? PLACE_CAP : '#e8eef5';
@@ -1515,74 +1665,27 @@
                 ctx.stroke();
             });
 
-            items.forEach(it => {
-                const big = it.rank <= 1;
-                const ty = it.dot ? it.y - 7 : it.y;
-                ctx.textBaseline = it.dot ? 'bottom' : 'middle';
-                ctx.font = placeFont(it.rank);
-                try { ctx.letterSpacing = (big ? 0.9 : 0.5) + 'px'; } catch (e) { }
-
-                // точка на точной координате: подпись висит над ней, центр текста не выдаёт место
-                if (it.dot) {
-                    ctx.beginPath();
-                    ctx.arc(it.x, it.y, big ? 2.6 : 2.2, 0, Math.PI * 2);
-                    ctx.fillStyle = it.cap ? PLACE_CAP : '#e8eef5';
-                    ctx.fill();
-                    ctx.strokeStyle = 'rgba(0, 0, 0, .88)';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
-                }
-
-                // мягкое свечение широким штрихом: дешевле, чем shadowBlur на сотнях подписей
-                if (!docMobile()) {
-                    ctx.strokeStyle = it.cap ? 'rgba(255, 186, 74, .28)' : 'rgba(0, 0, 0, .3)';
-                    ctx.lineWidth = (big ? 3.4 : 2.6) + 3.6;
-                    ctx.strokeText(it.name, it.x, ty);
-                }
-
-                ctx.strokeStyle = 'rgba(0, 0, 0, .92)';
-                ctx.lineWidth = big ? 3.4 : 2.6;
-                ctx.strokeText(it.name, it.x, ty);
-
-                ctx.fillStyle = it.cap ? PLACE_CAP : PLACE_FILL[it.rank];
-                ctx.fillText(it.name, it.x, ty);
-
-                // ромб над столицей — картографический маркер статуса
-                if (it.cap) {
-                    const d = big ? 3.4 : 2.9;
-                    const cy = ty - PLACE_SIZE[it.rank] / 2 - 6;
-                    ctx.beginPath();
-                    ctx.moveTo(it.x, cy - d);
-                    ctx.lineTo(it.x + d, cy);
-                    ctx.lineTo(it.x, cy + d);
-                    ctx.lineTo(it.x - d, cy);
-                    ctx.closePath();
-                    ctx.fillStyle = 'rgba(255, 212, 137, .95)';
-                    ctx.fill();
-                    ctx.strokeStyle = 'rgba(0, 0, 0, .8)';
-                    ctx.lineWidth = 1;
-                    ctx.stroke();
-                }
-            });
-
-            try { ctx.letterSpacing = '0px'; } catch (e) { }
-
-            // камера останньої відмальовки: на її основі під час руху рахується
-            // подібність transform-ом, як у blend-канвасів
-            lastPaint = performance.now();
-            let c0 = null;
-            try { c0 = map.getCenter ? map.getCenter() : null; } catch (e) { }
-            paintCam = c0 ? {
-                z: map.getZoom(), cx: c0.lng, cy: c0.lat,
-                br: map.getBearing ? map.getBearing() : 0, w: s.x, h: s.y
-            } : null;
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
+                if (it.a < 1) ctx.globalAlpha = it.a;
+                ctx.drawImage(it.sp.cv, it.x + it.sp.x, it.y + it.sp.y, it.sp.w, it.sp.h);
+                if (it.a < 1) ctx.globalAlpha = 1;
+            }
         }
 
         let lastSig = '';
-        let lastPos = 0;
+        // Смале місто не повинно вискакувати на мапі різким плямим: підпис
+        // розчинається, а вже знайомий продовжує з того ж місця, а не спалахує
+        // наново на кожній перебудові набору.
+        const FADE_MS = docMobile() ? 240 : 180;
+        const fadeOf = new Map();
+
         function rebuild() {
             // не перестраиваем подписи, если вид и язык не изменились
             const size0 = viewSize();
+            const fr = camFrame(map);
+            if (!fr) return;
             const c = map.getCenter ? map.getCenter() : { lng: 0, lat: 0 };
             const sig = lang + '|' + map.getZoom().toFixed(3) + '|' + c.lng.toFixed(3) + ',' + c.lat.toFixed(3) +
                 '|' + Math.round(size0.x) + 'x' + Math.round(size0.y);
@@ -1593,49 +1696,94 @@
             extraDots = [];
             const list = collect();
             const size = size0;
-            const limit = docMobile()
-                ? Math.max(140, Math.min(300, Math.round(size.x * size.y / 1500)))
+            const mob = docMobile();
+            // телефон тягне кадр із підписів: кожен — окремий drawImage, тому
+            // стеля тут удвічі нижча за десктопну. решта міст лишається крапками
+            const limit = mob
+                ? Math.max(60, Math.min(150, Math.round(size.x * size.y / 2600)))
                 : Math.max(PLACE_MIN_LIMIT, Math.min(PLACE_MAX_LIMIT, Math.round(size.x * size.y / 1000)));
             const zoom = map.getZoom();
-            const boxes = [];
-            const dotLimit = docMobile() ? 220 : PLACE_DOT_LIMIT;
-            const addDot = (it, p) => {
+            const dotLimit = mob ? 90 : PLACE_DOT_LIMIT;
+            // набір відсортовано за важливістю (столиця, ранг, населення), тому
+            // обрізання просто відкидає найдрібніше. без стелі на телефоні тут
+            // перебираються тисячі сіл, і саме це вішає кадр
+            const maxScan = mob ? 900 : 4000;
+            // сітка колізій: раніше кожен кандидат порівнювався з кожною
+            // вільною рамкою — сотні тисяч порівнянь на перебудову
+            const CELL = 76;
+            const grid = new Map();
+            const now0 = performance.now();
+            const addDot = (it, x, y) => {
                 if (extraDots.length >= dotLimit) return;
-                extraDots.push({ coord: it.coord, x: p.x, y: p.y, cap: it.cap });
+                extraDots.push({ mx: it.mx, my: it.my, x: x, y: y, cap: it.cap });
             };
-            list.forEach(it => {
-                const p = map.project(it.coord);
-                if (p.x < -80 || p.y < -40 || p.x > size.x + 80 || p.y > size.y + 40) return;
-                const dotEligible = it.rank >= 3 && zoom >= 9.6;
-                if (items.length >= limit) { if (dotEligible) addDot(it, p); return; }
-                const w = measure(it.name, it.rank);
-                const h = PLACE_SIZE[it.rank] + 4;
-                const y0 = dotEligible ? p.y - 7 - h : p.y - h / 2;
-                const y1 = dotEligible ? p.y + 2 : p.y + h / 2;
-                for (let i = 0; i < boxes.length; i++) {
-                    const r = boxes[i];
-                    if (p.x - w / 2 < r.x1 && p.x + w / 2 > r.x0 && y0 < r.y1 && y1 > r.y0) {
-                        if (dotEligible) addDot(it, p);
-                        return;
+            const seenBox = (x0, y0, x1, y1) => {
+                for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) {
+                    for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) {
+                        const arr = grid.get(cy * 1024 + cx);
+                        if (!arr) continue;
+                        for (let i = 0; i < arr.length; i++) {
+                            const r = arr[i];
+                            if (x0 < r.x1 && x1 > r.x0 && y0 < r.y1 && y1 > r.y0) return true;
+                        }
                     }
                 }
-                boxes.push({ x0: p.x - w / 2, x1: p.x + w / 2, y0, y1 });
-                items.push({ coord: it.coord, name: it.name, rank: it.rank, cap: it.cap, x: p.x, y: p.y, w, h, dot: dotEligible });
-            });
+                return false;
+            };
+            const pushBox = (r) => {
+                for (let cy = Math.floor(r.y0 / CELL); cy <= Math.floor(r.y1 / CELL); cy++) {
+                    for (let cx = Math.floor(r.x0 / CELL); cx <= Math.floor(r.x1 / CELL); cx++) {
+                        const k = cy * 1024 + cx;
+                        const arr = grid.get(k);
+                        if (arr) arr.push(r); else grid.set(k, [r]);
+                    }
+                }
+            };
+            const n = Math.min(list.length, maxScan);
+            for (let s = 0; s < n; s++) {
+                const it = list[s];
+                const mx = mercX(it.coord[0]), my = mercY(it.coord[1]);
+                const px = fr.px0 + mx * fr.ws;
+                const py = fr.py0 + my * fr.ws;
+                if (px < -80 || py < -40 || px > size.x + 80 || py > size.y + 40) continue;
+                it.mx = mx; it.my = my;
+                const dotEligible = it.rank >= 3 && zoom >= 9.6;
+                if (items.length >= limit) { if (dotEligible) addDot(it, px, py); continue; }
+                const w = measure(it.name, it.rank);
+                const h = PLACE_SIZE[it.rank] + 4;
+                const y0 = dotEligible ? py - 7 - h : py - h / 2;
+                const y1 = dotEligible ? py + 2 : py + h / 2;
+                const x0 = px - w / 2, x1 = px + w / 2;
+                if (seenBox(x0, y0, x1, y1)) { if (dotEligible) addDot(it, px, py); continue; }
+                pushBox({ x0: x0, x1: x1, y0: y0, y1: y1 });
+                const key = it.name + '@' + Math.round(it.coord[0] * 1e4) + ',' + Math.round(it.coord[1] * 1e4);
+                let rec = fadeOf.get(key);
+                if (!rec) { rec = { a: 0, t0: now0 }; fadeOf.set(key, rec); }
+                const item = {
+                    coord: it.coord, mx: mx, my: my, rec: rec, a: rec.a,
+                    name: it.name, rank: it.rank, cap: it.cap, x: px, y: py, w: w, h: h, dot: dotEligible
+                };
+                item.sp = spriteOf(item);
+                items.push(item);
+            }
+            if (fadeOf.size > 6000) fadeOf.clear();
+            kickFade();
             paint();
         }
 
         function reposition() {
-            const size = viewSize();
-            items.forEach(it => {
-                const p = map.project(it.coord);
-                it.x = p.x; it.y = p.y;
-                it.off = p.x < -60 || p.y < -30 || p.x > size.x + 60 || p.y > size.y + 30;
-            });
-            extraDots.forEach(d => {
-                const p = map.project(d.coord);
-                d.x = p.x; d.y = p.y;
-            });
+            const fr = camFrame(map);
+            if (!fr) return;
+            for (let i = 0; i < items.length; i++) {
+                const it = items[i];
+                it.x = fr.px0 + it.mx * fr.ws;
+                it.y = fr.py0 + it.my * fr.ws;
+            }
+            for (let i = 0; i < extraDots.length; i++) {
+                const d = extraDots[i];
+                d.x = fr.px0 + d.mx * fr.ws;
+                d.y = fr.py0 + d.my * fr.ws;
+            }
             paint();
         }
 
@@ -1646,46 +1794,25 @@
             timer = setTimeout(() => { timer = 0; rebuild(); }, delay);
         }
 
-        // під час руху полотно підписів зсувається тим самим transform-ом, що й
-        // blend-канваси (transform на самому полотні не ізолює його від мапи).
-        // Репроєкція — лише коли кадр вже не покриває видимість або рух завершився:
-        // жодних project() на кожен кадр панорами/зуму.
-        function applyFollow(t) { cv.style.transform = t; }
-        function followReset() { if (followOn) { cv.style.transform = ''; followOn = false; } }
-        function followCamera() {
-            if (!paintCam || !moving) return;
-            let mcv; try { mcv = map.getCanvas(); } catch (e) { return; }
-            const w = mcv.clientWidth || mcv.width || 1;
-            const h = mcv.clientHeight || mcv.height || 1;
-            if (w !== paintCam.w || h !== paintCam.h) { moving = false; followReset(); scheduleBuild(0); return; }
-            const k = Math.pow(2, map.getZoom() - paintCam.z);
-            const dth = ((map.getBearing ? map.getBearing() : 0) - paintCam.br) * Math.PI / 180;
-            let pc; try { pc = map.project([paintCam.cx, paintCam.cy]); } catch (e) { return; }
-            if (!pc || !isFinite(pc.x) || !isFinite(pc.y) || Math.abs(pc.x) > 1e6 || Math.abs(pc.y) > 1e6) return;
-            applyFollow('translate(' + (pc.x - w / 2).toFixed(2) + 'px,' + (pc.y - h / 2).toFixed(2) + 'px)'
-                + ' rotate(' + (dth * 180 / Math.PI).toFixed(3) + 'deg)'
-                + ' scale(' + k.toFixed(4) + ')');
-            followOn = true;
-            const bx = pc.x - w / 2;
-            const by = pc.y - h / 2;
-            // на близькому огляді підписи великі й розтяг одразу видно — там
-            // перепроекція дешева, тому поріг жорсткий і частий
-            const closeLbl = Math.max(paintCam.z, map.getZoom()) >= 10.2;
-            const uncovered = closeLbl
-                ? (k > 1.12 || k < 0.9 || (bx * bx + by * by) > 3600)
-                : (k > 1.35 || k < 0.88 || (bx * bx + by * by) > 12100);
-            if (uncovered && performance.now() - lastPaint > (closeLbl ? 60 : (docMobile() ? 340 : 190))) reposition();
+        // під час руху камери набір підписів не перебудовуємо і полотно не
+        // розтягуємо: кожен готовий спрайт лишаємо у точку, куди мапа саме
+        // зараз проектує його координату. тому помилка положення — нульова,
+        // а вартість кадру — сотні drawImage замість сотень strokeText
+        function onFrame() {
+            if (!needFrame) return;
+            needFrame = false;
+            reposition();
         }
 
-        map.on('movestart', () => { moving = true; });
-        map.on('move', followCamera);
+        map.on('move', () => { needFrame = true; });
+        map.on('render', onFrame);
         map.on('moveend', () => {
-            moving = false;
-            if (followOn) { followReset(); reposition(); }
+            needFrame = true;
+            onFrame();
             scheduleBuild(40);
         });
         map.on('zoomend', () => scheduleBuild(40));
-        map.on('resize', () => { followReset(); scheduleBuild(40); });
+        map.on('resize', () => { needFrame = true; scheduleBuild(40); });
         map.on('idle', () => scheduleBuild(120));
 
         // сторож: если подписей нет, а зум позволяет — пробуем снова,
@@ -1700,11 +1827,15 @@
             refresh() {
                 lang = currentLang;
                 lastSig = '';
+                placeSprites.clear();
+                spritePx = 0;
+                widths.clear();
                 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { lastSig = ''; scheduleBuild(0); });
                 scheduleBuild(0);
             },
             destroy() {
                 clearInterval(watchdog);
+                if (fadeRaf) cancelAnimationFrame(fadeRaf);
                 if (cv.parentNode) cv.parentNode.removeChild(cv);
                 placeEngines.delete(map);
             }
@@ -2590,49 +2721,100 @@
         return box;
     }
 
+    /* --------------------------- швидка проекція --------------------------- */
+
+    // Кожна вершина фронту і кожен підпис у кадрі проходять через проекцію, а
+    // map.project() на кожну точку будує матриці й новий об'єкт-координату:
+    // на телефоні це сотні мілісекунд на жест і купа сміття для GC. Камера тут
+    // завжди без нахилу й повороту (maxPitch: 0, dragRotate: false, touchPitch
+    // і hash не ввімкнено, у коді повороту немає), тож проекція — чисте
+    // афінне перетворення. Зносимо його в один перерахунок на кадр: далі
+    // точка — це два множники і дві суми, без викликів мапи взагалі.
+    function mercX(lng) { return (lng + 180) / 360; }
+
+    function mercY(lat) {
+        const s = Math.sin(lat * Math.PI / 180);
+        return 0.5 - 0.25 * Math.log((1 + s) / (1 - s)) / Math.PI;
+    }
+
+    // рамка кадру: x = px0 + mercX(lng) * ws, y = py0 + mercY(lat) * ws.
+    // Вісь y у меркатора росте вниз, тому південь дає більший y — як і на
+    // екрані. Формула збігається з map.project до 1e-9 пікселя.
+    // Об'єкт один на весь рушій: кадр не повинен плодити сміття щосекунди
+    const CAM_F = { ws: 0, px0: 0, py0: 0 };
+
+    function camFrame(map) {
+        let c;
+        try { c = map.getCenter(); } catch (e) { return null; }
+        if (!c || !isFinite(c.lng) || !isFinite(c.lat)) return null;
+        const t = map.transform;
+        const cv = map.getCanvas();
+        const w = (t && t.width) || (cv && cv.clientWidth) || 1;
+        const h = (t && t.height) || (cv && cv.clientHeight) || 1;
+        const ws = (t && t.worldSize) || 512 * Math.pow(2, map.getZoom());
+        CAM_F.ws = ws;
+        CAM_F.px0 = w / 2 - mercX(c.lng) * ws;
+        CAM_F.py0 = h / 2 - mercY(c.lat) * ws;
+        return CAM_F;
+    }
+
+    // меркатор кілець теж кешується: перетворення з синусом і логарифмом не
+    // повинне повторюватися на кожну вершину кожного кадру
+    const mercCache = new WeakMap();
+
+    function mercFlat(flat) {
+        let hit = mercCache.get(flat);
+        if (hit === undefined) {
+            hit = new Float64Array(flat.length);
+            for (let i = 0; i < flat.length; i += 2) {
+                hit[i] = mercX(flat[i]);
+                hit[i + 1] = mercY(flat[i + 1]);
+            }
+            mercCache.set(flat, hit);
+        }
+        return hit;
+    }
+
     // рамка однієї лінії (кільця) мультиполігона: частини нерідко живуть зовсім
     // в різних кутах світу, і без цього відсікання одна смітинка розтягує градієнт
-    const partBoxes = new WeakMap();
-
-    function ringBox(ring) {
-        if (!ring || typeof ring !== 'object') return null;
-        const hit = partBoxes.get(ring);
-        if (hit !== undefined) return hit;
+    // на весь фронт. рахується з плаского масиву — той самий обхід, що й для
+    // спрощення, тому окремого WeakMap-кешу на кільце не потрібно
+    function flatBox(flat) {
         let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
-        for (let i = 0; i < ring.length; i++) {
-            const c = ring[i];
-            if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
-            if (c[0] < w) w = c[0];
-            if (c[0] > e) e = c[0];
-            if (c[1] < s) s = c[1];
-            if (c[1] > n) n = c[1];
+        for (let i = 0; i < flat.length; i += 2) {
+            const x = flat[i], y = flat[i + 1];
+            if (x < w) w = x;
+            if (x > e) e = x;
+            if (y < s) s = y;
+            if (y > n) n = y;
         }
-        const box = isFinite(w) && isFinite(s) && isFinite(e) && isFinite(n) ? [w, s, e, n] : null;
-        partBoxes.set(ring, box);
-        return box;
+        return isFinite(w) && isFinite(s) && isFinite(e) && isFinite(n) ? [w, s, e, n] : null;
     }
 
     // рамка в экранных координатах канваса; null — если хоть один угол ушёл
     // за горизонт/за пределы проекции: такой объект не отсекаем, рисуем как есть
-    // ox/oy — зсув початку координат: полотно більше за в'юпорт і малює з запасом
-    function boxRect(map, box, rx, ry, ox, oy) {
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        const corners = [[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]]];
-        for (let i = 0; i < 4; i++) {
-            let p;
-            try { p = map.project(corners[i]); } catch (e) { return null; }
-            if (!isFinite(p.x) || !isFinite(p.y) || Math.abs(p.x) > 1e6 || Math.abs(p.y) > 1e6) return null;
-            const x = p.x * rx + (ox || 0), y = p.y * ry + (oy || 0);
-            if (x < x0) x0 = x;
-            if (x > x1) x1 = x;
-            if (y < y0) y0 = y;
-            if (y > y1) y1 = y;
-        }
-        return [x0, y0, x1, y1];
+    // ox/oy — зсув початку координат: полотно більше за в'юпорт і малює з запасом.
+    // кут і результат пишемо у спільні робочі масиви: це найгарячіший виклик
+    // кадру (два рази на кожну частину шару), а жити він має нуль об'єктів
+    const BR_OUT = [0, 0, 0, 0];
+    function boxRect(map, box, rx, ry, ox, oy, fr) {
+        if (!box) return null;
+        const f = fr || camFrame(map);
+        if (!f) return null;
+        const sx = ox || 0, sy = oy || 0;
+        // меркатор лінійний по довготі, тому достатньо двох протилежних кутів
+        const x0 = (f.px0 + mercX(box[0]) * f.ws) * rx + sx;
+        const x1 = (f.px0 + mercX(box[2]) * f.ws) * rx + sx;
+        const y0 = (f.py0 + mercY(box[3]) * f.ws) * ry + sy;
+        const y1 = (f.py0 + mercY(box[1]) * f.ws) * ry + sy;
+        if (!isFinite(x0) || !isFinite(y0) || !isFinite(x1) || !isFinite(y1)) return null;
+        if (Math.abs(x0) > 1e6 || Math.abs(y0) > 1e6 || Math.abs(x1) > 1e6 || Math.abs(y1) > 1e6) return null;
+        BR_OUT[0] = x0; BR_OUT[1] = y0; BR_OUT[2] = x1; BR_OUT[3] = y1;
+        return BR_OUT;
     }
 
-    function onScreen(map, box, rx, ry, w, h, pad, ox, oy) {
-        const r = boxRect(map, box, rx, ry, ox, oy);
+    function onScreen(map, box, rx, ry, w, h, pad, ox, oy, fr) {
+        const r = boxRect(map, box, rx, ry, ox, oy, fr);
         if (!r) return true;
         return !(r[2] < -pad || r[0] > w + pad || r[3] < -pad || r[1] > h + pad);
     }
@@ -2644,6 +2826,177 @@
         const gx = (1 - k * F) * cssW / 2 + Math.abs(bx);
         const gy = (1 - k * F) * cssH / 2 + Math.abs(by);
         return gx > gy ? gx : gy;
+    }
+
+    /* --------- LOD і печена геометрія: готуємо заздалегідь, у кадрі лише читаємо --------- */
+
+    // Кеш спрощень живе поза рушієм: повна підготовка даних на старті гріє той
+    // самий кеш, який потім читає кадр, — посеред жесту будувати вже нічого.
+    const lodCache = new Map();
+    function lodTolRaw(z) {
+        if (z >= 12) return 0;
+        if (z >= 10) return 0.0003;
+        if (z >= 8.5) return 0.0009;
+        if (z >= 7) return 0.002;
+        if (z >= 5.5) return 0.005;
+        return 0.012;
+    }
+    // телефон малює на сходинку грубіше (це головна ціна кадру), слабкий
+    // пристрій — ще на одній; посеред жесту додається ще крок, бо там
+    // рахуються тисячі вершин на кожді 60 Гц. На близькому огляді вершин
+    // лишається мало (culling), тому там грубість не економить кадр, а
+    // псує форму — там тільки точна сходи
+    function lodTol(z, inMotion) {
+        if (!docMobile()) return lodTolRaw(z);
+        if (z >= 10.2) return lodTolRaw(z);
+        let shift = lowEndDevice() ? 2.5 : 1.3;
+        if (inMotion) shift += 1.5;
+        return lodTolRaw(z - shift);
+    }
+    // стеля на зсув точки від спрощення: півтора css-пікселя на поточному
+    // масштабі. Далі спрощення вже видно оком — контур «їде» за пальцем.
+    // масштаб беремо з кроком 0.5 і в більший бік, щоб кеш спрощень не
+    // перебудовувався на кождому пікселі скролу
+    function tolCapAt(z) {
+        z = Math.ceil(z * 2) / 2;
+        const deg = 1.6 / (0.711 * Math.pow(2, z));
+        return deg > 0 ? deg : 1;
+    }
+    function tolCap(map) {
+        let z = 9;
+        try { z = map.getZoom(); } catch (e) { }
+        return tolCapAt(z);
+    }
+    // Кільце у пласкому вигляді [lng,lat,lng,lat,…] і вже перевірене. Кадр тоді
+    // не читає масив координат, не робить isFinite на кожній вершині і не плодить
+    // тимчасові пари — у фронті це десятки тисяч вершин на кадр.
+    function flatRing(ring) {
+        if (!ring || !ring.length) return null;
+        const tmp = new Float64Array(ring.length * 2);
+        let n = 0;
+        for (let i = 0; i < ring.length; i++) {
+            const c = ring[i];
+            if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
+            tmp[n++] = c[0];
+            tmp[n++] = c[1];
+        }
+        return n >= 6 ? tmp.subarray(0, n) : null;
+    }
+
+    function dpSimplifyFlat(f, tol) {
+        const n = f.length / 2;
+        if (n < 5) return f;
+        const keep = new Uint8Array(n);
+        keep[0] = keep[n - 1] = 1;
+        const stack = [0, n - 1];
+        while (stack.length) {
+            const b = stack.pop(), a = stack.pop();
+            if (b - a < 2) continue;
+            const ax = f[a * 2], ay = f[a * 2 + 1];
+            const dx = f[b * 2] - ax, dy = f[b * 2 + 1] - ay;
+            const len2 = dx * dx + dy * dy;
+            let best = -1, bestD = -1;
+            for (let i = a + 1; i < b; i++) {
+                const px = f[i * 2] - ax, py = f[i * 2 + 1] - ay;
+                let d;
+                if (len2 < 1e-15) d = px * px + py * py;
+                else {
+                    const t = (px * dx + py * dy) / len2;
+                    const ex = px - t * dx, ey = py - t * dy;
+                    d = ex * ex + ey * ey;
+                }
+                if (d > bestD) { bestD = d; best = i; }
+            }
+            if (best > 0 && bestD > tol * tol) {
+                keep[best] = 1;
+                stack.push(a, best, best, b);
+            }
+        }
+        const out = new Float64Array(n * 2);
+        let m = 0;
+        for (let i = 0; i < n; i++) {
+            if (!keep[i]) continue;
+            out[m++] = f[i * 2];
+            out[m++] = f[i * 2 + 1];
+        }
+        return out.subarray(0, m);
+    }
+
+    // спрощене коло одразу у меркаторі — саме те читає кадр
+    function lodM(pr, tol) {
+        if (tol <= 0) return pr.mflat;
+        let m = lodCache.get(tol);
+        if (!m) { m = new WeakMap(); lodCache.set(tol, m); }
+        let hit = m.get(pr.flat);
+        if (hit === undefined) { hit = mercFlat(dpSimplifyFlat(pr.flat, tol)); m.set(pr.flat, hit); }
+        return hit;
+    }
+
+    // «випікання» FeatureCollection: плаский список кілець разом з їх рамками.
+    // Раніше на кожен кадр ми знову розгортали geometry.type, нарізали
+    // тимчасові масиви polygon[] і обходили вершини заради рамки.
+    const fcBakes = new WeakMap();
+    function bakeParts(fc) {
+        if (!fc || typeof fc !== 'object') return [];
+        const hit = fcBakes.get(fc);
+        if (hit) return hit;
+        const out = [];
+        (fc.features || []).forEach(f => {
+            const g = f.geometry || {};
+            const rings = [];
+            const put = r => {
+                const flat = flatRing(r);
+                if (flat) rings.push({ flat: flat, mflat: mercFlat(flat), box: flatBox(flat) });
+            };
+            if (g.type === 'Polygon') {
+                (g.coordinates || []).forEach(put);
+            } else if (g.type === 'MultiPolygon') {
+                (g.coordinates || []).forEach(poly => (poly || []).forEach(put));
+            }
+            if (rings.length) out.push({ box: featBox(f), rings });
+        });
+        fcBakes.set(fc, out);
+        return out;
+    }
+
+    // Повна підготовка перед першим жестом: печемо геометрію і проганяємо кожне
+    // коло через УСЮ сходи спрощень — і робочу, і «в русі». Після цього під час
+    // жесту lodM лише бере готове з кешу: жодного dpSimplify, жодного
+    // синуса-логарифма і жодного map.project у кадрі.
+    let lodLadder = null;
+    function lodTols() {
+        if (lodLadder) return lodLadder;
+        const set = new Set();
+        for (let z = 3; z <= 14; z += 0.5) {
+            set.add(Math.min(lodTol(z, false), tolCapAt(z)));
+            set.add(Math.min(lodTol(z, true), tolCapAt(z)));
+        }
+        lodLadder = [];
+        set.forEach(t => { if (t > 0) lodLadder.push(t); });
+        lodLadder.sort((a, b) => a - b);
+        return lodLadder;
+    }
+
+    function warmGeometry(fcs, zooms) {
+        const t0 = performance.now();
+        const list = lodTols().slice();
+        if (zooms && zooms.length) {
+            const extra = new Set();
+            zooms.forEach(z => {
+                const cap = tolCapAt(z);
+                extra.add(Math.min(lodTol(z, false), cap));
+                extra.add(Math.min(lodTol(z, true), cap));
+            });
+            extra.forEach(t => { if (t > 0 && list.indexOf(t) < 0) list.push(t); });
+        }
+        let rings = 0;
+        (fcs || []).forEach(fc => {
+            bakeParts(fc).forEach(part => part.rings.forEach(pr => {
+                rings++;
+                for (let i = 0; i < list.length; i++) lodM(pr, list[i]);
+            }));
+        });
+        return { rings: rings, tols: list.length, ms: +(performance.now() - t0).toFixed(1) };
     }
 
     function blendEngine(map, getLayers, isVisible, displayFC) {
@@ -2882,51 +3235,12 @@
             forced = true;
         }
 
-        // LOD: чим ширший огляд, тим грубіша геометрія — як у deepstatemap.
-        // tol у градусах, кроки фіксовані, щоб кеш не розростався з кожним зумом
-        const lodCache = new Map();
-        function lodTolRaw(z) {
-            if (z >= 12) return 0;
-            if (z >= 10) return 0.0003;
-            if (z >= 8.5) return 0.0009;
-            if (z >= 7) return 0.002;
-            if (z >= 5.5) return 0.005;
-            return 0.012;
-        }
-        // телефон малює на сходинку грубіше (це головна ціна кадру), слабкий
-        // пристрій — ще на одній; посеред жесту додається ще крок, бо там
-        // рахуються тисячі вершин на кожді 60 Гц. На близькому огляді вершин
-        // лишається мало (culling), тому там грубість не економить кадр, а
-        // псує форму — там тільки точна сходи
-        function lodTol(z, inMotion) {
-            if (!isMobile()) return lodTolRaw(z);
-            if (z >= 10.2) return lodTolRaw(z);
-            let shift = lowEndDevice() ? 2.5 : 1.3;
-            if (inMotion) shift += 1.5;
-            return lodTolRaw(z - shift);
-        }
-        // стеля на зсув точки від спрощення: півтора css-пікселя на поточному
-        // масштабі. Далі спрощення вже видно оком — контур «їде» за пальцем.
-        // масштаб беремо з кроком 0.5 і в більший бік, щоб кеш спрощень не
-        // перебудовувався на кождому пікселі скролу
-        function tolCap(map) {
-            let z = 9;
-            try { z = map.getZoom(); } catch (e) { }
-            z = Math.ceil(z * 2) / 2;
-            const deg = 1.6 / (0.711 * Math.pow(2, z));
-            return deg > 0 ? deg : 1;
-        }
-        function lodRing(ring, tol) {
-            if (tol <= 0) return ring;
-            let m = lodCache.get(tol);
-            if (!m) { m = new WeakMap(); lodCache.set(tol, m); }
-            let hit = m.get(ring);
-            if (hit === undefined) { hit = dpSimplify(ring, tol); m.set(ring, hit); }
-            return hit;
-        }
+
 
         function paint() {
             if (!host) return;
+            const fr = camFrame(map);
+            if (!fr) return;
             const key = cameraKey();
             if (!forced && key === camKey) return;
             camKey = key;
@@ -2958,13 +3272,17 @@
                 const l = it.layer;
                 if (!l) return;
                 const fc = displayFC ? displayFC(l) : l.data;
-                const feats = (fc && fc.features) || [];
-                if (!feats.length) return;
+                const parts = bakeParts(fc);
+                if (!parts.length) return;
                 const rx = cv.width / (cssW * boxF);
                 const ry = cv.height / (cssH * boxF);
                 // полотно більше за в'юпорт — екранні координати входять зі зсувом
                 const offX = cssW * (boxF - 1) / 2 * rx;
                 const offY = cssH * (boxF - 1) / 2 * ry;
+                // коефіцієнти афінної проекції цього полотна: вершина потім
+                // коштує два множники й дві суми, замість map.project
+                const kx = fr.ws * rx, ky = fr.ws * ry;
+                const zx = fr.px0 * rx + offX, zy = fr.py0 * ry + offY;
                 // запас на светіння і розмиті контури навколо видимої області
                 // + дрібні шматки на слабкому телефоні не светяться взагалі
 
@@ -2972,55 +3290,56 @@
                 ctx.fillStyle = hexA(l.style.color, l.style.alpha);
                 ctx.beginPath();
                 let pts = 0;
-                const rimPts = [];
+                // кромка світіння збирається одразу у Path2D: другий прохід по
+                // всіх вершинах і купички координат у JS-масиві зникають
+                let rimPath = null;
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-                feats.forEach(f => {
+                parts.forEach(part => {
                     // умная прорисовка: фича целиком вне экрана не проектируется
                     // и не попадает в путь — на фронте это половина слоёв
-                    const bb = featBox(f);
-                    if (bb && !onScreen(map, bb, rx, ry, cv.width, cv.height, pad, offX, offY)) return;
+                    if (part.box && !onScreen(map, part.box, rx, ry, cv.width, cv.height, pad, offX, offY, fr)) return;
 
-                    const g = f.geometry || {};
-                    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
-                    polys.forEach(poly => (poly || []).forEach(ring => {
-                        if (!ring || ring.length < 3) return;
-                        const rb = ringBox(ring);
-                        let rim = rimPts;
-                        if (rb) {
-                            const rr = boxRect(map, rb, rx, ry, offX, offY);
+                    for (let ri = 0; ri < part.rings.length; ri++) {
+                        const pr = part.rings[ri];
+                        let rim = true;
+                        if (pr.box) {
+                            const rr = boxRect(map, pr.box, rx, ry, offX, offY, fr);
                             if (rr) {
                                 // частина поза екраном або мікроскопічна на цьому
                                 // огляді — не малюємо і в градієнт не рахуємо
-                                if (rr[2] < -pad || rr[0] > cv.width + pad || rr[3] < -pad || rr[1] > cv.height + pad) return;
-                                if (rr[2] - rr[0] < tinyPx && rr[3] - rr[1] < tinyPx) return;
+                                if (rr[2] < -pad || rr[0] > cv.width + pad || rr[3] < -pad || rr[1] > cv.height + pad) continue;
+                                if (rr[2] - rr[0] < tinyPx && rr[3] - rr[1] < tinyPx) continue;
                                 // кромку світіння на дрібних частинах не малюємо
-                                if (rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx) rim = null;
+                                if (rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx) rim = false;
                             }
                         }
-                        const ring2 = lodRing(ring, tol);
-                        if (ring2.length < 3) return;
-                        const rpts = rim === null ? null : [];
-                        if (rpts) rimPts.push(rpts);
-                        for (let i = 0; i < ring2.length; i++) {
-                            const c = ring2[i];
-                            if (!c || !isFinite(c[0]) || !isFinite(c[1])) continue;
-                            const p = map.project(c);
-                            const x = p.x * rx + offX;
-                            const y = p.y * ry + offY;
+                        const f = lodM(pr, tol);
+                        const len = f.length;
+                        if (len < 6) continue;
+                        if (rim && !rimPath) rimPath = new Path2D();
+                        const rp = rim ? rimPath : null;
+                        // кожна лінія — окремий підшлях: інакше канвас тягне
+                        // прямі сполучні лінії між далекими частинами фронту
+                        for (let i = 0; i < len; i += 2) {
+                            const x = zx + f[i] * kx;
+                            const y = zy + f[i + 1] * ky;
                             if (x < minX) minX = x;
                             if (x > maxX) maxX = x;
                             if (y < minY) minY = y;
                             if (y > maxY) maxY = y;
-                            // кожна лінія — окремий підшлях: інакше канвас тягне
-                            // прямі сполучні лінії між далекими частинами фронту
-                            if (i === 0) ctx.moveTo(x, y);
-                            else ctx.lineTo(x, y);
-                            if (rpts) rpts.push(x, y);
+                            if (i === 0) {
+                                ctx.moveTo(x, y);
+                                if (rp) rp.moveTo(x, y);
+                            } else {
+                                ctx.lineTo(x, y);
+                                if (rp) rp.lineTo(x, y);
+                            }
                             pts++;
                         }
                         ctx.closePath();
-                    }));
+                        if (rp) rp.closePath();
+                    }
                 });
 
                 if (pts) {
@@ -3041,21 +3360,13 @@
                     try { ctx.fill('evenodd'); } catch (e) { ctx.fill(); }
 
                     // светлая кромка по контуру: читается граница зоны на снимке;
-                    // отдельный путь — только крупные части, без мелких пятен
-                    if (rimPts && rimPts.length) {
+                    // окремий Path2D — тільки великі частини, без дрібних плям
+                    if (rimPath) {
                         ctx.globalCompositeOperation = 'lighter';
                         ctx.strokeStyle = hexA(lightHex(l.style.color, 0.62), Math.min(0.5, Number(l.style.alpha) * 0.55));
                         ctx.lineWidth = Math.max(1.2, 2.2 * rx);
                         ctx.lineJoin = 'round';
-                        ctx.beginPath();
-                        rimPts.forEach(r => {
-                            for (let i = 0; i < r.length; i += 2) {
-                                if (i === 0) ctx.moveTo(r[0], r[1]);
-                                else ctx.lineTo(r[i], r[i + 1]);
-                            }
-                            ctx.closePath();
-                        });
-                        ctx.stroke();
+                        ctx.stroke(rimPath);
                         ctx.globalCompositeOperation = 'source-over';
                     }
                 }
@@ -3345,13 +3656,13 @@
         isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger,
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,
-        store: { listDates, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, optimizeStorage, storageUsage },
+        store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, optimizeStorage, storageUsage },
         Calendar, BASE, createMap, baseSwitcher,
         flagSVG: key => FLAG_SVG[key], pixelLabels, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,
         syncLayerLabel, setLayerLabelDrag,
-        blendEngine, featBox, onScreen,
+        blendEngine, featBox, onScreen, bakeParts, warmGeometry, lodTols,
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,
         loadFX, saveFX, applyFX, initFX,

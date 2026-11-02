@@ -2198,7 +2198,9 @@
             el: $('cal'),
             trigger: $('date-trigger'),
             current: () => state.date,
-            hasData: iso => !!store.load(iso),
+            // той самий знак «день існує», що й раніше, але без розбору всього
+            // сховища на кожну клітину календаря
+            hasData: iso => !!store.dateInfo(iso),
             minDate: () => LT.MIN_DATE,
             onPick: iso => switchDate(iso)
         });

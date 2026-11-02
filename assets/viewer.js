@@ -148,6 +148,103 @@
         return entry;
     }
 
+    /* ------------------------- повна підготовка ------------------------- */
+
+    // Перший жест не повинен нічого рахувати: дати розбираються й нормалізуються
+    // заздалегідь, перетини масок і вся сходи спрощень друкуються до дотику.
+    // Поточний день — відразу під завісою, решта — по одному шматку, коли мапа стоїть.
+    const warmState = { dates: [], date: null, ids: null, idx: 0, timer: 0, done: new Set() };
+
+    function zoneIds(layers) {
+        return Object.keys(layers).filter(id => {
+            const l = layers[id];
+            return l.kind === 'zone' && l.data.features.length > 0;
+        });
+    }
+
+    function stopWarm() {
+        if (warmState.timer) {
+            clearInterval(warmState.timer);
+            warmState.timer = 0;
+        }
+    }
+
+    function startWarm() {
+        if (!warmState.dates.length) {
+            stopWarm();
+            return;
+        }
+        if (!warmState.timer) warmState.timer = setInterval(warmTick, 70);
+    }
+
+    function warmTick() {
+        if (document.hidden) return;
+        // під час жесту мапа має тримати кадр, а не наш розрахунок
+        if (map && map.isMoving && map.isMoving()) return;
+        warmStep();
+    }
+
+    function warmStep() {
+        if (!warmState.date) {
+            warmState.date = warmState.dates.shift() || null;
+            if (!warmState.date) {
+                stopWarm();
+                return;
+            }
+            const entry = loadDoc(warmState.date);
+            warmState.ids = zoneIds(entry.layers);
+            warmState.idx = 0;
+            if (!warmState.ids.length) {
+                warmState.done.add(warmState.date);
+                warmState.date = null;
+            }
+            return;
+        }
+        const entry = docCache.get(warmState.date);
+        if (!entry) {
+            warmState.done.add(warmState.date);
+            warmState.date = null;
+            return;
+        }
+        if (warmState.idx < warmState.ids.length) {
+            const l = entry.layers[warmState.ids[warmState.idx]];
+            if (l) {
+                try { LT.warmGeometry([displayFC(l, entry.layers)]); } catch (e) { }
+            }
+        }
+        warmState.idx++;
+        if (warmState.idx >= warmState.ids.length) {
+            warmState.done.add(warmState.date);
+            warmState.date = null;
+            warmState.ids = null;
+        }
+    }
+
+    function warmCurrent() {
+        const entry = currentDoc || loadDoc(state.date);
+        const fcs = [];
+        zoneIds(entry.layers).forEach(id => fcs.push(displayFC(entry.layers[id], entry.layers)));
+        warmState.done.add(state.date);
+        return LT.warmGeometry(fcs);
+    }
+
+    function preloadRest() {
+        const cur = state.date;
+        warmState.dates = store.listDates().map(d => d.date)
+            .filter(d => d !== cur && !warmState.done.has(d) && d !== warmState.date)
+            .sort((a, b) => Math.abs(Date.parse(a) - Date.parse(cur)) - Math.abs(Date.parse(b) - Date.parse(cur)));
+        startWarm();
+    }
+
+    // користувач перемкнув день: готуємо його першим, решта чекає
+    function warmPriority(date) {
+        if (warmState.done.has(date) || warmState.date === date) return;
+        const i = warmState.dates.indexOf(date);
+        if (i > 0) warmState.dates.splice(i, 1);
+        else if (i < 0) warmState.dates.unshift(date);
+        startWarm();
+    }
+
     /* ---------------------------- карта ---------------------------- */
 
     function isVisible(l) {
@@ -1716,11 +1813,7 @@
         const list = store.listDates();
         if (!list.length) return LT.todayIso();
         let best = null;
-        list.forEach(d => {
-            const doc = store.load(d.date);
-            const hasData = doc && doc.layers && Object.values(doc.layers).some(l => l.data && l.data.features && l.data.features.length);
-            if (hasData) best = d.date;
-        });
+        list.forEach(d => { if (d.features > 0) best = d.date; });
         return best || list[list.length - 1].date;
     }
 
@@ -1741,6 +1834,7 @@
         updateLegend();
         updateEmpty();
         syncAdvanceButton();
+        warmPriority(state.date);
     }
 
     function zoneSnapshot() {
@@ -1901,9 +1995,9 @@
     function dateHasData(date) {
         const entry = docCache.get(date);
         if (entry) return hasDataDoc(entry);
-        const doc = store.load(date);
-        return !!(doc && doc.layers && Object.values(doc.layers)
-            .some(l => l.data && l.data.features && l.data.features.length));
+        const info = store.dateInfo(date);
+        if (info) return info.features > 0;
+        return false;
     }
 
     function snapshotFor(layers) {
@@ -1963,8 +2057,7 @@
         const dates = store.listDates()
             .filter(d => {
                 if (d.date < b.min || d.date > b.max) return false;
-                const doc = store.load(d.date);
-                return doc && doc.layers && Object.values(doc.layers).some(l => l.data && l.data.features && l.data.features.length);
+                return d.features > 0;
             })
             .map(d => d.date);
 
@@ -2383,6 +2476,8 @@
         const veil = $('boot');
         if (!veil) return;
         veilLifted = true;
+        // решта дат додрукована в фоні: жоден перебір календаря не має туманити
+        setTimeout(preloadRest, 400);
         // на швидкій мережі завіса мигнула б за сто мілісекунд — тримаємо
         // мінімум, щоб перехід читався як завантаження, а не як глітч
         setTimeout(() => {
@@ -2407,7 +2502,10 @@
             el: $('cal'),
             trigger: $('date-trigger'),
             current: () => state.date,
-            hasData: iso => !!store.load(iso),
+            hasData: iso => {
+                const info = store.dateInfo(iso);
+                return !!info && info.features > 0;
+            },
             minDate: () => LT.dateBounds().min,
             maxDate: () => LT.dateBounds().max,
             onPick: iso => { setMenu(false); switchDate(iso); }
@@ -2422,6 +2520,9 @@
         LT.ensurePlaceLabels(map, state.base);
         blend = LT.blendEngine(map, () => state.layers, isVisible, l => shownFC.get(l.id) || displayFC(l));
         blend.sync();
+        // поточний день друкується тут: далі жест не має право нічого спрощувати
+        bootStage('boot.warm');
+        try { warmCurrent(); } catch (e) { }
         startAnimations();
         watchLive();
 
