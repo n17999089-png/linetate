@@ -260,6 +260,12 @@
             'file.optimized': 'ОПТИМІЗОВАНО · ЗВІЛЬНЕНО {kb} KB',
             'file.optimizedNone': 'ПАМ’ЯТЬ ВЖЕ ОПТИМІЗОВАНА · {kb} KB · {dates} дат',
             'file.usage': 'У пам’яті браузера: {kb} KB · {dates} дат',
+            'views.title': 'Перегляди карти', 'views.device': 'Цей пристрій', 'views.public': 'Усі пристрої',
+            'views.total': 'Відкриттів', 'views.days': 'Днів із переглядом', 'views.today': 'Сьогодні',
+            'views.last': 'Останній перегляд', 'views.none': 'Ще не було', 'views.byDay': 'По днях',
+            'views.refresh': 'Оновити спільний лічильник', 'views.offline': 'спільний лічильник недоступний',
+            'views.wait': '…',
+            'views.hint': 'Відкриття сторінки карти рахується один раз. Локальна статистика живе лише в цьому браузері, спільну суму дає відкритий лічильник Abacus. Редактор переглядів не нараховує.',
             'gh.title': 'Публікація на GitHub', 'gh.tokenPh': 'Токен (contents: write)',
             'gh.publish': 'Опублікувати карту', 'gh.publishing': 'Публікація…',
             'gh.remember': 'Запам’ятати на цьому пристрої', 'gh.forget': 'Забути',
@@ -420,6 +426,12 @@
             'file.optimized': 'OPTIMISED · FREED {kb} KB',
             'file.optimizedNone': 'STORAGE ALREADY OPTIMISED · {kb} KB · {dates} dates',
             'file.usage': 'In browser storage: {kb} KB · {dates} dates',
+            'views.title': 'Map views', 'views.device': 'This device', 'views.public': 'All devices',
+            'views.total': 'Opens', 'views.days': 'Days with views', 'views.today': 'Today',
+            'views.last': 'Last view', 'views.none': 'Nothing yet', 'views.byDay': 'By day',
+            'views.refresh': 'Refresh shared counter', 'views.offline': 'shared counter unavailable',
+            'views.wait': '…',
+            'views.hint': 'Opening the map page counts once. Local stats live only in this browser; the shared total comes from the public Abacus counter. The editor does not add views.',
             'gh.title': 'Publish to GitHub', 'gh.tokenPh': 'Token (contents: write)',
             'gh.publish': 'Publish the map', 'gh.publishing': 'Publishing…',
             'gh.remember': 'Remember on this device', 'gh.forget': 'Forget',
@@ -853,18 +865,39 @@
         mem.set(DATE_KEY, date);
     }
 
-    function exportAll() {
+    // опублікований файл — єдина історія сайту: новий експорт лише дописує поверх,
+    // інакше браузер, де загубилися старі дати, стирав би їх з карти назавжди.
+    // обидва аргументи — це «maps»-обʼєкти: дата → { savedAt, layers }
+    function mergeMaps(base, over) {
         const maps = {};
+        const put = (date, entry, fresh) => {
+            if (!date || !DATE_RE.test(date) || !entry || !entry.layers) return;
+            const savedAt = Number(entry.savedAt) || 0;
+            const prev = maps[date];
+            if (prev && prev.savedAt >= savedAt) return;
+            // опубліковані шари вже спрощені — перепакувати треба лише локальні
+            maps[date] = { savedAt: savedAt, layers: fresh ? simplifyLayers(entry.layers, 0) : entry.layers };
+        };
+        const each = (obj, fresh) => Object.keys(obj && typeof obj === 'object' ? obj : {}).forEach(date => put(date, obj[date], fresh));
+        each(base, false);
+        each(over, true);
+        return maps;
+    }
+
+    function exportAll() {
+        const local = {};
         mem.keys().forEach(key => {
             if (!key.startsWith(PREFIX)) return;
             const date = key.slice(PREFIX.length);
             if (!DATE_RE.test(date)) return;
             try {
                 const doc = JSON.parse(mem.get(key));
-                maps[date] = { savedAt: doc.savedAt || 0, layers: simplifyLayers(doc.layers || {}, 0) };
+                local[date] = { savedAt: doc.savedAt || 0, layers: doc.layers || {} };
             } catch (e) { }
         });
-        return { app: 'linetate', version: 1, exportedAt: new Date().toISOString(), maps };
+        const remote = {};
+        remoteDocs.forEach((doc, date) => { remote[date] = doc; });
+        return { app: 'linetate', version: 1, exportedAt: new Date().toISOString(), maps: mergeMaps(remote, local) };
     }
 
     function importAll(raw) {
@@ -877,7 +910,7 @@
             if (!DATE_RE.test(date)) return;
             const layers = maps[date] && maps[date].layers;
             if (!layers || typeof layers !== 'object') return;
-            mem.set(PREFIX + date, JSON.stringify({ date, savedAt: Date.now(), layers: simplifyLayers(layers, 1e-4) }, round5));
+            mem.set(PREFIX + date, JSON.stringify({ date, savedAt: Number(maps[date].savedAt) || Date.now(), layers: simplifyLayers(layers, 1e-4) }, round5));
             count++;
         });
         mem.set(VER_KEY, String(Date.now()));
@@ -952,6 +985,84 @@
             document.body.appendChild(box);
         }
         applyFX();
+    }
+
+    /* ------------------------------ перегляди карти ------------------------------ */
+
+    const VIEW_KEY = 'LINETATE:__views';
+    const VIEW_NET = 'LINETATE:__viewnet';
+    const VIEW_DAYS_MAX = 180;
+    // кожен браузер рахує свої відкриття сам, а спільну суму дає зовнішній
+    // публічний лічильник — інакше адмін бачив би лише власний телефон
+    const ABACUS = 'https://abacus.jasoncameron.dev';
+    const ABACUS_SITE = 'n17999089-png.github.io';
+    const ABACUS_KEY = 'linetate-map';
+
+    function localViews() {
+        const out = { total: 0, days: {}, last: 0 };
+        try {
+            const raw = JSON.parse(mem.get(VIEW_KEY) || 'null');
+            if (raw && typeof raw === 'object') {
+                if (Number.isFinite(raw.total) && raw.total > 0) out.total = Math.floor(raw.total);
+                if (Number.isFinite(raw.last) && raw.last > 0) out.last = Math.floor(raw.last);
+                if (raw.days && typeof raw.days === 'object') {
+                    Object.keys(raw.days).forEach(d => {
+                        const n = Number(raw.days[d]);
+                        if (DATE_RE.test(d) && Number.isFinite(n) && n > 0) out.days[d] = Math.floor(n);
+                    });
+                }
+            }
+        } catch (e) { }
+        return out;
+    }
+
+    function saveLocalViews(v) {
+        const keys = Object.keys(v.days).sort();
+        while (keys.length > VIEW_DAYS_MAX) delete v.days[keys.shift()];
+        mem.set(VIEW_KEY, JSON.stringify(v));
+    }
+
+    function publicHost() {
+        const h = String(location.hostname || '').toLowerCase();
+        if (!h || h === 'localhost' || h === '::1' || h === '[::1]') return false;
+        return !/^\d+\.\d+\.\d+\.\d+$/.test(h);
+    }
+
+    function cachedRemoteViews() {
+        const n = Number(mem.get(VIEW_NET) || '');
+        return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+    }
+
+    // kind: 'hit' — зарахувати й повернути суму, 'get' — лише прочитати.
+    // зовнішній сервіс є гостем: мертва мережа, блокування розширенням чи
+    // повільна відповідь не повинні затягувати завантаження карти
+    function askRemoteViews(kind, timeoutMs) {
+        return new Promise(resolve => {
+            let done = false;
+            const finish = v => { if (done) return; done = true; clearTimeout(timer); resolve(v); };
+            const timer = setTimeout(() => finish(null), timeoutMs || 6000);
+            try {
+                fetch(ABACUS + '/' + kind + '/' + ABACUS_SITE + '/' + ABACUS_KEY, { cache: 'no-store' })
+                    .then(r => (r && r.ok) ? r.json() : null)
+                    .then(j => {
+                        const v = j && Number.isFinite(Number(j.value)) ? Math.floor(Number(j.value)) : null;
+                        if (v != null) mem.set(VIEW_NET, String(v));
+                        finish(v);
+                    })
+                    .catch(() => finish(null));
+            } catch (e) { finish(null); }
+        });
+    }
+
+    function recordView() {
+        const v = localViews();
+        const day = todayIso();
+        v.total++;
+        v.days[day] = (v.days[day] || 0) + 1;
+        v.last = Date.now();
+        saveLocalViews(v);
+        if (publicHost()) askRemoteViews('hit', 8000);
+        return v;
     }
 
     /* ------------------------------ тост ------------------------------ */
@@ -3738,7 +3849,7 @@
         isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger,
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,
-        store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, optimizeStorage, storageUsage },
+        store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage },
         Calendar, BASE, createMap, baseSwitcher,
         flagSVG: key => FLAG_SVG[key], pixelLabels, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
@@ -3748,6 +3859,7 @@
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,
         loadFX, saveFX, applyFX, initFX,
+        views: { local: localViews, record: recordView, ask: askRemoteViews, cached: cachedRemoteViews, publicHost },
         parseGeoJSON, boundsOf,
         decodePolyline, geoRegions,
         toast, download

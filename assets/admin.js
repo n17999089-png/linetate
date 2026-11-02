@@ -1414,11 +1414,14 @@
     }
 
     // файл для GitHub Pages: положить в data/map.json
-    function exportSite() {
+    async function exportSite() {
+        // цей файл часто несуть на GitHub вручну, тому спершу довантажуємо
+        // опубліковані дати з сайту — тоді експорт містить усю історію
+        try { await store.loadRemoteData('../data/map.json'); } catch (e) { }
         const data = store.exportAll();
         if (!data.maps || !Object.keys(data.maps).length) { toast(t('toast.noExport'), 'err'); return; }
         LT.download('map.json', JSON.stringify(data));
-        toast(t('toast.exported'));
+        toast(t('toast.exported') + ' · ' + Object.keys(data.maps).length);
     }
 
     function uiUsage() {
@@ -1435,6 +1438,51 @@
             : t('file.optimizedNone', { kb: r.after.kb, dates: r.after.dates }));
         uiUsage();
         if (cal) cal.refresh();
+    }
+
+    /* ============================ ПЕРЕГЛЯДИ КАРТИ ============================ */
+
+    // null — спільний лічильник ще не питали, false — він недоступний
+    let viewsNet = null;
+    let viewsBusy = false;
+
+    function uiViews() {
+        const box = $('views-box');
+        if (!box || !LT.views) return;
+        const v = LT.views.local();
+        $('v-local').textContent = String(v.total);
+        // коли спільний лічильник мовчить, показуємо останню прочитану суму замість нулів
+        $('v-net').textContent = viewsNet === null ? t('views.wait')
+            : (viewsNet === false ? (LT.views.cached() ? String(LT.views.cached()) : '—') : String(viewsNet));
+        const days = Object.keys(v.days).sort().reverse();
+        const rows = [
+            [t('views.days'), String(days.length)],
+            [t('views.today'), String(v.days[LT.todayIso()] || 0)],
+            [t('views.last'), v.last
+                ? new Date(v.last).toLocaleString(LT.locale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : t('views.none')]
+        ];
+        if (viewsNet === false) rows.push([t('views.public'), t('views.offline')]);
+        $('v-lines').innerHTML = rows.map(r =>
+            '<div class="views-row"><span>' + LT.esc(r[0]) + '</span><b>' + LT.esc(r[1]) + '</b></div>').join('');
+        const dl = $('v-days');
+        dl.innerHTML = days.length
+            ? '<div class="views-days-title">' + LT.esc(t('views.byDay')) + '</div>' + days.slice(0, 10).map(d =>
+                '<div class="views-day"><span>' + LT.esc(d) + '</span><b>' + v.days[d] + '</b></div>').join('')
+            : '';
+    }
+
+    function refreshViews() {
+        if (viewsBusy || !LT.views) return;
+        viewsBusy = true;
+        const btn = $('btn-views-refresh');
+        if (btn) btn.disabled = true;
+        LT.views.ask('get', 8000).then(val => {
+            viewsNet = val === null ? false : val;
+            viewsBusy = false;
+            if (btn) btn.disabled = false;
+            uiViews();
+        });
     }
 
     /* ============================ ПУБЛІКАЦІЯ НА GITHUB ============================ */
@@ -1527,6 +1575,36 @@
         return btoa(bin);
     }
 
+    function mapsOf(text) {
+        try {
+            const data = JSON.parse(text);
+            return (data && data.maps && typeof data.maps === 'object') ? data.maps : null;
+        } catch (e) { return null; }
+    }
+
+    // опублікований файл з GitHub: contents API віддає вміст base64, але для
+    // великих карт — лише посилання; беремо звідти, аби не втратити старі дати
+    async function publishedMaps(meta) {
+        let text = '';
+        try {
+            const bin = atob(String(meta && meta.content || '').replace(/\s+/g, ''));
+            if (bin) {
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                text = new TextDecoder().decode(bytes);
+            }
+        } catch (e) { text = ''; }
+        if (text) {
+            const maps = mapsOf(text);
+            if (maps) return maps;
+        }
+        if (!meta || !meta.download_url) return null;
+        try {
+            const res = await fetch(meta.download_url, { cache: 'no-store' });
+            return res.ok ? mapsOf(await res.text()) : null;
+        } catch (e) { return null; }
+    }
+
     let publishing = false;
 
     async function ghPublish() {
@@ -1545,9 +1623,7 @@
 
         flushSave();
         const data = store.exportAll();
-        const dates = Object.keys(data.maps || {});
-        if (!dates.length) { toast(t('gh.empty'), 'err'); return; }
-        const json = JSON.stringify(data);
+        if (!Object.keys(data.maps || {}).length) { toast(t('gh.empty'), 'err'); return; }
 
         const btn = $('btn-gh-publish');
         publishing = true;
@@ -1570,7 +1646,13 @@
                 const meta = await get.json();
                 if (!get.ok) throw new Error(t('gh.fail', { code: get.status }) + ' · ' + (meta.message || ''));
                 sha = meta.sha;
+                // той самий файл на GitHub містить дати, яких уже немає в цьому браузері:
+                // публікуємо злиття, а не заміну
+                const published = await publishedMaps(meta);
+                if (published) data.maps = store.mergeMaps(published, data.maps);
             }
+            const dates = Object.keys(data.maps).sort();
+            const json = JSON.stringify(data);
             const body = {
                 message: 'linestate: оновити карту (' + dates.length + ' дат)',
                 content: b64utf8(json),
@@ -2023,6 +2105,8 @@
         $('btn-export-site').addEventListener('click', exportSite);
         const optBtn = $('btn-optimize');
         if (optBtn) optBtn.addEventListener('click', optimizeStorage);
+        const vBtn = $('btn-views-refresh');
+        if (vBtn) vBtn.addEventListener('click', refreshViews);
         $('btn-gh-publish').addEventListener('click', ghPublish);
         $('gh-token').addEventListener('input', e => ghToken(e.target.value.trim()));
         // галочка = один і той самий токен живе на пристрої; зняв — він забувається
@@ -2159,6 +2243,7 @@
     function syncLangUI() {
         $('lang-btn').innerHTML = LT.flagSVG(LT.lang()).replace('<svg ', '<svg width="22" height="15" ') + '<span>' + LT.lang().toUpperCase() + '</span>';
         uiUsage();
+        uiViews();
         if (!mapReady) return;
         LT.applyMapLang(map);
         LT.ensurePlaceLabels(map, state.base);
@@ -2194,6 +2279,9 @@
         bindUI();
         uiGh();
         uiUsage();
+        uiViews();
+        // спільну суму тягнемо з мережі лише один раз на відкриття адмінки
+        refreshViews();
         cal = LT.Calendar({
             el: $('cal'),
             trigger: $('date-trigger'),

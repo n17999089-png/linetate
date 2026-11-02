@@ -13,7 +13,7 @@
 <script src="../assets/vendor/turf.min.js"></script>
 <script src="../assets/vendor/topojson-client.min.js"></script>
 <link rel="stylesheet" href="../assets/theme.css?v=28">
-<link rel="stylesheet" href="../assets/admin.css?v=32">
+<link rel="stylesheet" href="../assets/admin.css?v=33">
 </head>
 <body>
 
@@ -230,6 +230,18 @@
             <button class="btn wide" id="btn-optimize" data-i18n="file.optimize">Оптимізувати пам'ять браузера</button>
             <div class="hint" id="usage-line"></div>
 
+            <div class="views-box" id="views-box">
+                <div class="views-title" data-i18n="views.title">Перегляди карти</div>
+                <div class="views-nums">
+                    <div class="views-num"><b id="v-local">0</b><span data-i18n="views.device">Цей пристрій</span></div>
+                    <div class="views-num"><b id="v-net">…</b><span data-i18n="views.public">Усі пристрої</span></div>
+                </div>
+                <div id="v-lines"></div>
+                <div id="v-days"></div>
+                <button class="btn wide ghost" id="btn-views-refresh" data-i18n="views.refresh">Оновити спільний лічильник</button>
+                <div class="hint" data-i18n="views.hint">Відкриття сторінки карти рахується один раз.</div>
+            </div>
+
             <div class="gh-box" id="gh-box">
                 <div class="gh-title" data-i18n="gh.title">Публикация на GitHub</div>
                 <input type="password" id="gh-token" class="input gh-in" autocomplete="off" spellcheck="false"
@@ -323,6 +335,6 @@
     </form>
 </div>
 
-<script src="../assets/gate.js?v=6"></script>
+<script src="../assets/gate.js?v=7"></script>
 </body>
 </html>

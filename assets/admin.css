@@ -245,3 +245,25 @@ textarea.input { width: 100%; height: auto; min-height: 72px; padding: 10px 11px
     padding: 4px 9px; font-family: var(--title); font-size: 10px; letter-spacing: 1.2px; color: var(--text-2);
 }
 .gh-keep-btn:hover { color: var(--text); border-color: var(--line-3); }
+
+/* ---------- перегляди карти ---------- */
+.views-box {
+    display: flex; flex-direction: column; gap: 6px;
+    margin: 10px 0 4px; padding: 12px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, .045), rgba(8, 8, 9, .5));
+    border: 1px solid var(--line-2); border-radius: 12px;
+}
+.views-title { font-family: var(--title); font-size: 11px; letter-spacing: 2.4px; color: var(--text-2); }
+.views-nums { display: flex; gap: 7px; }
+.views-num {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+    padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 10px; background: rgba(4, 6, 8, .45);
+}
+.views-num b { font-family: var(--title); font-size: 22px; line-height: 1.1; color: var(--live); overflow: hidden; }
+.views-num span { font-size: 9px; letter-spacing: 1.1px; text-transform: uppercase; color: var(--dim); }
+.views-row { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text-2); }
+.views-row b { color: var(--text); font-weight: 400; }
+.views-days-title { margin-top: 4px; font-size: 9px; letter-spacing: 1.1px; text-transform: uppercase; color: var(--dim); }
+.views-day { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text-2); }
+.views-day b { color: var(--live); }
+.views-box .hint { line-height: 1.55; }
