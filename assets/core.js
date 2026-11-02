@@ -1631,11 +1631,17 @@
 
         // розчинення живе на власному rAF, бо мапа у спокої не генерує кадрів:
         // без цього новий підпис завмер би напівпрозорим назавжди
-        const FADE_MS = docMobile() ? 240 : 180;
-        const FADE_OUT_MS = docMobile() ? 260 : 200;
-        const GHOST_LIMIT = docMobile() ? 180 : 500;
+        const FADE_MS = docMobile() ? 280 : 220;
+        const FADE_OUT_MS = docMobile() ? 320 : 250;
+        const GHOST_LIMIT = docMobile() ? 200 : 500;
+        // анімація лише «дихає» навколо власної точки: якір не зсувається,
+        // тому на близькому зумі підпис сідає рівно на координату
+        const IN_SCALE = 0.92, OUT_SCALE = 0.95;
+        const easeOut = p => { const q = 1 - p; return 1 - q * q * q; };
         let fadeRaf = 0;
         let ghosts = [];
+        let stamp = 0;
+        let lastPaint = 0;
         function tickFade() {
             fadeRaf = 0;
             const now = performance.now();
@@ -1653,9 +1659,17 @@
                 if (it.a <= 0) {
                     fadeOf.delete(it.key);
                     ghosts.splice(i, 1);
-                } else left++;
+                } else {
+                    // примара тримає запис живим: повернення підпису під час
+                    // згасання має продовжити з поточної прозорості, а не спалахнути
+                    it.rec.a = it.a;
+                    it.rec.seen = stamp;
+                    left++;
+                }
             }
-            paint();
+            // кадр мапи вже перемалював полотно з поточними прозоростями —
+            // другий paint у тому ж кадрі на телефоні коштує зайвих мілісекунд
+            if (now - lastPaint > 8) paint();
             if (left) fadeRaf = requestAnimationFrame(tickFade);
         }
         function kickFade() {
@@ -1663,6 +1677,7 @@
         }
 
         function paint() {
+            lastPaint = performance.now();
             const s = syncCanvas();
             ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
             ctx.clearRect(0, 0, s.x, s.y);
@@ -1682,15 +1697,22 @@
             for (let i = 0; i < ghosts.length; i++) {
                 const it = ghosts[i];
                 if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
-                ctx.globalAlpha = it.a;
-                ctx.drawImage(it.sp.cv, it.x + it.sp.x, it.y + it.sp.y, it.sp.w, it.sp.h);
+                const sp = it.sp, k = 1 - (1 - OUT_SCALE) * (1 - it.a);
+                ctx.globalAlpha = it.a * it.a;
+                ctx.drawImage(sp.cv, it.x + sp.x * k, it.y + sp.y * k, sp.w * k, sp.h * k);
             }
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
                 if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
-                if (it.a < 1) ctx.globalAlpha = it.a;
-                ctx.drawImage(it.sp.cv, it.x + it.sp.x, it.y + it.sp.y, it.sp.w, it.sp.h);
-                if (it.a < 1) ctx.globalAlpha = 1;
+                const sp = it.sp;
+                if (it.a >= 1) {
+                    ctx.drawImage(sp.cv, it.x + sp.x, it.y + sp.y, sp.w, sp.h);
+                    continue;
+                }
+                const e = easeOut(it.a), k = IN_SCALE + (1 - IN_SCALE) * e;
+                ctx.globalAlpha = e;
+                ctx.drawImage(sp.cv, it.x + sp.x * k, it.y + sp.y * k, sp.w * k, sp.h * k);
+                ctx.globalAlpha = 1;
             }
             if (ghosts.length) ctx.globalAlpha = 1;
         }
@@ -1711,9 +1733,11 @@
                 '|' + Math.round(size0.x) + 'x' + Math.round(size0.y);
             if (sig === lastSig && (items.length || ghosts.length)) return;
             lastSig = sig;
+            stamp++;
 
             const prevItems = items;
             const keptKeys = new Set();
+            let anim = false;
             items = [];
             extraDots = [];
             const list = collect();
@@ -1784,8 +1808,11 @@
                     rec = { a: 0, t0: now0 };
                     fadeOf.set(key, rec);
                 } else {
+                    // знайомий підпис продовжує з того ж рівня прозорості, а не
+                    // спалахує наново на кожній перебудові набору
                     rec.t0 = now0 - rec.a * FADE_MS;
                 }
+                rec.seen = stamp;
                 const item = {
                     key: key, coord: it.coord, mx: mx, my: my, rec: rec, a: rec.a,
                     name: it.name, rank: it.rank, cap: it.cap, x: px, y: py, w: w, h: h, dot: dotEligible
@@ -1793,6 +1820,7 @@
                 item.sp = spriteOf(item);
                 items.push(item);
                 keptKeys.add(key);
+                if (item.a < 1) anim = true;
             }
             // зникаючі назви не видаляються одним кадром — вони догортають
             // камеру та плавно розчиняються; нові перекривають їх зверху
@@ -1802,13 +1830,19 @@
                 if (keptKeys.has(old.key)) continue;
                 old.rec.a = old.a;
                 ghosts.push({
-                    key: old.key, sp: old.sp, mx: old.mx, my: old.my,
+                    key: old.key, rec: old.rec, sp: old.sp, mx: old.mx, my: old.my,
                     x: old.x, y: old.y, a: old.a,
                     outAt: now0 - (1 - old.a) * FADE_OUT_MS
                 });
             }
+            if (ghosts.length) anim = true;
+            // запис про прозорість живий, лише поки назва в кадрі або ще згасає:
+            // пішла за межі — забуваємо відразу, щоб повернення знову розчинялося,
+            // а не вискакувало готовим
+            for (let i = 0; i < ghosts.length; i++) ghosts[i].rec.seen = stamp;
+            for (const [fk, fr] of fadeOf) if (fr.seen !== stamp) fadeOf.delete(fk);
             if (fadeOf.size > 6000) fadeOf.clear();
-            kickFade();
+            if (anim) kickFade();
             paint();
         }
 
