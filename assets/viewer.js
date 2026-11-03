@@ -1992,7 +1992,7 @@
         });
     }
 
-    function set3DView(on) {
+    function set3DView(on, deferRelief) {
         if (!mapReady) return;
         // перемикач живе в двох місцях: у рейці інструментів (завжди на екрані)
         // і в панелі шарів. обидва мають показувати один і той самий стан
@@ -2006,6 +2006,7 @@
         LT.set3D(map, !!on, {
             layers: state.layers,
             isVisible,
+            deferRelief: !!deferRelief,
             pauseBlend: on2 => { if (blend) blend.pause(on2); }
         });
     }
@@ -2526,6 +2527,8 @@
         setTimeout(() => {
             veil.classList.add('done');
             setTimeout(() => veil.remove(), 700);
+            // перший кадр показано — тепер гори можна й завантажувати
+            LT.reliefArm(map);
         }, Math.max(0, 620 - (Date.now() - veilStart)));
     }
     setTimeout(liftVeil, 14000);
@@ -2563,9 +2566,11 @@
         LT.ensurePlaceLabels(map, state.base);
         blend = LT.blendEngine(map, () => state.layers, isVisible, l => shownFC.get(l.id) || displayFC(l));
         blend.sync();
-        // 3D-режим, обраний минулого разу, повертається разом зі сторінкою
+        // 3D-режим, обраний минулого разу, повертається разом зі сторінкою.
+        // гори при цьому не вмикаються: DEM-тайли з мережі затримали б перший
+        // кадр під завісою, тож reliefArm кличе їх, коли завіса вже впала
         try {
-            if (localStorage.getItem('LINETATE:3d') === '1') set3DView(true);
+            if (localStorage.getItem('LINETATE:3d') === '1') set3DView(true, true);
         } catch (e) { }
         // поточний день друкується тут: далі жест не має право нічого спрощувати
         bootStage('boot.warm');

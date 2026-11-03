@@ -2650,6 +2650,570 @@
         return value;
     }
 
+    /* ------------------------------ 3D-геометрія зон ------------------------------ */
+
+    // Метрів на піксель на широті 48°: 156543.03 · cos 48° / 2^z ≈ 104742 / 2^z.
+    // І стіна зони, і об'ємний контур мають сталу висоту в ПіКСЕЛЯХ, а не в
+    // метрах, тому для висоти потрібен окремий стоп на кожен цілий зум: лінійна
+    // інтерполяція між двома крапками давала 340 px на z=11 і 800 px на z=17,
+    // а exponential base спотворює параметр, але не будує криву 2⁻ᶻ.
+    const M_PER_PX_48 = 156543.03392 * Math.cos(48 * Math.PI / 180);
+    const pxToM = (px, z) => px * M_PER_PX_48 / Math.pow(2, z);
+
+    function wallStops(px) {
+        const stops = ['interpolate', ['linear'], ['zoom']];
+        for (let z = 5; z <= 19; z++) stops.push(z, Math.round(pxToM(px, z)));
+        return stops;
+    }
+
+    // «Сонце» з північного заходу — як у гірських тінях, тож тінь іде на
+    // південний схід. По меридіану зсув удвічі більший: по-перше, при нахилі 55°
+    // кадр стискає північ-південь, по-друге, тінь мусить вилізти за стіну
+    // (24 px) і за об'ємний контур (30 px), інакше лежить під блоком і її не
+    // видно взагалі
+    const CAST_PX = [18, 64];
+    const RIM_PX = 3.2;
+    const RIM_H_PX = 30;
+    const WALL_PX = 24;
+
+    function polyRings(geom) {
+        const out = [];
+        if (!geom) return out;
+        if (geom.type === 'Polygon') geom.coordinates.forEach((r, i) => out.push({ ring: r, outer: i === 0 }));
+        else if (geom.type === 'MultiPolygon') {
+            geom.coordinates.forEach(p => p.forEach((r, i) => out.push({ ring: r, outer: i === 0 })));
+        }
+        return out;
+    }
+
+    // смуга шириною d у бік матеріалу полігону. зовнішнє кільце після rewindFC
+    // йде проти годинника, дірка — за годинником, і в оба випадку лівий нормаль
+    // вказує у полігон, тому одна формула на всі кільця
+    function offsetRingKm(r, dKm, closed) {
+        const n = r.length;
+        if (n < 3) return null;
+        const edges = closed === false ? n - 1 : n;
+        const ex = [], ey = [];
+        for (let k = 0; k < edges; k++) {
+            const a = r[k], b = r[(k + 1) % n];
+            let tx = b[0] - a[0], ty = b[1] - a[1];
+            const l = Math.hypot(tx, ty);
+            if (l < 1e-9) { ex.push(0); ey.push(0); continue; }
+            ex.push(-ty / l); ey.push(tx / l);
+        }
+        const norm = i => (closed === false
+            ? [ex[Math.min(i, edges - 1)], ey[Math.min(i, edges - 1)]]
+            : [ex[i], ey[i]]);
+        const prev = i => (closed === false
+            ? ex[Math.max(i - 1, 0)] : ex[(i - 1 + n) % n]);
+        const prevY = i => (closed === false
+            ? ey[Math.max(i - 1, 0)] : ey[(i - 1 + n) % n]);
+        const out = [];
+        for (let i = 0; i < n; i++) {
+            const cur = norm(i);
+            let bx = prev(i) + cur[0], by = prevY(i) + cur[1];
+            const l = Math.hypot(bx, by);
+            if (l < 1e-9) { out.push([r[i][0] + cur[0] * dKm, r[i][1] + cur[1] * dKm]); continue; }
+            bx /= l; by /= l;
+            // на гострих виступах фронту мітер тягне смугу на десятки кілометрів
+            // і вона з'їдає сусідню зону, тому кут ріжемо зверху
+            const len = Math.min(2.6 * dKm, dKm / Math.max(0.38, bx * cur[0] + by * cur[1]));
+            out.push([r[i][0] + bx * len, r[i][1] + by * len]);
+        }
+        return out;
+    }
+
+    // кільця фронту мають десятки тисяч вершин, а смуга wide ~3 px: сусідні
+    // точки в межах півширини дають на екрані той самий край. смугу й тінь
+    // тоншою, але САМ КОНТУР — ні: f_/fe_/l_ лишаються на точних даних
+    function thinRingKm(r, stepKm, maxTurn) {
+        const out = [r[0]];
+        for (let i = 1; i < r.length; i++) {
+            const p = r[i], last = out[out.length - 1];
+            let keep = Math.hypot(p[0] - last[0], p[1] - last[1]) >= stepKm;
+            if (!keep && out.length > 1) {
+                const q = out[out.length - 2];
+                const a1 = Math.atan2(last[1] - q[1], last[0] - q[0]);
+                const a2 = Math.atan2(p[1] - last[1], p[0] - last[0]);
+                let da = Math.abs(a2 - a1);
+                if (da > Math.PI) da = 2 * Math.PI - da;
+                keep = da > maxTurn;
+            }
+            if (keep) out.push(p);
+        }
+        return out;
+    }
+
+    function closeRing(r) {
+        if (r.length > 2) {
+            const a = r[0], b = r[r.length - 1];
+            if (a[0] !== b[0] || a[1] !== b[1]) r.push([a[0], a[1]]);
+        }
+        return r;
+    }
+
+    function ringKm(ring, kx) {
+        return ring.map(p => [p[0] * kx, p[1] / KM_LAT]);
+    }
+
+    function ringDeg(ring, kx) {
+        return ring.map(p => [p[0] / kx, p[1] * KM_LAT]);
+    }
+
+    function openRing(ring) {
+        const n = ring.length;
+        if (n < 2) return ring.slice();
+        const a = ring[0], b = ring[n - 1];
+        return (a[0] === b[0] && a[1] === b[1]) ? ring.slice(0, n - 1) : ring.slice();
+    }
+
+    // кільця зон переводимо в кілометри ОДИН раз на геометрію й тримаємо в
+    // WeakMap за оригінальним FC: без цього 42 000 точок перераховувались двічі
+    // на кожну перебудову (окремо для смуги, окремо для тіні)
+    const ZONE3D_PREP = new WeakMap();
+
+    function prepZone(geo) {
+        if (!geo) return null;
+        const hit = ZONE3D_PREP.get(geo);
+        if (hit) return hit;
+        const items = [];
+        (rewindFC(geo).features || []).forEach(f => {
+            if (!f || !f.geometry) return;
+            const box = featBox(f);
+            const lat = box ? (box[1] + box[3]) / 2 : 48;
+            const kx = 111.32 * Math.cos(lat * Math.PI / 180) || 1e-6;
+            const rings = [];
+            polyRings(f.geometry).forEach(item => {
+                const src = openRing(item.ring);
+                if (src.length < 4) return;
+                const km = ringKm(src, kx);
+                const bb = [Infinity, Infinity, -Infinity, -Infinity];
+                let len = 0;
+                for (let i = 0; i < km.length; i++) {
+                    const p = km[i];
+                    if (p[0] < bb[0]) bb[0] = p[0];
+                    if (p[1] < bb[1]) bb[1] = p[1];
+                    if (p[0] > bb[2]) bb[2] = p[0];
+                    if (p[1] > bb[3]) bb[3] = p[1];
+                    if (i) len += Math.hypot(p[0] - km[i - 1][0], p[1] - km[i - 1][1]);
+                }
+                const e = km[km.length - 1];
+                len += Math.hypot(km[0][0] - e[0], km[0][1] - e[1]);
+                rings.push({ outer: item.outer, km, box: bb, len });
+            });
+            if (rings.length) items.push({ box, kx, rings });
+        });
+        ZONE3D_PREP.set(geo, items);
+        return items;
+    }
+
+    // скільки версин декор може забрати на одну перебудову. тонше ми лише
+    // смугу й тінь (fr_/cs_) — f_, fe_ і l_ лишаються на точних даних, тому
+    // бюджет не має жодної ціни для читання контуру на місткому зумі
+    function zone3dBudget() {
+        const dev = deviceState || detectDevice();
+        if (!dev.mobile) return 9000;
+        return lowEndDevice() ? 2200 : 3500;
+    }
+
+    // смуга й тінь ріжуться вздовж кадра. найбільше кільце в даних — 7 200 км
+    // завдовжки, а в кадрі на місткому зумі 40 км фронту: без різання ціла
+    // тисяча вершин перераховувалась би на кожен жест задля смуги, якої не видно
+    function ringChains(ring, vb) {
+        const b = ring.box;
+        if (b[2] < vb[0] || b[0] > vb[2] || b[3] < vb[1] || b[1] > vb[3]) return null;
+        const km = ring.km;
+        const n = km.length;
+        const runs = [];
+        let start = -1;
+        for (let i = 0; i < n; i++) {
+            const p = km[i];
+            const inside = p[0] >= vb[0] && p[0] <= vb[2] && p[1] >= vb[1] && p[1] <= vb[3];
+            if (inside) { if (start < 0) start = i; }
+            else if (start >= 0) { runs.push([start, i]); start = -1; }
+        }
+        if (start >= 0) runs.push([start, n]);
+        if (!runs.length) return null;
+        return runs.map(r => ({
+            outer: ring.outer, km, i0: r[0], i1: r[1],
+            whole: r[0] === 0 && r[1] === n,
+            // довжину оцінюємо часткою вершин: точний перегін ще одного проходу
+            // не вартий, крок проріджування від одиниць тут не залежить
+            len: ring.len * (r[1] - r[0] - 1) / (n - 1)
+        }));
+    }
+
+    // смуги тіні: лише ті ділянки контуру, що відвернені від «сонця». інакше
+    // м'яка лінія обліплювала межу з обох боків і виглядала як брудна обводка,
+    // а не як тінь блоку на землі
+    const CAST_LEN = Math.hypot(CAST_PX[0], CAST_PX[1]);
+
+    function castRuns(pk, whole, outer) {
+        const n = pk.length;
+        if (n < 3) return [];
+        const ex = [], ey = [];
+        const edges = whole ? n : n - 1;
+        for (let i = 0; i < edges; i++) {
+            const a = pk[i], b = pk[(i + 1) % n];
+            const tx = b[0] - a[0], ty = b[1] - a[1];
+            const l = Math.hypot(tx, ty) || 1;
+            ex.push(ty / l); ey.push(-tx / l);
+        }
+        // правий нормаль для CCW-кільця дивиться з зони назовні; для дірки
+        // матеріал лишається зліва, тому знак перевертаємо
+        const sgn = outer ? 1 : -1;
+        const runs = [];
+        let run = null;
+        for (let i = 0; i < n; i++) {
+            const p = whole ? i : Math.min(i, edges - 1);
+            const q = whole ? (i - 1 + n) % n : Math.max(i - 1, 0);
+            let nx = (ex[p] + ex[q]) / 2, ny = (ey[p] + ey[q]) / 2;
+            const l = Math.hypot(nx, ny) || 1;
+            nx = nx / l * sgn; ny = ny / l * sgn;
+            if ((nx * CAST_PX[0] - ny * CAST_PX[1]) / CAST_LEN > 0.25) {
+                if (!run) { run = []; runs.push(run); }
+                run.push(pk[i]);
+            } else run = null;
+        }
+        return runs.filter(r => r.length > 2);
+    }
+
+    // анулюс уздовж кільця: зовні — саме кільце, всередині — зміщене. для дірки
+    // навпаки, інакше смуга вискочила б у порожнину. обрізаний у кадрі шматок
+    // змикаємо стрічкою (кільце + зворотний зсув), бо дірка-анулюс там
+    // неможливий. тінь — ті самі проріджені ланцюги, зсунуті від «сонця»;
+    // окремий boolean не потрібен, бо шар лежить ПІД блоком і з-під зони
+    // виглядає лише серп з протилежного боку
+    function zone3dFeatures(prep, kp, bounds, stat) {
+        const out = [];
+        if (!prep || !prep.length) return out;
+        const w = bounds.getWest(), e = bounds.getEast(), so = bounds.getSouth(), n = bounds.getNorth();
+        // відступ = ширина смуги + зсув тіні + запас на мітер, інакше смуга
+        // обрізалась би рівно на межі кадра
+        const pad = (RIM_PX + Math.max(CAST_PX[0], CAST_PX[1]) + 6) * kp;
+        const groups = [];
+        let len = 0;
+        prep.forEach(item => {
+            const b = item.box;
+            if (b && (b[2] < w || b[0] > e || b[3] < so || b[1] > n)) return;
+            const kx = item.kx;
+            const vb = [w * kx - pad, so / KM_LAT - pad, e * kx + pad, n / KM_LAT + pad];
+            const chains = [];
+            item.rings.forEach(ring => {
+                const c = ringChains(ring, vb);
+                if (!c) return;
+                c.forEach(x => { chains.push(x); len += x.len; });
+            });
+            if (chains.length) groups.push({ kx, chains, len: chains.reduce((a, c) => a + c.len, 0) });
+        });
+        if (!groups.length) return out;
+        const budget = zone3dBudget();
+        // 1.4 px — крок, за яким смуга ще не схожа на пил. якщо видимого
+        // контуру більше, ніж вміщує бюджет, розтягуємо крок пропорційно
+        const step0 = 1.4 * kp;
+        const step = Math.max(step0, len / budget);
+        const d = RIM_PX * kp;
+        const sx = CAST_PX[0] * kp, sy = -CAST_PX[1] * kp;
+        let pts = 0, cutTotal = 0;
+        groups.forEach(g => {
+            const cut = [];
+            let total = 0;
+            g.chains.forEach(ch => {
+                if (ch.i1 - ch.i0 < 3) return;
+                const seg = ch.whole ? ch.km : ch.km.slice(ch.i0, ch.i1);
+                const pk = thinRingKm(seg, step, 0.3);
+                if (pk.length < 3) return;
+                cut.push({ pk, whole: ch.whole, outer: ch.outer });
+                total += pk.length;
+            });
+            if (!cut.length) return;
+            // кут повороту лишає вершини на звивистому фронті навіть тоді, коли
+            // вони густіші за крок, тож бюджет добираємо повторним проходом —
+            // чистою відстанню, вже без кутів. один прохід не добирав: послідовність
+            // після кутів нерівномірна, тому поріг зростає від поточного лічильника
+            const cap = budget * g.len / len;
+            let guard = 0;
+            while (total > cap && guard++ < 6) {
+                const t2 = step * (total / cap);
+                const before = total;
+                total = 0;
+                cut.forEach(c => {
+                    const t = thinRingKm(c.pk, t2, 999);
+                    if (t.length >= 3) c.pk = t;
+                    total += c.pk.length;
+                });
+                // звивистий фронт: наступні вершини розділені не менше за крок,
+                // тому відстаньне проріджування має межу. далі — лишаємо як є,
+                // краще трохи більше вершин, ніж зламана смуга
+                if (total > before * 0.95) break;
+            }
+            const polys = [], lines = [];
+            cutTotal += total = cut.reduce((a, c) => a + c.pk.length, 0);
+            cut.forEach(c => {
+                const pk = c.pk;
+                const off = offsetRingKm(pk, d, c.whole);
+                if (off) {
+                    const a = ringDeg(pk, g.kx);
+                    const b = ringDeg(off, g.kx);
+                    if (c.whole) {
+                        const ca = closeRing(a), cb = closeRing(b);
+                        if (ca.length >= 4 && cb.length >= 4) {
+                            pts += ca.length + cb.length;
+                            polys.push(c.outer ? [ca, cb] : [cb, ca]);
+                        }
+                    } else {
+                        const band = a.concat(b.reverse());
+                        band.push([a[0][0], a[0][1]]);
+                        if (band.length >= 4) {
+                            pts += band.length;
+                            polys.push([band]);
+                        }
+                    }
+                }
+                castRuns(pk, c.whole, c.outer).forEach(run => {
+                    const line = run.map(p => [(p[0] + sx) / g.kx, (p[1] + sy) * KM_LAT]);
+                    pts += line.length;
+                    lines.push(line);
+                });
+            });
+            if (polys.length) {
+                out.push({
+                    type: 'Feature', properties: { role: 'rim' },
+                    geometry: polys.length === 1
+                        ? { type: 'Polygon', coordinates: polys[0] }
+                        : { type: 'MultiPolygon', coordinates: polys }
+                });
+            }
+            if (lines.length) {
+                out.push({ type: 'Feature', properties: { role: 'cast' }, geometry: { type: 'MultiLineString', coordinates: lines } });
+            }
+        });
+        if (stat) { stat.pts = pts; stat.cut = cutTotal; }
+        return out;
+    }
+
+    const zone3d = new WeakMap();
+
+    function z3d(map) {
+        let s = zone3d.get(map);
+        if (!s) {
+            s = { byId: new Map(), kp: 0, t: 0, relief: null, ex: 0, bound: null, build: null, armed: false, reliefPending: false };
+            zone3d.set(map, s);
+            // перемикання підкладки забирає стиль разом із рельєфом
+            map.on('style.load', () => {
+                if (!map._lt3d) return;
+                s.kp = 0;
+                setRelief(map, true);
+                queueZone3d(map, true);
+            });
+        }
+        return s;
+    }
+
+    // смуга й тінь задані в кілометрах, тож їхню геометрію треба перераховувати
+    // під поточний зум. не на кожен цілий, а коли потрібна ширина відрізняється
+    // від запеченої більш ніж у 1.3 раза: стрибок на екрані непомітний, а жест
+    // колесом не перекладає десятки тисяч версин щомиті
+    function queueZone3d(map, force) {
+        if (!map._lt3d) return;
+        const s = z3d(map);
+        const want = pxToM(1, map.getZoom()) / 1000;
+        if (!force && s.kp && want * 1.3 > s.kp && want < s.kp * 1.3) return;
+        if (s.t) return;
+        s.t = setTimeout(() => {
+            s.t = 0;
+            s.kp = pxToM(1, map.getZoom()) / 1000;
+            refreshZone3d(map);
+        }, docMobile() ? 150 : 90);
+    }
+
+    function startZone3d(map) {
+        const s = z3d(map);
+        s.kp = pxToM(1, map.getZoom()) / 1000;
+        refreshZone3d(map);
+    }
+
+    function bind3dZoom(map) {
+        const s = z3d(map);
+        if (s.bound) return;
+        s.bound = {
+            zoom: () => { queueZone3d(map); applyReliefEx(map); },
+            // панорама приводить у кадр зони, яких не було під час останнього
+            // перерахунку: масштаб той самий, але набір feature-ів інший
+            moveend: () => { if (map._lt3d) refreshZone3d(map); }
+        };
+        map.on('zoom', s.bound.zoom);
+        map.on('moveend', s.bound.moveend);
+    }
+
+    function unbind3dZoom(map) {
+        const s = zone3d.get(map);
+        if (!s || !s.bound) return;
+        map.off('zoom', s.bound.zoom);
+        map.off('moveend', s.bound.moveend);
+        s.bound = null;
+    }
+
+    function syncZone3d(map, l, geo, shown) {
+        const s = z3d(map);
+        s.byId.set(l.id, { geo, shown: !!shown });
+        const src = map.getSource('x_' + l.id);
+        if (!src) return;
+        let feats = [];
+        if (map._lt3d && shown) {
+            if (!s.kp) s.kp = pxToM(1, map.getZoom()) / 1000;
+            const t0 = performance.now();
+            const stat = { pts: 0, cut: 0 };
+            try { feats = zone3dFeatures(prepZone(geo), s.kp, map.getBounds(), stat); } catch (err) { feats = []; s.err = String(err && err.stack || err); }
+            s.build = { ms: +(performance.now() - t0).toFixed(1), feats: feats.length, pts: stat.pts, cut: stat.cut };
+        }
+        src.setData({ type: 'FeatureCollection', features: feats });
+    }
+
+    function refreshZone3d(map) {
+        const s = z3d(map);
+        if (!map._lt3d || !s.kp) return;
+        const t0 = performance.now();
+        const b = map.getBounds();
+        let n = 0, pts = 0, cut = 0;
+        s.byId.forEach((e, id) => {
+            const src = map.getSource('x_' + id);
+            if (!src) return;
+            let feats = [];
+            if (e.shown) {
+                const stat = { pts: 0, cut: 0 };
+                try { feats = zone3dFeatures(prepZone(e.geo), s.kp, b, stat); } catch (err) { s.err = String(err && err.stack || err); }
+                pts += stat.pts;
+                cut += stat.cut;
+            }
+            n += feats.length;
+            src.setData({ type: 'FeatureCollection', features: feats });
+        });
+        // перерахунок іде під час жесту, тому тримаємо ціну в числах: без них
+        // «оптимізовано для телефона» було б просто словами
+        s.build = { ms: +(performance.now() - t0).toFixed(1), feats: n, pts: pts, cut: cut };
+    }
+
+    function clearZone3d(map) {
+        const s = zone3d.get(map);
+        if (!s) return;
+        if (s.t) { clearTimeout(s.t); s.t = 0; }
+        s.kp = 0;
+        s.byId.forEach((e, id) => {
+            const src = map.getSource('x_' + id);
+            if (src) src.setData(EMPTY);
+        });
+    }
+
+    /* ------------------------------ рельеф ------------------------------ */
+
+    // terrarium: висота = червоний·256 + зелений + синій/256 − 32768 метрів.
+    // джерело безкоштовне, глобальне, тайли 256 px
+    const DEM_TILES = ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'];
+    const RELIEF_BASE = ['lt-bg', 'hybrid-sat', 'hybrid-roads'];
+
+    // стіна зони на z=13 — це 307 м, а пагорби Донбасу до ~360 м: без згасання
+    // блок просто тоне в рельєфі. тому екстраполяція йде до нуля заздалегідь,
+    // і на близькому зумі мапа знову плоска — там користувачеві потрібен
+    // точний контур, а не гори
+    function reliefProfile() {
+        const dev = deviceState || detectDevice();
+        if (!dev.mobile) return { maxzoom: 11, ex: 1.35, hill: 0.42, full: 11, zero: 13.2 };
+        if (lowEndDevice()) return { maxzoom: 7, ex: 0.8, hill: 0.2, full: 9.4, zero: 11.6 };
+        return { maxzoom: 8, ex: 1, hill: 0.3, full: 10.2, zero: 12 };
+    }
+
+    function reliefEx(p, z) {
+        const t = Math.max(0, Math.min(1, (p.zero - z) / (p.zero - p.full)));
+        return p.ex * t * t * (3 - 2 * t);
+    }
+
+    function setRelief(map, on) {
+        const s = z3d(map);
+        if (!on) {
+            try { map.setTerrain(null); } catch (e) { }
+            if (map.getLayer('lt-relief')) map.removeLayer('lt-relief');
+            if (map.getSource('lt-dem')) map.removeSource('lt-dem');
+            s.relief = null;
+            s.armed = false;
+            s.ex = 0;
+            return;
+        }
+        const p = reliefProfile();
+        s.relief = p;
+        s.reliefPending = false;
+        if (!map.getSource('lt-dem')) {
+            map.addSource('lt-dem', {
+                type: 'raster-dem', tiles: DEM_TILES, tileSize: 256,
+                maxzoom: p.maxzoom, encoding: 'terrarium',
+                attribution: 'Mapzen / AWS Open Terrain'
+            });
+        }
+        if (!map.getLayer('lt-relief')) {
+            const layers = (map.getStyle() || {}).layers || [];
+            let before = null;
+            for (let i = 0; i < layers.length; i++) {
+                if (RELIEF_BASE.indexOf(layers[i].id) < 0) { before = layers[i].id; break; }
+            }
+            map.addLayer({
+                id: 'lt-relief', type: 'hillshade', source: 'lt-dem',
+                paint: {
+                    'hillshade-accent-color': '#e6effb',
+                    'hillshade-shadow-color': '#04070c',
+                    'hillshade-illumination-anchor': 'map',
+                    'hillshade-illumination-direction': 325,
+                    'hillshade-exaggeration': p.hill
+                }
+            }, before || undefined);
+        }
+        armTerrain(map);
+    }
+
+    // maplibre 3.6.2 падає, якщо terrain з'являється посеред анімації камери:
+    // наступний кадр ease читає _elevationCenter, якого ще немає, і далі рахунок
+    // кадру йде вже з винятком — мапа стає. тому terrain вмикаємо на першій
+    // паузі жесту; самі гори (hillshade) уже на екрані й просто чекають
+    function armTerrain(map) {
+        const s = z3d(map);
+        if (!s || !s.relief || s.armed || !map._lt3d) return;
+        const moving = () => { try { return !!map.isMoving(); } catch (e) { return false; } };
+        const go = () => {
+            map.off('moveend', go);
+            if (!s.relief || !map._lt3d) return;
+            s.armed = true;
+            applyReliefEx(map, true);
+        };
+        // під час moveend камера вже дослухана, тож армінг тут безпечний;
+        // перевірка isMoving() всередині обробника навпаки — завжди істинна,
+        // бо подія ще лежить у черзі, і terrain не вмикався б ніколи
+        if (moving()) { map.on('moveend', go); return; }
+        go();
+    }
+
+    // перегляд починає кадри без гір: їх просить переглядач, щойно завіса впала
+    function reliefArm(map) {
+        const s = z3d(map);
+        if (!s || !map._lt3d || !s.reliefPending) return;
+        setRelief(map, true);
+    }
+
+    // setTerrain чіпає стиль, тому міняємо екстраполяцію лише коли різниця
+    // реально помітна, а не на кожен кадр жесту
+    function applyReliefEx(map, force) {
+        const s = zone3d.get(map);
+        const p = s && s.relief;
+        if (!p || !s.armed) return;
+        const e = Math.max(0.001, reliefEx(p, map.getZoom()));
+        if (!force && Math.abs(e - s.ex) < 0.05) return;
+        s.ex = e;
+        try { map.setTerrain({ source: 'lt-dem', exaggeration: e }); } catch (err) { }
+        if (map.getLayer('lt-relief')) {
+            try {
+                map.setPaintProperty('lt-relief', 'hillshade-exaggeration', p.hill * Math.min(1, e / p.ex));
+            } catch (err) { }
+        }
+    }
+
     function validPos(p) {
         return Array.isArray(p) && p.length === 2 && Number.isFinite(+p[0]) && Number.isFinite(+p[1])
             ? [+p[0], +p[1]] : null;
@@ -2760,6 +3324,15 @@
                 const dec = arrowDecor(f, l.style);
                 if (dec) dec.features.forEach(x => feats.push(x));
             });
+        }
+
+        if (l.kind === 'zone') {
+            // смуга й тінь будуються з того ж джерела, що й псевдооб'єм стрілок,
+            // але для зон кільця спершу приводимо до одного обходу: нормаль
+            // «у бік матеріалу» однакова для зовнішнього краю й для дірки
+            syncZone3d(map, l, geo, shown);
+            syncLayerLabel(map, l, shown);
+            return;
         }
 
         src.setData({ type: 'FeatureCollection', features: feats });
@@ -2969,6 +3542,15 @@
             paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.95 }
         });
         map.addLayer({
+            // line-cap і line-join — layout-властивості. у paint вони не ламають
+            // сторінку, а шар мовчки не додається (та сама пастка, що й
+            // fill-extrusion-ambient-occlusion), тому «шар існує» треба перевіряти
+            id: 'cs_' + l.id, type: 'line', source: 'x_' + l.id,
+            layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+            filter: ['==', ['get', 'role'], 'cast'],
+            paint: { 'line-color': '#02060c', 'line-opacity': 0.45, 'line-width': 34, 'line-blur': 19 }
+        });
+        map.addLayer({
             id: 'sh_' + l.id, type: 'line', source: srcId,
             layout: { visibility: 'none' },
             paint: { 'line-color': '#04060a', 'line-width': 14, 'line-blur': 9, 'line-opacity': 0.4, 'line-offset': 7 }
@@ -2997,12 +3579,26 @@
                 'fill-extrusion-opacity': 0.95,
                 'fill-extrusion-base': 0,
                 // 24 px на екрані: 24 · (156543 · cos 48°) / 2^z метрів
-                'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'],
-                    5, 78557, 6, 39278, 7, 19639, 8, 9820, 9, 4910, 10, 2455,
-                    11, 1227, 12, 614, 13, 307, 14, 153, 15, 77, 16, 38, 17, 19, 18, 10],
+                'fill-extrusion-height': wallStops(WALL_PX),
                 // у maplibre 3.6 немає ambient-occlusion: шар із невідомою властивістю
                 // стиль не видалює з помилкою, а мовчки не додає взагалі
                 'fill-extrusion-vertical-gradient': true
+            }
+        });
+        map.addLayer({
+            // об'ємний контур: вузька смуга вздовж того ж кільця, піднята трохи
+            // вище за стіну. без неї контур лишався плоскою лінією на землі, поки
+            // сама зона стояла стіною. вища на 6 px спеціально: два однойменні
+            // верхні грані на одній висоті дають мігання z-fighting
+            id: 'fr_' + l.id, type: 'fill-extrusion', source: 'x_' + l.id,
+            layout: { visibility: 'none' },
+            filter: ['==', ['get', 'role'], 'rim'],
+            paint: {
+                'fill-extrusion-color': s.bcol,
+                'fill-extrusion-opacity': 0.98,
+                'fill-extrusion-base': 0,
+                'fill-extrusion-height': wallStops(RIM_H_PX),
+                'fill-extrusion-vertical-gradient': false
             }
         });
         map.addLayer({
@@ -3041,7 +3637,9 @@
         if (map._ltObjects) map._ltObjects.drop(id);
         const fs = fxState.get(map);
         if (fs) fs.run.delete(id);
-        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'fe_', 'f_', 'sh_', 'xs_', 'xb_'].forEach(p => {
+        const z = zone3d.get(map);
+        if (z) z.byId.delete(id);
+        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'fr_', 'fe_', 'f_', 'cs_', 'sh_', 'xs_', 'xb_'].forEach(p => {
             if (map.getLayer(p + id)) map.removeLayer(p + id);
         });
         dropLayerLabel(map, id);
@@ -3156,6 +3754,25 @@
             map.setLayoutProperty('fe_' + l.id, 'visibility', d3 ? vis : 'none');
             if (d3) map.setPaintProperty('fe_' + l.id, 'fill-extrusion-opacity', 0.95 * k);
         }
+        // об'ємний контур і тінь живуть тільки в 3D: у площині й так видно
+        // плоску лінію, а зміщене кільце там виглядало б як другий контур
+        if (map.getLayer('fr_' + l.id)) {
+            const rimOn = d3 && !noLine;
+            map.setLayoutProperty('fr_' + l.id, 'visibility', rimOn ? vis : 'none');
+            if (rimOn) {
+                map.setPaintProperty('fr_' + l.id, 'fill-extrusion-color', lightHex(s.bcol, 0.3));
+                map.setPaintProperty('fr_' + l.id, 'fill-extrusion-opacity', 0.98 * k);
+            }
+        }
+        if (map.getLayer('cs_' + l.id)) {
+            map.setLayoutProperty('cs_' + l.id, 'visibility', d3 ? vis : 'none');
+            if (d3) {
+                const w = Math.max(24, WALL_PX * 1.1 + s.bw * 2);
+                map.setPaintProperty('cs_' + l.id, 'line-width', w);
+                map.setPaintProperty('cs_' + l.id, 'line-blur', w * 0.55);
+                map.setPaintProperty('cs_' + l.id, 'line-opacity', Math.min(0.6, 0.3 + s.alpha * 0.4) * k);
+            }
+        }
         map.setLayoutProperty('l_' + l.id, 'visibility', noLine ? 'none' : vis);
         map.setLayoutProperty('g_' + l.id, 'visibility', glow ? vis : 'none');
         map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && !noLine ? vis : 'none');
@@ -3197,7 +3814,8 @@
         map.setPaintProperty('sh_' + l.id, 'line-color', '#04060a');
         map.setPaintProperty('sh_' + l.id, 'line-width', Math.max(12, s.bw * 3.4));
         map.setPaintProperty('sh_' + l.id, 'line-blur', Math.max(7, s.bw * 2.6));
-        map.setPaintProperty('sh_' + l.id, 'line-opacity', Math.min(0.5, 0.22 + s.alpha * 0.3) * k);
+        // в 3D вагу дає кидана тінь, рівне кільце поверх неї лише бруднить підлогу
+        map.setPaintProperty('sh_' + l.id, 'line-opacity', Math.min(0.5, 0.22 + s.alpha * 0.3) * k * (d3 ? 0.45 : 1));
         map.setPaintProperty('sh_' + l.id, 'line-offset', Math.max(3, s.bw * 1.7));
 
         // широкое гало под узким свечением: глубина свечения в два слоя
@@ -3234,7 +3852,7 @@
         Object.values(layers)
             .sort((a, b) => a.z - b.z)
             .forEach(l => {
-                ['xb_', 'xs_', 'sh_', 'f_', 'p_', 'fe_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
+                ['xb_', 'xs_', 'cs_', 'sh_', 'f_', 'p_', 'fe_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
                     if (map.getLayer(p + l.id)) map.moveLayer(p + l.id);
                 });
             });
@@ -3278,6 +3896,15 @@
             // smoothZoom припускає плоску камеру, тому на час 3D відступає
             if (map.scrollZoom) map.scrollZoom.enable();
             if (opts.pauseBlend) opts.pauseBlend(true);
+            // на старті сторінки рельєф не потрібен у першу ж секунду: DEM-тайли
+            // з мережі й розбір висот забирають головний потік, і під завісою
+            // мапа показує кадр на три секунди пізніше. тому підйом 3D після
+            // перезавантаження іде без гір, а вмикає їх виклик reliefArm — коли
+            // завіса вже впала
+            if (opts.deferRelief) z3d(map).reliefPending = true;
+            else setRelief(map, true);
+            bind3dZoom(map);
+            startZone3d(map);
             try { map.easeTo({ pitch: THREE_D_PITCH, duration: docMobile() ? 800 : 1000 }); } catch (e) { }
             repaint();
         } else {
@@ -3295,6 +3922,11 @@
                 if (map.touchPitch) map.touchPitch.disable();
                 if (map.scrollZoom) map.scrollZoom.disable();
                 if (opts.pauseBlend) opts.pauseBlend(false);
+                unbind3dZoom(map);
+                const st = z3d(map);
+                st.reliefPending = false;
+                setRelief(map, false);
+                clearZone3d(map);
                 repaint();
             };
             set3D._off = off;
@@ -4494,6 +5126,7 @@
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,
         syncLayerLabel, setLayerLabelDrag, set3D,
+        reliefProfile, reliefArm, zone3dState: map => zone3d.get(map), pxToM, zone3dBudget,
         blendEngine, featBox, onScreen, bakeParts, warmGeometry, lodTols,
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,
