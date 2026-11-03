@@ -2763,33 +2763,48 @@
         return out;
     }
 
-    // кільця фронту мають десятки тисяч вершин, а смуга wide ~3 px: сусідні
-    // точки в межах півширини дають на екрані той самий край. смугу й тінь
-    // тоншою, але САМ КОНТУР — ні: f_/fe_/l_ лишаються на точних даних
-    function thinRingKm(r, stepKm, maxTurn) {
-        const out = [r[0]];
-        for (let i = 1; i < r.length; i++) {
-            const p = r[i], last = out[out.length - 1];
-            let keep = Math.hypot(p[0] - last[0], p[1] - last[1]) >= stepKm;
-            if (!keep && out.length > 1) {
-                const q = out[out.length - 2];
-                const a1 = Math.atan2(last[1] - q[1], last[0] - q[0]);
-                const a2 = Math.atan2(p[1] - last[1], p[0] - last[0]);
-                let da = Math.abs(a2 - a1);
-                if (da > Math.PI) da = 2 * Math.PI - da;
-                keep = da > maxTurn;
+    // кільця фронту мають десятки тисяч вершин, а смуга wide ~3 px: смугу й тінь
+    // робимо тоншими, але САМ КОНТУР — ні: f_/fe_/l_ лишаються на точних даних.
+    // Douglas–Peucker замість кроку по відстані: він прибирає вершину лише
+    // тоді, коли її відхилення від хорди менше за eps, тому на прямій ділянці
+    // фронту лишаються два кінці, а звивина коштує стільки, скільки її
+    // справді видно. і головне — точність смуги стає числом у пікселях (eps),
+    // а не «приблизно кроком», який кутівний нормувальник ламав на кожному зумі
+    function dpKm(pts, eps) {
+        const n = pts.length;
+        if (n < 3) return pts.slice();
+        const keep = new Uint8Array(n);
+        keep[0] = keep[n - 1] = 1;
+        const e2 = eps * eps;
+        const stack = [[0, n - 1]];
+        while (stack.length) {
+            const seg = stack.pop(), i0 = seg[0], i1 = seg[1];
+            if (i1 - i0 < 2) continue;
+            const a = pts[i0], b = pts[i1];
+            const dx = b[0] - a[0], dy = b[1] - a[1];
+            const l2 = dx * dx + dy * dy;
+            let worst = -1, wd = e2;
+            for (let i = i0 + 1; i < i1; i++) {
+                const p = pts[i];
+                let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0;
+                t = t < 0 ? 0 : t > 1 ? 1 : t;
+                const px = a[0] + dx * t - p[0], py = a[1] + dy * t - p[1];
+                const d = px * px + py * py;
+                if (d > wd) { wd = d; worst = i; }
             }
-            if (keep) out.push(p);
+            if (worst > 0) { keep[worst] = 1; stack.push([i0, worst], [worst, i1]); }
         }
+        const out = [];
+        for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
         return out;
     }
 
-    function closeRing(r) {
-        if (r.length > 2) {
-            const a = r[0], b = r[r.length - 1];
-            if (a[0] !== b[0] || a[1] !== b[1]) r.push([a[0], a[1]]);
-        }
-        return r;
+    // кільце подаємо з дублем першої вершини в кінці, щоб шов між останньою і
+    // першою теж мав хорду, а інакше тримав зайві точки; дубль прибираємо
+    function thinChain(km, whole, eps) {
+        const t = dpKm(whole ? km.concat([km[0]]) : km, eps);
+        if (whole) t.pop();
+        return t;
     }
 
     function ringKm(ring, kx) {
@@ -2849,11 +2864,13 @@
 
     // скільки версин декор може забрати на одну перебудову. тонше ми лише
     // смугу й тінь (fr_/cs_) — f_, fe_ і l_ лишаються на точних даних, тому
-    // бюджет не має жодної ціни для читання контуру на місткому зумі
+    // бюджет не має жодної ціни для читання контуру на місткому зумі.
+    // смуга тепер коштує чотирикутник на сегмент, а не дві вершини, тож
+    // лічильник удвічі менший за попередній — із тією ж ціною кадра
     function zone3dBudget() {
         const dev = deviceState || detectDevice();
-        if (!dev.mobile) return 9000;
-        return lowEndDevice() ? 2200 : 3500;
+        if (!dev.mobile) return 4200;
+        return lowEndDevice() ? 900 : 1600;
     }
 
     // смуга й тінь ріжуться вздовж кадра. найбільше кільце в даних — 7 200 км
@@ -2944,70 +2961,72 @@
                 if (!c) return;
                 c.forEach(x => { chains.push(x); len += x.len; });
             });
-            if (chains.length) groups.push({ kx, chains, len: chains.reduce((a, c) => a + c.len, 0) });
+            if (chains.length) groups.push({ kx, chains });
         });
         if (!groups.length) return out;
         const budget = zone3dBudget();
-        // 1.4 px — крок, за яким смуга ще не схожа на пил. якщо видимого
-        // контуру більше, ніж вміщує бюджет, розтягуємо крок пропорційно
-        const step0 = 1.4 * kp;
-        const step = Math.max(step0, len / budget);
+        // eps — допустиме відхилення бордюру від точного контуру, у пікселях.
+        // 1.1 px: смуга завширшки 3.2 px лежить на контурі в межах пікселя, тож
+        // бордюр не «злізає» зі стіни на жодному зумі.
+        // другий доданок — оцінка з довжини фронту, але з коефіцієнтом 2.2:
+        // виміряно, що Douglas–Peucker лишає 25–45 % версин від «по одній на
+        // крок», тож жорстка оцінка занижувала б точність удвічі ще до того,
+        // як лічильник дивився на реальний результат. рахунок править цикл нижче
+        const eps0 = Math.max(1.1 * kp, len / (budget * 2.2));
         const d = RIM_PX * kp;
         const sx = CAST_PX[0] * kp, sy = -CAST_PX[1] * kp;
-        let pts = 0, cutTotal = 0;
+        let pts = 0, eps = eps0;
+        const jobs = [];
         groups.forEach(g => {
             const cut = [];
-            let total = 0;
             g.chains.forEach(ch => {
                 if (ch.i1 - ch.i0 < 3) return;
                 const seg = ch.whole ? ch.km : ch.km.slice(ch.i0, ch.i1);
-                const pk = thinRingKm(seg, step, 0.3);
+                const pk = thinChain(seg, ch.whole, eps0);
                 if (pk.length < 3) return;
-                cut.push({ pk, whole: ch.whole, outer: ch.outer });
-                total += pk.length;
+                cut.push({ seg, pk, whole: ch.whole, outer: ch.outer });
             });
-            if (!cut.length) return;
-            // кут повороту лишає вершини на звивистому фронті навіть тоді, коли
-            // вони густіші за крок, тож бюджет добираємо повторним проходом —
-            // чистою відстанню, вже без кутів. один прохід не добирав: послідовність
-            // після кутів нерівномірна, тому поріг зростає від поточного лічильника
-            const cap = budget * g.len / len;
-            let guard = 0;
-            while (total > cap && guard++ < 6) {
-                const t2 = step * (total / cap);
-                const before = total;
-                total = 0;
-                cut.forEach(c => {
-                    const t = thinRingKm(c.pk, t2, 999);
-                    if (t.length >= 3) c.pk = t;
-                    total += c.pk.length;
-                });
-                // звивистий фронт: наступні вершини розділені не менше за крок,
-                // тому відстаньне проріджування має межу. далі — лишаємо як є,
-                // краще трохи більше вершин, ніж зламана смуга
-                if (total > before * 0.95) break;
-            }
+            if (cut.length) jobs.push({ g, cut });
+        });
+        if (!jobs.length) return out;
+        let total = 0;
+        jobs.forEach(j => j.cut.forEach(c => { total += c.pk.length; }));
+        // eps ріже весь кадр ОДНОРАЗОВО. поділ бюджету «на кожну групу» ламав
+        // бордюр на 3 px там, де весь кадр мав удвічі менше версин, ніж вміщує
+        // бюджет: групу з хвостом через увесь район капо ділило навпіл, хоч
+        // грошей вистачало на всіх. тепер eps росте лише при глобальному переборі
+        let guard = 0;
+        while (total > budget && guard++ < 5) {
+            const before = total;
+            eps = eps * Math.min(2.5, total / budget);
+            total = 0;
+            jobs.forEach(j => j.cut.forEach(c => {
+                c.pk = thinChain(c.seg, c.whole, eps);
+                total += c.pk.length;
+            }));
+            if (total > before * 0.9) break;
+        }
+        jobs.forEach(job => {
+            const g = job.g, cut = job.cut;
             const polys = [], lines = [];
-            cutTotal += total = cut.reduce((a, c) => a + c.pk.length, 0);
             cut.forEach(c => {
                 const pk = c.pk;
                 const off = offsetRingKm(pk, d, c.whole);
                 if (off) {
                     const a = ringDeg(pk, g.kx);
                     const b = ringDeg(off, g.kx);
-                    if (c.whole) {
-                        const ca = closeRing(a), cb = closeRing(b);
-                        if (ca.length >= 4 && cb.length >= 4) {
-                            pts += ca.length + cb.length;
-                            polys.push(c.outer ? [ca, cb] : [cb, ca]);
-                        }
-                    } else {
-                        const band = a.concat(b.reverse());
-                        band.push([a[0][0], a[0][1]]);
-                        if (band.length >= 4) {
-                            pts += band.length;
-                            polys.push([band]);
-                        }
+                    // смуга — набір чотирикутників, а не одне кільце-стрічка.
+                    // стрічка на звивинах фронту самоперетинається (виміряно:
+                    // 333 з 340 перетинів на z=10.4), а earcut зобов'язаний
+                    // вибрати діагональ — і витягує трикутник через увесь кадр.
+                    // той самий «аркуш» завбільшки з район. трапеція одного
+                    // сегмента перетнутися з собою не може, тому її максимум —
+                    // лусочка в межах цього сегмента
+                    const n = a.length, last = c.whole ? n : n - 1;
+                    for (let i = 0; i < last; i++) {
+                        const j = (i + 1) % n;
+                        pts += 4;
+                        polys.push([[a[i], a[j], b[j], b[i], a[i]]]);
                     }
                 }
                 castRuns(pk, c.whole, c.outer).forEach(run => {
@@ -3028,7 +3047,7 @@
                 out.push({ type: 'Feature', properties: { role: 'cast' }, geometry: { type: 'MultiLineString', coordinates: lines } });
             }
         });
-        if (stat) { stat.pts = pts; stat.cut = cutTotal; }
+        if (stat) { stat.pts = pts; stat.cut = total; stat.epsPx = +(eps / kp).toFixed(2); }
         return out;
     }
 
@@ -3052,19 +3071,25 @@
 
     // смуга й тінь задані в кілометрах, тож їхню геометрію треба перераховувати
     // під поточний зум. не на кожен цілий, а коли потрібна ширина відрізняється
-    // від запеченої більш ніж у 1.3 раза: стрибок на екрані непомітний, а жест
-    // колесом не перекладає десятки тисяч версин щомиті
+    // від запеченої більш ніж у 1.3 раза: стрибок на екрані непомітний.
+    // таймер перезапускаємо на кожну подію зуму, а коли мапа досі рухається —
+    // перебудову не робимо зовсім: один кадр на повільному пристрої триває
+    // секунду, тож навіть debounce спливав би між кроками жести. добудовує
+    // moveend, який приходить рівно раз на кінець
     function queueZone3d(map, force) {
         if (!map._lt3d) return;
         const s = z3d(map);
-        const want = pxToM(1, map.getZoom()) / 1000;
-        if (!force && s.kp && want * 1.3 > s.kp && want < s.kp * 1.3) return;
-        if (s.t) return;
+        if (!force) {
+            const want = pxToM(1, map.getZoom()) / 1000;
+            if (s.kp && want * 1.3 > s.kp && want < s.kp * 1.3) return;
+        }
+        if (s.t) clearTimeout(s.t);
         s.t = setTimeout(() => {
             s.t = 0;
+            if (map.isMoving()) return;
             s.kp = pxToM(1, map.getZoom()) / 1000;
             refreshZone3d(map);
-        }, docMobile() ? 150 : 90);
+        }, docMobile() ? 220 : 140);
     }
 
     function startZone3d(map) {
@@ -3079,8 +3104,10 @@
         s.bound = {
             zoom: () => { queueZone3d(map); applyReliefEx(map); },
             // панорама приводить у кадр зони, яких не було під час останнього
-            // перерахунку: масштаб той самий, але набір feature-ів інший
-            moveend: () => { if (map._lt3d) refreshZone3d(map); }
+            // перерахунку: масштаб той самий, але набір feature-ів інший.
+            // идемо через той самий debounced-запуск, щоб жест зуму не робив
+            // дві однакові перебудови — zoomend і moveend приходить парою
+            moveend: () => { if (map._lt3d) queueZone3d(map, true); }
         };
         map.on('zoom', s.bound.zoom);
         map.on('moveend', s.bound.moveend);
@@ -3103,9 +3130,11 @@
         if (map._lt3d && shown) {
             if (!s.kp) s.kp = pxToM(1, map.getZoom()) / 1000;
             const t0 = performance.now();
-            const stat = { pts: 0, cut: 0 };
+            const stat = { pts: 0, cut: 0, epsPx: 0 };
             try { feats = zone3dFeatures(prepZone(geo), s.kp, map.getBounds(), stat); } catch (err) { feats = []; s.err = String(err && err.stack || err); }
-            s.build = { ms: +(performance.now() - t0).toFixed(1), feats: feats.length, pts: stat.pts, cut: stat.cut };
+            // s.build — це остання ПОВНА перебудова кадру; шар-один тут би її
+            // перезаписував нулями, коли шар прихований, і лічильник брехав би
+            s.buildLayer = { ms: +(performance.now() - t0).toFixed(1), feats: feats.length, pts: stat.pts, cut: stat.cut, eps: stat.epsPx };
         }
         src.setData({ type: 'FeatureCollection', features: feats });
     }
@@ -3115,23 +3144,24 @@
         if (!map._lt3d || !s.kp) return;
         const t0 = performance.now();
         const b = map.getBounds();
-        let n = 0, pts = 0, cut = 0;
+        let n = 0, pts = 0, cut = 0, eps = 0;
         s.byId.forEach((e, id) => {
             const src = map.getSource('x_' + id);
             if (!src) return;
             let feats = [];
             if (e.shown) {
-                const stat = { pts: 0, cut: 0 };
+                const stat = { pts: 0, cut: 0, epsPx: 0 };
                 try { feats = zone3dFeatures(prepZone(e.geo), s.kp, b, stat); } catch (err) { s.err = String(err && err.stack || err); }
                 pts += stat.pts;
                 cut += stat.cut;
+                eps = Math.max(eps, stat.epsPx);
             }
             n += feats.length;
             src.setData({ type: 'FeatureCollection', features: feats });
         });
         // перерахунок іде під час жесту, тому тримаємо ціну в числах: без них
         // «оптимізовано для телефона» було б просто словами
-        s.build = { ms: +(performance.now() - t0).toFixed(1), feats: n, pts: pts, cut: cut };
+        s.build = { ms: +(performance.now() - t0).toFixed(1), feats: n, pts: pts, cut: cut, eps: eps };
     }
 
     function clearZone3d(map) {
