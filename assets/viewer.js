@@ -2565,6 +2565,14 @@
         LT.ensurePlaceLabels(map, state.base);
         blend = LT.blendEngine(map, () => state.layers, isVisible, l => shownFC.get(l.id) || displayFC(l));
         blend.sync();
+        // вимірювальний шов, той самий, що в ядрі для підписів і полотен:
+        // «просування працює» має бути числом із браузера, а не словами
+        if (window.__ltViewerDebug) {
+            window.__ltViewerDebug(() => ({
+                map, state, blend, dates: () => store.listDates(),
+                snapshot: zoneSnapshot, layer: id => state.layers[id]
+            }));
+        }
         // 3D-режим, обраний минулого разу, повертається разом зі сторінкою.
         // гори при цьому не вмикаються: DEM-тайли з мережі затримали б перший
         // кадр під завісою, тож reliefArm кличе їх, коли завіса вже впала
