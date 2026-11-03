@@ -1457,7 +1457,10 @@
     }
 
     function syncToolUI() {
-        document.querySelectorAll('.tool-btn').forEach(btn => {
+        // «3Д» у цій же рейці — не інструмент малювання, а режим камери.
+        // інакше кожен вибір лінійки знімав би з нього підсвітку, хоча 3D
+        // залишався б увімкненим
+        document.querySelectorAll('.tool-btn:not(#tool-3d)').forEach(btn => {
             const on = btn.id === 'tool-' + tool;
             btn.classList.toggle('active', on);
             if (btn.hasAttribute('aria-pressed')) btn.setAttribute('aria-pressed', String(on));
@@ -1991,11 +1994,14 @@
 
     function set3DView(on) {
         if (!mapReady) return;
-        const btn = $('view-3d');
-        if (btn) {
+        // перемикач живе в двох місцях: у рейці інструментів (завжди на екрані)
+        // і в панелі шарів. обидва мають показувати один і той самий стан
+        ['view-3d', 'tool-3d'].forEach(id => {
+            const btn = $(id);
+            if (!btn) return;
             btn.classList.toggle('active', !!on);
             btn.setAttribute('aria-pressed', String(!!on));
-        }
+        });
         try { localStorage.setItem('LINETATE:3d', on ? '1' : '0'); } catch (e) { }
         LT.set3D(map, !!on, {
             layers: state.layers,
@@ -2003,6 +2009,10 @@
             pauseBlend: on2 => { if (blend) blend.pause(on2); }
         });
     }
+
+    // стан читаємо з самої мапи, а не з класу кнопки: два перемикачі не зможуть
+    // розійтися, навіть якщо хтось натисне під час анімації нахилу
+    function toggle3D() { set3DView(!map._lt3d); }
 
     function centerLabel(id) {
         const l = state.layers[id];
@@ -2682,12 +2692,9 @@
             mapTools.setRegions(on);
         });
         $('view-labels').addEventListener('click', () => setLabels(!state.labels));
-        $('view-3d').addEventListener('click', e => {
-            const on = !e.currentTarget.classList.contains('active');
-            e.currentTarget.classList.toggle('active', on);
-            e.currentTarget.setAttribute('aria-pressed', String(on));
-            set3DView(on);
-        });
+        $('view-3d').addEventListener('click', toggle3D);
+        const rail3d = $('tool-3d');
+        if (rail3d) rail3d.addEventListener('click', toggle3D);
         $('advance-btn').addEventListener('click', () => setAdvance(!state.advance));
         $('date-trigger').addEventListener('click', () => { setMenu(false); cal.toggle(state.date); });
 

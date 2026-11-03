@@ -502,6 +502,18 @@
     box-shadow: 0 1px 0 rgba(0, 0, 0, .5);
 }
 
+/* «3Д» — текстова кнопка, а не піктограма: режим камери читається з самих
+   літер, умовний значок тут не додав би нічого */
+.tool-3d {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    line-height: 1;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, .55);
+}
+.tool-3d.active { text-shadow: none; }
+
 /* ---------- ПАНЕЛЬ МАЛЮВАННЯ ---------- */
 
 #draw-panel {
@@ -810,12 +822,13 @@
 
 .dev-mobile #tools {
     top: 68px; left: 8px; right: auto;
-    display: grid; grid-template-columns: repeat(2, 46px);
+    display: grid; grid-template-columns: repeat(3, 46px);
     gap: 5px; padding: 6px;
     border-radius: 16px;
 }
 .dev-mobile .tool-btn, .dev-mobile .tool-tab { width: 46px; height: 46px; border-radius: 12px; }
 .dev-mobile .tool-btn svg, .dev-mobile .tool-tab svg { width: 21px; height: 21px; }
+.dev-mobile .tool-3d { font-size: 15px; }
 .dev-mobile .tool-tab .tt-dot { right: 9px; bottom: 9px; }
 .dev-mobile .tool-sep { display: none; }
 .dev-mobile #draw-panel {
