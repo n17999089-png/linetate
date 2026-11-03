@@ -1319,6 +1319,10 @@
                 // moveend і кадр доклампується.
                 if (map.isEasing && map.isEasing()) return;
                 if (map.handlers && map.handlers.isActive()) return;
+                // при нахилі верхня кромка кадру дивиться на горизонт: unproject
+                // її кутів дає величезний півкадр і центр ламається об рамку.
+                // центр при нахилі тримає рідний maxBounds, тому кламп відпочиває
+                if ((map.getPitch ? map.getPitch() : 0) > 0.5) return;
                 const el = map.getContainer();
                 const c = map.getCenter();
                 const nw = map.unproject([0, 0]);
@@ -1446,6 +1450,9 @@
         const onWheel = e => {
             // мультитач-жест і жести браузера лишаємо системі
             if (e.ctrlKey || e.altKey || e.metaKey) return;
+            // у 3D-режимі працює рідний scrollZoom: він правильно тримає якір
+            // під курсором при нахилі камери
+            if (map._lt3d) return;
             const rect = el.getBoundingClientRect();
             const px = { x: e.clientX - rect.left, y: e.clientY - rect.top };
             let base;
@@ -1728,6 +1735,12 @@
         function viewSize() {
             const r = map.getCanvas().getBoundingClientRect();
             return { x: r.width, y: r.height };
+        }
+
+        // 3D-режим: при нахилі або повороті камери плоска меркатор-рамка не
+        // описує екран, і координати беруться з map.project (він усе враховує)
+        function pitched() {
+            return cameraTilted(map);
         }
 
         function syncCanvas() {
@@ -2052,11 +2065,14 @@
         function rebuild() {
             // набір назв не перебудовуємо, якщо вигляд і мова не змінились
             const size0 = viewSize();
-            const fr = camFrame(map);
-            if (!fr) return;
+            const pitch3d = pitched();
+            const fr = pitch3d ? null : camFrame(map);
+            if (!fr && !pitch3d) return;
             const c = map.getCenter ? map.getCenter() : { lng: 0, lat: 0 };
             const sig = lang + '|' + map.getZoom().toFixed(3) + '|' + c.lng.toFixed(3) + ',' + c.lat.toFixed(3) +
-                '|' + Math.round(size0.x) + 'x' + Math.round(size0.y);
+                '|' + Math.round(size0.x) + 'x' + Math.round(size0.y)
+                + '|p' + (map.getPitch ? map.getPitch().toFixed(1) : '0')
+                + 'b' + (map.getBearing ? map.getBearing().toFixed(1) : '0');
             if (sig === lastSig && items.length) return;
             lastSig = sig;
 
@@ -2086,7 +2102,7 @@
             const addDot = (it, x, y) => {
                 if (extraDots.length >= dotLimit) return;
                 extraDots.push({
-                    mx: it.mx, my: it.my, x: x, y: y,
+                    coord: it.coord, mx: it.mx, my: it.my, x: x, y: y,
                     cap: it.cap, kind: it.kind, rank: it.rank
                 });
             };
@@ -2117,9 +2133,14 @@
             const n = Math.min(list.length, maxScan);
             for (let s = 0; s < n; s++) {
                 const it = list[s];
-                const mx = it.mx, my = it.my;
-                const px = fr.px0 + mx * fr.ws;
-                const py = fr.py0 + my * fr.ws;
+                let px, py;
+                if (fr) {
+                    px = fr.px0 + it.mx * fr.ws;
+                    py = fr.py0 + it.my * fr.ws;
+                } else {
+                    const p = map.project(it.coord);
+                    px = p.x; py = p.y;
+                }
                 if (px < -80 || py < -50 || px > size.x + 80 || py > size.y + 50) continue;
                 it.px = px; it.py = py;
                 // місто й столицю завжди виводимо з іконкою на самій координаті;
@@ -2180,17 +2201,28 @@
         }
 
         function reposition() {
-            const fr = camFrame(map);
-            if (!fr) return;
+            const pitch3d = pitched();
+            const fr = pitch3d ? null : camFrame(map);
+            if (!fr && !pitch3d) return;
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
-                it.x = fr.px0 + it.mx * fr.ws;
-                it.y = fr.py0 + it.my * fr.ws;
+                if (fr) {
+                    it.x = fr.px0 + it.mx * fr.ws;
+                    it.y = fr.py0 + it.my * fr.ws;
+                } else {
+                    const p = map.project(it.coord);
+                    it.x = p.x; it.y = p.y;
+                }
             }
             for (let i = 0; i < extraDots.length; i++) {
                 const d = extraDots[i];
-                d.x = fr.px0 + d.mx * fr.ws;
-                d.y = fr.py0 + d.my * fr.ws;
+                if (fr) {
+                    d.x = fr.px0 + d.mx * fr.ws;
+                    d.y = fr.py0 + d.my * fr.ws;
+                } else if (d.coord) {
+                    const p = map.project(d.coord);
+                    d.x = p.x; d.y = p.y;
+                }
             }
             paint();
         }
@@ -2951,6 +2983,21 @@
             paint: { 'fill-pattern': 'lt-empty', 'fill-opacity': s.alpha }
         });
         map.addLayer({
+            // 3D-режим: екструзія зони замість плоскої заливки. висота інтерполюється
+            // за зумом так, щоб на екрані стіна тримала ~32 px на будь-якому масштабі
+            id: 'fe_' + l.id, type: 'fill-extrusion', source: srcId,
+            layout: { visibility: 'none' },
+            paint: {
+                'fill-extrusion-color': s.color,
+                'fill-extrusion-opacity': 0.95,
+                'fill-extrusion-base': 0,
+                'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 6, 40000, 13, 300],
+                // у maplibre 3.6 немає ambient-occlusion: шар із невідомою властивістю
+                // стиль не видалює з помилкою, а мовчки не додає взагалі
+                'fill-extrusion-vertical-gradient': true
+            }
+        });
+        map.addLayer({
             id: 'gw_' + l.id, type: 'line', source: srcId,
             layout: { visibility: 'none' },
             paint: { 'line-color': s.bcol, 'line-width': 26, 'line-blur': 20, 'line-opacity': 0.16 }
@@ -2986,7 +3033,7 @@
         if (map._ltObjects) map._ltObjects.drop(id);
         const fs = fxState.get(map);
         if (fs) fs.run.delete(id);
-        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'f_', 'sh_', 'xs_', 'xb_'].forEach(p => {
+        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'fe_', 'f_', 'sh_', 'xs_', 'xb_'].forEach(p => {
             if (map.getLayer(p + id)) map.removeLayer(p + id);
         });
         dropLayerLabel(map, id);
@@ -3088,13 +3135,19 @@
         const blended = s.blend && s.blend !== 'normal';
         const gradient = s.grad === true;
         const arrow3d = l.kind === 'arrow' && s.d3 === true;
+        // 3D-режим: зона стає екструзією, плоска заливка й візерунок зникають
+        const d3 = map._lt3d === true && l.kind === 'zone';
         // плоский псевдооб'єм стрілки (зміщені копії) — частина 2D-стилю
         ['xb_', 'xs_', 'xh_'].forEach(p => {
             if (map.getLayer(p + l.id)) map.setLayoutProperty(p + l.id, 'visibility', arrow3d ? vis : 'none');
         });
-        const flatFill = (pattern || blended || gradient) ? 'none' : vis;
+        const flatFill = d3 ? 'none' : ((pattern || blended || gradient) ? 'none' : vis);
         map.setLayoutProperty('f_' + l.id, 'visibility', flatFill);
-        map.setLayoutProperty('p_' + l.id, 'visibility', pattern && !gradient ? vis : 'none');
+        map.setLayoutProperty('p_' + l.id, 'visibility', d3 ? 'none' : (pattern && !gradient ? vis : 'none'));
+        if (map.getLayer('fe_' + l.id)) {
+            map.setLayoutProperty('fe_' + l.id, 'visibility', d3 ? vis : 'none');
+            if (d3) map.setPaintProperty('fe_' + l.id, 'fill-extrusion-opacity', 0.95 * k);
+        }
         map.setLayoutProperty('l_' + l.id, 'visibility', noLine ? 'none' : vis);
         map.setLayoutProperty('g_' + l.id, 'visibility', glow ? vis : 'none');
         map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && !noLine ? vis : 'none');
@@ -3173,7 +3226,7 @@
         Object.values(layers)
             .sort((a, b) => a.z - b.z)
             .forEach(l => {
-                ['xb_', 'xs_', 'sh_', 'f_', 'p_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
+                ['xb_', 'xs_', 'sh_', 'f_', 'p_', 'fe_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
                     if (map.getLayer(p + l.id)) map.moveLayer(p + l.id);
                 });
             });
@@ -3184,6 +3237,64 @@
         const a = l.style.alpha * v * fxCurrent(map, l.id);
         if (map.getLayer('f_' + l.id)) map.setPaintProperty('f_' + l.id, 'fill-opacity', a);
         if (map.getLayer('p_' + l.id)) map.setPaintProperty('p_' + l.id, 'fill-opacity', a);
+    }
+
+    /* ------------------------------ 3D-режим ------------------------------ */
+
+    const THREE_D_PITCH = 55;
+
+    // Системне перемикання 3D: нахил камери + екструзія зон. Плоскі полотна
+    // бленд-рушія при нахилі не збігаються з контуром, тому їх ставлять на
+    // паузу через opts.pauseBlend; підписи самі переходять на map.project.
+    // opts.layers + opts.isVisible потрібні, щоб перекласти видимість заливок
+    // і екструзій для всіх шарів одразу.
+    function set3D(map, on, opts) {
+        opts = opts || {};
+        if (!!map._lt3d === !!on) return;
+        map._lt3d = !!on;
+        const repaint = () => {
+            if (opts.layers && opts.isVisible) {
+                Object.values(opts.layers).forEach(l => {
+                    if (l && map.getLayer('f_' + l.id)) applyLayerPaint(map, l, opts.isVisible(l));
+                });
+            }
+        };
+        if (on) {
+            // повторне вмикання під час ще не завершеного вимикання: старий
+            // слухач moveend має зникнути, інакше він зніме 3D посеред анімації
+            if (set3D._off) { map.off('moveend', set3D._off); set3D._off = null; }
+            map.setMaxPitch(60);
+            if (map.dragRotate) map.dragRotate.enable();
+            if (map.touchPitch) map.touchPitch.enable();
+            // рідний wheel-зум тримає якір під курсором і при нахилі; наш
+            // smoothZoom припускає плоску камеру, тому на час 3D відступає
+            if (map.scrollZoom) map.scrollZoom.enable();
+            if (opts.pauseBlend) opts.pauseBlend(true);
+            try { map.easeTo({ pitch: THREE_D_PITCH, duration: docMobile() ? 800 : 1000 }); } catch (e) { }
+            repaint();
+        } else {
+            // у площину повертаємось і північчю догори: і плоска меркатор-рамка
+            // полотен, і швидка проекція підписів валідні лише при bearing = 0
+            const level = () => (map.getPitch() < 0.5)
+                && Math.abs(map.getBearing ? map.getBearing() : 0) < 0.5;
+            try { map.easeTo({ pitch: 0, bearing: 0, duration: docMobile() ? 600 : 700 }); } catch (e) { }
+            const off = () => {
+                if (!level()) return;
+                map.off('moveend', off);
+                set3D._off = null;
+                map.setMaxPitch(0);
+                if (map.dragRotate) map.dragRotate.disable();
+                if (map.touchPitch) map.touchPitch.disable();
+                if (map.scrollZoom) map.scrollZoom.disable();
+                if (opts.pauseBlend) opts.pauseBlend(false);
+                repaint();
+            };
+            set3D._off = off;
+            map.on('moveend', off);
+            // камера вже рівна (нахил не встиг піднятися) — moveend не буде
+            // ніколи, і полота лишилися б на паузі назавжди
+            if (level()) off();
+        }
     }
 
     // плавний перехід малює ще й own-canvas шара — хук дозволяє blend-рушію
@@ -3281,6 +3392,17 @@
     // екрані. Формула збігається з map.project до 1e-9 пікселя.
     // Об'єкт один на весь рушій: кадр не повинен плодити сміття щосекунди
     const CAM_F = { ws: 0, px0: 0, py0: 0 };
+
+    // плоска меркатор-рамка описує екран лише коли камера дивиться вертикально
+    // вниз і тримає північ вгору. у 3D і під час обертання валідна тільки
+    // точна проекція map.project — інакше заливки й підписи з'їжджають
+    function cameraTilted(map) {
+        try {
+            const p = map.getPitch ? map.getPitch() : 0;
+            const b = map.getBearing ? map.getBearing() : 0;
+            return p > 0.5 || Math.abs(b) > 0.05;
+        } catch (e) { return false; }
+    }
 
     function camFrame(map) {
         let c;
@@ -3574,6 +3696,7 @@
         let tolSet = 0;
         let tolRaf = 0;
         let cheapFollow = false;
+        let paused = false;
         let costAvg = 0;
         let moveEnd = 0;
         let lastRatio = null;
@@ -3731,21 +3854,25 @@
             return lowEndDevice() ? 12 : 10;
         }
 
+        // межа «міста»: нижче неї геометрія важка і розтяг полотна ще можна
+        // виправдати, вище — розтягнута рамка дає м'яку кромку й «повзучі» зони
+        const STRETCH_MAX_Z = 10.2;
+
         // Головний шлях кадру: поки камера рухається, полотно перемальовується
         // щоразу з тією самою геометрією. Вершини після culling коштують копійки
         // (дві операції на вершину з готового меркатор-масиву), зате контур
         // приклеєний до мапи — без розтягнутоїBitmap-рамки та її «повзучості».
-        // Якщо фарба виявилась дорожчою за бюджет (слабкий телефон, купа шарів),
-        // жест додивляється дешевшим шляхом: трансформація + рідкісні перемальовки.
+        // Дешевий шлях (трансформація замість фарби) допускається лише далеко,
+        // де вершин справді багато; на масштабі міста правило — свіжа геометрія
+        // кожного кадру, навіть ціною кадрів.
         function onCameraFrame() {
-            if (!host) return;
-            if (!moving) { forced = true; schedule(); return; }
+            if (!host || paused) return;
             if (cheapFollow) { followCamera(); return; }
             const t0 = performance.now();
             paint();
             const cost = performance.now() - t0;
             costAvg = costAvg ? costAvg * 0.7 + cost * 0.3 : cost;
-            if (costAvg > paintBudget()) {
+            if (costAvg > paintBudget() && map.getZoom() < STRETCH_MAX_Z) {
                 cheapFollow = true;
                 followOn = false;
                 applyFollow('');
@@ -3757,14 +3884,22 @@
             host = document.createElement('div');
             host.id = 'lt-blend';
             document.body.appendChild(host);
-            map.on('resize', () => { syncCanvases(); followReset(); schedule(); });
+            // поворот екрана: полотна перебудовані й очищені, тому новий кадр
+            // малюємо негайно в тому ж рендері. через schedule він прилітав на
+            // 30–200 мс пізніше — на телефоні це сплеск порожньої зони й зсув
+            map.on('resize', () => { syncCanvases(); followReset(); cheapFollow = false; paint(); });
             // Кадр жесту фарбуємо ПОСІРЯД з GL-кадром, а не перед ним. На 'move'
             // полотно встигало намалюватися за ракурс, який MapLibre ще тільки
             // збирався відмалювати, тому заливання відставало від контуру рівно
             // на кадр — на повільному телефоні це ціла помітна фора. На 'render'
             // малюємо той самий ракурс, що щойно ліг на полотно мапи, і обидва
             // композитяться в один кадр браузера: зона приклеєна до лінії.
-            map.on('render', () => { if (moving) onCameraFrame(); else schedule(); });
+            // Жодного таймера тут бути не може: пропущений кадр — це видимий
+            // зсув заливання відносно контуру, а не економія.
+            map.on('render', () => {
+                if (moving || forced || cameraKey() !== camKey) onCameraFrame();
+                else schedule();
+            });
             map.on('movestart', () => {
                 clearTimeout(moveEnd);
                 moving = true;
@@ -3785,6 +3920,14 @@
                 moveEnd = setTimeout(endMove, 70);
             });
             map.on('moveend', () => { clearTimeout(moveEnd); moveEnd = setTimeout(endMove, 70); });
+            // шов для вимірювання прилипання: який ракурс реально лежить на
+            // полотні в той самий момент, що й на мапі
+            if (window.__ltBlendDebug) {
+                window.__ltBlendDebug(() => ({
+                    moving, cheapFollow, followOn, costAvg, paused, painted: paintCam,
+                    key: cameraKey(), camKey, flatOn, n: host.children.length, map
+                }));
+            }
             return host;
         }
 
@@ -3890,7 +4033,11 @@
 
 
         function paint() {
-            if (!host) return;
+            if (!host || paused) return;
+            // рамка нижче плоска: під нахилом чи з обертанням полотна малювати
+            // не можна — заливки ляжуть не туди. повернемося, коли камера стане
+            // рівною (cameraKey тоді зміниться сам)
+            if (cameraTilted(map)) { followReset(); return; }
             const fr = camFrame(map);
             if (!fr) return;
             const key = cameraKey();
@@ -4070,7 +4217,14 @@
 
         return {
             sync(ratio) { lastRatio = ratio; syncCanvases(ratio); forced = true; paint(); },
-            draw() { forced = true; schedule(); }
+            draw() { forced = true; schedule(); },
+            // 3D-режим: плоскі полотна ховаються на час нахилу й повертаються
+            // зі свіжим кадром, коли камера знову плоска
+            pause(on) {
+                paused = !!on;
+                if (host) host.style.display = paused ? 'none' : '';
+                if (!paused) { forced = true; schedule(); }
+            }
         };
     }
 
@@ -4331,7 +4485,7 @@
         flagSVG: key => FLAG_SVG[key], pixelLabels, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,
-        syncLayerLabel, setLayerLabelDrag,
+        syncLayerLabel, setLayerLabelDrag, set3D,
         blendEngine, featBox, onScreen, bakeParts, warmGeometry, lodTols,
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,

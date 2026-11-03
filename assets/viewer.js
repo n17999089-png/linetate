@@ -1431,7 +1431,12 @@
         open = !!open;
         if (open === drawPanelOpen) return;
         drawPanelOpen = open;
-        if (open) setDrawFold(false);
+        if (open) {
+            setDrawFold(false);
+            if (menuOpen && isMobileUI()) setMenu(false);
+            const sp = $('place-search');
+            if (sp && sp.classList.contains('open')) setSearch(false);
+        }
         const box = $('draw-panel');
         if (box) {
             box.classList.toggle('open', open);
@@ -1540,6 +1545,7 @@
         panel.classList.toggle('open', open);
         panel.setAttribute('aria-hidden', String(!open));
         if (open && drawPanelOpen) setDrawPanel(false, true);
+        if (open && menuOpen) setMenu(false);
         if (btn) {
             btn.classList.toggle('active', open);
             btn.setAttribute('aria-expanded', String(open));
@@ -1937,6 +1943,13 @@
 
     function setMenu(open) {
         menuOpen = open;
+        // панелі не нашаровуються одна на одну: меню закриває пошук і малювання,
+        // інакше на телефоні аркуш «Шари» ховав би панель малювання під собою
+        if (open) {
+            const sp = $('place-search');
+            if (sp && sp.classList.contains('open')) setSearch(false);
+            if (drawPanelOpen && isMobileUI()) setDrawPanel(false);
+        }
         const legend = $('legend');
         const backdrop = $('legend-backdrop');
         const toggle = $('viewer-menu-toggle');
@@ -1973,6 +1986,21 @@
             if (!mapReady) return;
             LT.applyLayerPaint(map, l, isVisible(l));
             LT.syncLayerDecor(map, l, shownFC.get(l.id) || displayFC(l), isVisible(l));
+        });
+    }
+
+    function set3DView(on) {
+        if (!mapReady) return;
+        const btn = $('view-3d');
+        if (btn) {
+            btn.classList.toggle('active', !!on);
+            btn.setAttribute('aria-pressed', String(!!on));
+        }
+        try { localStorage.setItem('LINETATE:3d', on ? '1' : '0'); } catch (e) { }
+        LT.set3D(map, !!on, {
+            layers: state.layers,
+            isVisible,
+            pauseBlend: on2 => { if (blend) blend.pause(on2); }
         });
     }
 
@@ -2525,6 +2553,10 @@
         LT.ensurePlaceLabels(map, state.base);
         blend = LT.blendEngine(map, () => state.layers, isVisible, l => shownFC.get(l.id) || displayFC(l));
         blend.sync();
+        // 3D-режим, обраний минулого разу, повертається разом зі сторінкою
+        try {
+            if (localStorage.getItem('LINETATE:3d') === '1') set3DView(true);
+        } catch (e) { }
         // поточний день друкується тут: далі жест не має право нічого спрощувати
         bootStage('boot.warm');
         try { warmCurrent(); } catch (e) { }
@@ -2650,6 +2682,12 @@
             mapTools.setRegions(on);
         });
         $('view-labels').addEventListener('click', () => setLabels(!state.labels));
+        $('view-3d').addEventListener('click', e => {
+            const on = !e.currentTarget.classList.contains('active');
+            e.currentTarget.classList.toggle('active', on);
+            e.currentTarget.setAttribute('aria-pressed', String(on));
+            set3DView(on);
+        });
         $('advance-btn').addEventListener('click', () => setAdvance(!state.advance));
         $('date-trigger').addEventListener('click', () => { setMenu(false); cal.toggle(state.date); });
 

@@ -136,7 +136,7 @@
     border-top: 1px solid var(--line);
     display: flex; flex-direction: column; gap: 9px;
 }
-.mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.mode-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
 .mode-btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
     min-height: 38px; padding: 0 8px;
@@ -304,6 +304,7 @@
     opacity: 0; visibility: hidden;
     transition: opacity .2s ease, visibility .2s;
 }
+.dev-mobile #legend-backdrop { z-index: 1400; }
 #legend-backdrop.show { opacity: 1; visibility: visible; }
 
 /* ---------- УЗКИЕ ЭКРАНЫ ---------- */
@@ -338,7 +339,7 @@
     bottom: calc(122px + env(safe-area-inset-bottom));
     width: auto;
     max-height: min(60vh, 470px);
-    z-index: 1250;
+    z-index: 1450;
     transform: translateY(calc(100% + 140px)) scale(.99);
     transform-origin: bottom center;
     transition: transform .28s var(--ease), opacity .18s ease, visibility .28s;
