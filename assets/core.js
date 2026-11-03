@@ -237,6 +237,7 @@
             'tex.none': 'Немає', 'tex.hatch': 'Штрихування', 'tex.diag': 'Діагональ', 'tex.grid': 'Сітка', 'tex.dots': 'Точки',
             'tex.cross': 'Хрести', 'tex.bricks': 'Цегла', 'tex.waves': 'Хвилі', 'tex.hazard': 'Смуги',
             'border.solid': 'Суцільний', 'border.dashed': 'Пунктир', 'border.glow': 'Світіння',
+            'border.none': 'Без контуру',
             'anim.none': 'Немає', 'anim.pulse': 'Пульсація', 'anim.flow': 'Потік', 'anim.march': 'Марш',
             'preset.front': 'ФРОНТ', 'preset.rear': 'ТИЛ', 'preset.cauldron': 'КОТЕЛ', 'preset.strike': 'УДАР',
             'preset.water': 'ВОДА', 'preset.rad': 'РАДІАЦІЯ',
@@ -403,6 +404,7 @@
             'tex.none': 'None', 'tex.hatch': 'Hatch', 'tex.diag': 'Diagonal', 'tex.grid': 'Grid', 'tex.dots': 'Dots',
             'tex.cross': 'Crosses', 'tex.bricks': 'Bricks', 'tex.waves': 'Waves', 'tex.hazard': 'Stripes',
             'border.solid': 'Solid', 'border.dashed': 'Dashed', 'border.glow': 'Glow',
+            'border.none': 'No outline',
             'anim.none': 'None', 'anim.pulse': 'Pulse', 'anim.flow': 'Flow', 'anim.march': 'March',
             'preset.front': 'FRONT', 'preset.rear': 'REAR', 'preset.cauldron': 'POCKET', 'preset.strike': 'STRIKE',
             'preset.water': 'WATER', 'preset.rad': 'RADIATION',
@@ -625,6 +627,9 @@
             const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
             frames = [];
             if (avg < 42 || now - lastChange < 6000 || idx >= steps.length - 1) return;
+            // щільність міняємо лише на зупиненій камері: resize полотна
+            // посеред жесту — це миттєва втрата різкості й стрибок кадру
+            if (map.isMoving && (map.isMoving() || map.isEasing())) return;
             idx++;
             lastChange = now;
             try { map.setPixelRatio(steps[idx]); } catch (e) { }
@@ -1368,6 +1373,107 @@
         return map;
     }
 
+    // Безступінчатий зум колесом. Рідний ScrollZoomHandler MapLibre робить на
+    // кожен скрол окремий анімований стрибок, тому на ПК масштаб відчувається
+    // сходами. Тут колесо лише виставляє ціль, а кадр за кадром доїжджає до неї
+    // експоненційно (крок не залежить від частоти кадрів) — рух суцільний, як
+    // на телефоні.
+    //
+    // Якір рахуємо самі: jumpTo у MapLibre «around» взагалі не читає (у нього
+    // лише center/zoom/bearing/pitch), тож будь-яке «наближення до курсора»
+    // через нього неможливе — мапа мовчки масштабувала від центру, і на
+    // зміщеному курсорі точка під мишею з'їжджала на сотні пікселів.
+    function smoothZoom(map) {
+        const el = map.getContainer ? map.getContainer() : null;
+        if (!el) return;
+        try { if (map.scrollZoom) map.scrollZoom.disable(); } catch (e) { }
+
+        const TAU = 72;
+        let target = null;
+        let last = 0;
+        let raf = 0;
+        // піксель під курсором і та географічна точка, що лежала в ньому на
+        // момент останнього крока колеса. пару оновлюємо на кожну подію, як
+        // і робить рідний scrollZoom, інакше при русі миші жест наближав би
+        // туди, де курсор був, а не де він є.
+        let anchorPx = null;
+        let anchorGeo = null;
+
+        const applyZoom = z => {
+            try {
+                const t = map.transform;
+                if (!anchorPx || !anchorGeo) { map.setZoom(z); return; }
+                const cx = t.width / 2, cy = t.height / 2;
+                const a = map.project(anchorGeo);
+                const k = Math.pow(2, z - t.zoom);
+                // Без нахилу і повороту екран — це лінійна функція від
+                // mercator-зсуву, тому новий центр, що поверне точку під
+                // курсор рівно в курсор, виводиться одним рядком: зміщення
+                // курсора від центру ділимо на приріст масштабу.
+                const c = map.unproject([
+                    cx + (a.x - cx) - (anchorPx.x - cx) / k,
+                    cy + (a.y - cy) - (anchorPx.y - cy) / k
+                ]);
+                map.jumpTo({ zoom: z, center: [c.lng, c.lat] });
+            } catch (e) { }
+        };
+
+        const step = t => {
+            raf = 0;
+            if (target === null) return;
+            const dt = last ? Math.min(120, t - last) : 16;
+            last = t;
+            let z;
+            try { z = map.getZoom(); } catch (e) { target = null; return; }
+            // на повільному пристрої кадр великий і вся відстань проходила б за
+            // один кадр — це вже не плавність, тому крок обмежений часткою шляху.
+            // залишок менший за десяту частину рівня — це кінець жесту: там
+            // обмеження знімаємо, інакше мапа після останнього крока колеса
+            // «доїжджає» сім кадрів поспіль і виглядає так, ніби їде сама
+            const rem = Math.abs(target - z);
+            const frac = Math.min(1 - Math.exp(-dt / TAU), rem < 0.1 ? 0.8 : 0.55);
+            const next = z + (target - z) * frac;
+            if (Math.abs(target - next) < 0.003) {
+                applyZoom(target);
+                target = null;
+                last = 0;
+                return;
+            }
+            applyZoom(next);
+            raf = requestAnimationFrame(step);
+        };
+
+        const onWheel = e => {
+            // мультитач-жест і жести браузера лишаємо системі
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
+            const rect = el.getBoundingClientRect();
+            const px = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            let base;
+            try {
+                base = target === null ? map.getZoom() : target;
+                anchorGeo = map.unproject(px);
+            } catch (e) { return; }
+            anchorPx = px;
+            const unit = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 100 : 1);
+            // крок колеса свідомо тримають близьким до старого відчуття: кожен
+            // перетнутий цілий рівень — це новий комплект тайлів, який мапа
+            // завантажує й вивантажує на GPU посеред жесту. шістдесят відсотків
+            // часу кадру під час швидкого прокручування їло саме texImage2D
+            const d = -e.deltaY * unit * 0.0016;
+            if (!d) return;
+            target = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), base + d));
+            e.preventDefault();
+            if (!raf) { last = 0; raf = requestAnimationFrame(step); }
+        };
+
+        el.addEventListener('wheel', onWheel, { passive: false });
+        map.once('remove', () => {
+            el.removeEventListener('wheel', onWheel);
+            if (raf) cancelAnimationFrame(raf);
+            target = null;
+        });
+    }
+
     function baseSwitcher(map, onReady) {
         let pending = false;
         let current = 'hybrid';
@@ -1477,9 +1583,11 @@
     /* ------------------------------ пиксельные подписи населённых пунктов ------------------------------ */
 
     const PLACE_MIN_ZOOM = 4;
-    const PLACE_MIN_LIMIT = 420;
-    const PLACE_MAX_LIMIT = 1100;
-    const PLACE_DOT_LIMIT = 900;
+    // стеля підписів на кадр: кожен — це окремий blit у гарячому шляху, тому
+    // «більше назв» лінійно коштує кадрів. на читабельній мапі їх і так стільки
+    const PLACE_MIN_LIMIT = 180;
+    const PLACE_MAX_LIMIT = 400;
+    const PLACE_DOT_LIMIT = 240;
     const PLACE_SCALE = 1e5;
     const placeEngines = new WeakMap();
     // подписи рисуются в devicePixelRatio, но для скриншота нужен повышенный
@@ -1497,9 +1605,72 @@
     const PLACE_TRACK = [1.5, 1.2, 1, .9, .8];
     const PLACE_FILL = ['#eef4fb', '#dde8f4', '#cad7e5', '#b4c2d2', '#9fb0c1'];
     const PLACE_CAP = '#ffd489';
+    const PLACE_INK = 'rgba(6, 9, 13, .92)';
 
     function placeFont(rank) {
         return '700 ' + PLACE_SIZE[rank] + "px 'Handjet', 'Tektur', monospace";
+    }
+
+    // Форма іконки = клас населеного пункту: столиця — ромб (квадрат навскіс),
+    // місто — квадратик, село — кружок. У базі LT_PLACES типу немає, тому клас
+    // збираємо з рангу (minZoom) і населення.
+    function placeKind(rank, cap, pop) {
+        if (cap) return 'cap';
+        if (rank <= 2 || pop >= 20000) return 'city';
+        return 'vil';
+    }
+
+    // піврозмір фігури у CSS-пікселях: на телефоні менша, інакше дрібні назви
+    // зливаються в кашу, а крапка села перекриває сусідній підпис
+    function iconScale(mob) {
+        return mob ? (lowEndDevice() ? .74 : .86) : 1;
+    }
+
+    function iconExtent(kind, rank, sc) {
+        if (kind === 'cap') return (rank <= 1 ? 5.4 : 4.6) * sc;
+        if (kind === 'city') return (rank <= 1 ? 3.7 : 3.1) * sc;
+        return (rank >= 4 ? 2.7 : 3.1) * sc;
+    }
+
+    function iconPath(k, kind, cx, cy, s) {
+        k.beginPath();
+        if (kind === 'vil') {
+            k.arc(cx, cy, s, 0, Math.PI * 2);
+            return;
+        }
+        if (kind === 'cap') {
+            k.moveTo(cx, cy - s);
+            k.lineTo(cx + s, cy);
+            k.lineTo(cx, cy + s);
+            k.lineTo(cx - s, cy);
+            k.closePath();
+            return;
+        }
+        const r = Math.min(1.5, s * .36);
+        k.moveTo(cx - s + r, cy - s);
+        k.lineTo(cx + s - r, cy - s);
+        k.arcTo(cx + s, cy - s, cx + s, cy - s + r, r);
+        k.lineTo(cx + s, cy + s - r);
+        k.arcTo(cx + s, cy + s, cx + s - r, cy + s, r);
+        k.lineTo(cx - s + r, cy + s);
+        k.arcTo(cx - s, cy + s, cx - s, cy + s - r, r);
+        k.lineTo(cx - s, cy - s + r);
+        k.arcTo(cx - s, cy - s, cx - s + r, cy - s, r);
+        k.closePath();
+    }
+
+    // тінь — та сама фігура, зміщена на піксель і трохи ширша: shadowBlur на
+    // сотнях спрайтів кладе кадр, а другий fillPath коштує мілісекунди
+    function drawIcon(k, kind, cx, cy, s, fill, mob) {
+        iconPath(k, kind, cx, cy + 1.35, s * 1.04);
+        k.fillStyle = 'rgba(0, 0, 0, .5)';
+        k.fill();
+        iconPath(k, kind, cx, cy, s);
+        k.fillStyle = fill;
+        k.fill();
+        k.strokeStyle = PLACE_INK;
+        k.lineWidth = mob ? 1 : 1.25;
+        k.stroke();
     }
 
     // Підпис готується ОДИН раз: текст, крапка і ромб столиці лягають у власний
@@ -1510,10 +1681,30 @@
     const placeSprites = new Map();
     const PLACE_SPRITE_MAX = 2600;
     let spritePx = 0;
+    let spriteTick = 0;
+
+    // Склад переповнився — викидаємо найдавніші спрайти, а не все під чисту:
+    // early-скид змушував друкувати сотні підписів в одному кадрі, і саме він
+    // давав «мігає + лагає» на кожному зумі.
+    function trimSprites(capPx) {
+        if (placeSprites.size <= PLACE_SPRITE_MAX && spritePx <= capPx) return;
+        const arr = [];
+        placeSprites.forEach((v, k) => arr.push([v.used, k, v.cv.width * v.cv.height]));
+        arr.sort((a, b) => a[0] - b[0]);
+        const sizeCap = PLACE_SPRITE_MAX * .62, pxCap = capPx * .62;
+        for (let i = 0; i < arr.length; i++) {
+            if (placeSprites.size <= sizeCap && spritePx <= pxCap) break;
+            const sp = placeSprites.get(arr[i][1]);
+            if (!sp || sp.used !== arr[i][0]) continue;
+            spritePx -= arr[i][2];
+            placeSprites.delete(arr[i][1]);
+        }
+        if (spritePx < 0) spritePx = 0;
+    }
 
     function placeEngine(map) {
-        // подписи рисуются на отдельном canvas-оверлее: не зависят от CSS страницы,
-        // шрифтов из сети и тёмного режима браузера
+        // назви малюємо на окремому canvas-оверлеї: вони не залежать ні від
+        // CSS сторінки, ні від мережевих шрифтів, ні від темного режиму браузера
         const host = map.getCanvasContainer();
         const cv = document.createElement('canvas');
         cv.className = 'lt-places-canvas';
@@ -1528,6 +1719,7 @@
         let items = [];
         let extraDots = [];
         let timer = 0;
+        let settleT = 0;
         let needFrame = false;
         const ctx = cv.getContext('2d');
         const widths = new Map();
@@ -1540,8 +1732,8 @@
 
         function syncCanvas() {
             const s = viewSize();
-            // шрифт на оверлее перерисовывается каждый кадр при панораме:
-            // на телефоне 3x DPR тут лишний, фото-режим всё равно задаёт свой DPR
+            // шрифт на оверлеї перемальовується кожного кадру під час панорами:
+            // на телефоні 3x DPR тут зайвий, фото-режим задає свій DPR сам
             const cap = docMobile() ? (lowEndDevice() ? 1.35 : 1.6) : 2;
             const dpr = placeDprOverride || Math.min(window.devicePixelRatio || 1, cap);
             const w = Math.max(2, Math.round(s.x)), h = Math.max(2, Math.round(s.y));
@@ -1549,10 +1741,12 @@
                 cv.width = Math.round(w * dpr);
                 cv.height = Math.round(h * dpr);
             }
-            cv.style.width = w + 'px';
-            cv.style.height = h + 'px';
+            if (cv.style.width !== w + 'px' || cv.style.height !== h + 'px') {
+                cv.style.width = w + 'px';
+                cv.style.height = h + 'px';
+            }
             dprNow = dpr;
-            return { x: w, y: h, dpr };
+            return { x: w, y: h, dpr: dpr };
         }
 
         function measure(text, rank) {
@@ -1565,8 +1759,8 @@
             return w;
         }
 
-        // индекс: группы по минимальному зуму, внутри отсортировано по широте —
-        // при 30k точек в базе перебираем только окно видимости, а не весь массив
+        // індекс: групи за мінімальним зумом, усередині відсортовано за широтою —
+        // при 30k точок у базі перебираємо лише вікно видимості, а не весь масив
         let index = null;
         function placeIndex() {
             const data = window.LT_PLACES || [];
@@ -1597,6 +1791,11 @@
             return lo;
         }
 
+        // набір назв збираємо у один і той самий масив, а компаратор тримаємо
+        // сталим: на кожну перебудову інакше народжується тисячі рядків
+        const collectScratch = [];
+        const sortPlaces = (a, b) => (b.cap - a.cap) || (a.mz - b.mz) || (b.pop - a.pop) || (a.rank - b.rank);
+
         function collect() {
             try {
                 const zoom = map.getZoom();
@@ -1606,7 +1805,7 @@
                 const b = map.getBounds ? map.getBounds() : null;
                 if (!b || !b.getWest || !Number.isFinite(b.getWest()) || !Number.isFinite(b.getNorth())) return [];
                 // запас пошуку — частка кадру, а не фіксовані півградуса: на
-                // близькому огляді 0.6° это ціла область, і набір завалений
+                // близькому огляді 0.6° — це ціла область, і набір завалений
                 // великими містами далеко звідси, а свої маленькі до нього
                 // просто не встигають потрапити
                 const padX = Math.max(0.01, Math.min(0.6, (b.getEast() - b.getWest()) * 0.18));
@@ -1623,7 +1822,11 @@
                 const maxMz = docMobile() ? zoom + 0.5 : zoom + 2;
                 const southMs = Math.round(south * PLACE_SCALE), northMs = Math.round(north * PLACE_SCALE);
                 const seen = new Set();
-                const out = [];
+                // опис назви рахуємо ОДИН раз на місто й тримаємо прямо на записи
+                // бази: на кожен зум це тисячі рядків, координат і порівнянь, які
+                // раніше народжувались заново і вбивали збір сміття
+                const out = collectScratch;
+                out.length = 0;
                 for (let g = 0; g < idx.groups.length; g++) {
                     const grp = idx.groups[g];
                     if (grp.mz > maxMz) break;
@@ -1631,42 +1834,67 @@
                     for (let i = lowerLat(arr, southMs); i < arr.length; i++) {
                         const e = arr[i];
                         if (e[3] > northMs) break;
-                        const lng = e[2] / PLACE_SCALE;
-                        if (wrap ? (lng < west && lng > east) : (lng < west || lng > east)) continue;
-                        const name = lang === 'en' ? (e[1] || e[0]) : e[0];
-                        if (!name) continue;
-                        const key = name + '@' + e[2] + ',' + e[3];
-                        if (seen.has(key)) continue;
-                        seen.add(key);
-                        out.push({
-                            name: String(name).toUpperCase(),
-                            coord: [lng, e[3] / PLACE_SCALE],
-                            rank: grp.mz <= 3 ? 0 : grp.mz <= 5 ? 1 : grp.mz <= 7 ? 2 : grp.mz <= 9 ? 3 : 4,
-                            mz: grp.mz,
-                            cap: e[5] === 1,
-                            pop: e[6] || 0
-                        });
+                        let p = e._p;
+                        if (!p || p.lang !== lang) {
+                            const nm = lang === 'en' ? (e[1] || e[0]) : e[0];
+                            if (!nm) continue;
+                            const rank = grp.mz <= 3 ? 0 : grp.mz <= 5 ? 1 : grp.mz <= 7 ? 2 : grp.mz <= 9 ? 3 : 4;
+                            const cap = e[5] === 1;
+                            const pop = e[6] || 0;
+                            const name = String(nm).toUpperCase();
+                            const lng = e[2] / PLACE_SCALE, lat = e[3] / PLACE_SCALE;
+                            p = e._p = {
+                                lang: lang,
+                                name: name,
+                                coord: [lng, lat],
+                                lng: lng,
+                                // меркатор рахуємо один раз на місто: це log-tan на
+                                // кожну з тисячі назв у кожному кадрі перебудови
+                                mx: mercX(lng),
+                                my: mercY(lat),
+                                rank: rank,
+                                mz: grp.mz,
+                                cap: cap,
+                                pop: pop,
+                                kind: placeKind(rank, cap, pop),
+                                key: name + '@' + e[2] + ',' + e[3]
+                            };
+                        }
+                        if (wrap ? (p.lng < west && p.lng > east) : (p.lng < west || p.lng > east)) continue;
+                        if (seen.has(p.key)) continue;
+                        seen.add(p.key);
+                        out.push(p);
                     }
                 }
-                out.sort((a, b) => (b.cap - a.cap) || (a.mz - b.mz) || (b.pop - a.pop) || (a.rank - b.rank));
+                out.sort(sortPlaces);
                 return out;
             } catch (err) {
                 return [];
             }
         }
 
-        // спрайт підпису: текст, крапка і ромб столиці, намальовані відносно
-        // точної координати міста — це (0,0) спрайта. далі по кадрі лише drawImage
-        function buildSprite(name, rank, cap, dot, dpr) {
+        // спрайт підпису: текст і іконка, намальовані відносно точної координати
+        // НП — це (0,0) спрайта. далі по кадрі лише drawImage
+        function buildSprite(name, rank, cap, dot, dpr, kind, sc) {
             const fsz = PLACE_SIZE[rank];
             const big = rank <= 1;
+            const mob = sc < 1;
             const tw = measure(name, rank);
-            const pad = 4 + (docMobile() ? 0 : 4);
-            const ty = dot ? -7 : 0;
-            let top = ty - fsz - pad;
-            if (cap) top = Math.min(top, ty - fsz / 2 - 6 - (big ? 3.4 : 2.9) - pad);
-            const bottom = ty + fsz * 0.32 + pad;
-            const left = -tw / 2 - pad, right = tw / 2 + pad;
+            // запас лише під штрих обвідки: зайві 4 px зверху й знизу на сотнях
+            // підписів — це сотні тисяч зайвих пікселів щокадру
+            const padX = mob ? 4 : 5, padY = mob ? 3.5 : 5;
+            const mk = dot ? iconExtent(kind, rank, sc) : 0;
+            const ty = dot ? -(mk + 2.8) : 0;
+            let bottom = ty + fsz * 0.32 + padY;
+            let top = ty - fsz - padY;
+            // іконка з тінню виступає за габарит тексту — без цього її края
+            // підрізаються, і квадрат виглядає обрізаним
+            if (dot) {
+                bottom = Math.max(bottom, mk + 2.2 + padY);
+                top = Math.min(top, -mk - padY);
+            }
+            const half = Math.max(tw / 2, dot ? mk + 2 : 0) + padX;
+            const left = -half, right = half;
             const w = Math.max(2, Math.ceil(right - left)), h = Math.max(2, Math.ceil(bottom - top));
             const c = document.createElement('canvas');
             c.width = Math.round(w * dpr);
@@ -1681,198 +1909,186 @@
             try { k.letterSpacing = (big ? 0.9 : 0.5) + 'px'; } catch (e) { }
 
             if (dot) {
-                // точка на точній координаті: підпис висить над нею, центр тексту
-                // не видає місце
-                k.beginPath();
-                k.arc(0, 0, big ? 2.6 : 2.2, 0, Math.PI * 2);
-                k.fillStyle = cap ? PLACE_CAP : '#e8eef5';
-                k.fill();
-                k.strokeStyle = 'rgba(0, 0, 0, .88)';
-                k.lineWidth = 1;
-                k.stroke();
+                // іконка точно на координаті: клас НП читається формою, а підпис
+                // висить над нею і не ховає місце
+                drawIcon(k, kind, 0, 0, mk, kind === 'cap' ? PLACE_CAP : PLACE_FILL[rank], mob);
             }
-            // м'яке світіння широким штрихом: дешевше за shadowBlur на сотнях підписів
-            if (!docMobile()) {
-                k.strokeStyle = cap ? 'rgba(255, 186, 74, .28)' : 'rgba(0, 0, 0, .3)';
+            // м'яке світіння широким штрихом: дешевше за shadowBlur на сотнях
+            // підписів. навмисно на піксель нижче — воно ж дає тінь рядка
+            if (!mob) {
+                k.strokeStyle = cap ? 'rgba(255, 186, 74, .26)' : 'rgba(0, 0, 0, .34)';
                 k.lineWidth = (big ? 3.4 : 2.6) + 3.6;
-                k.strokeText(name, 0, ty);
+                k.strokeText(name, 0, ty + 1.1);
+            } else {
+                // на телефоні світіння немає, тому тінь — окремий штрих
+                k.strokeStyle = 'rgba(0, 0, 0, .5)';
+                k.lineWidth = big ? 3.4 : 2.6;
+                k.strokeText(name, 0, ty + 1.3);
             }
-            k.strokeStyle = 'rgba(0, 0, 0, .92)';
+            k.strokeStyle = PLACE_INK;
             k.lineWidth = big ? 3.4 : 2.6;
             k.strokeText(name, 0, ty);
             k.fillStyle = cap ? PLACE_CAP : PLACE_FILL[rank];
             k.fillText(name, 0, ty);
-
-            if (cap) {
-                // ромб над столицею — картографічний маркер статусу
-                const d = big ? 3.4 : 2.9;
-                const my = ty - fsz / 2 - 6;
-                k.beginPath();
-                k.moveTo(0, my - d);
-                k.lineTo(d, my);
-                k.lineTo(0, my + d);
-                k.lineTo(-d, my);
-                k.closePath();
-                k.fillStyle = 'rgba(255, 212, 137, .95)';
-                k.fill();
-                k.strokeStyle = 'rgba(0, 0, 0, .8)';
-                k.lineWidth = 1;
-                k.stroke();
-            }
             try { k.letterSpacing = '0px'; } catch (e) { }
-            return { cv: c, x: left, y: top, w, h };
+            return { cv: c, x: left, y: top, w: w, h: h };
         }
 
-        function spriteOf(it) {
-            const key = lang + '|' + it.name + '|' + it.rank + '|' + (it.cap ? 1 : 0) + '|'
-                + (it.dot ? 1 : 0) + '|' + (docMobile() ? 'm' : 'd') + '|' + dprNow.toFixed(2);
-            let sp = placeSprites.get(key);
-            if (sp) return sp;
-            sp = buildSprite(it.name, it.rank, it.cap, it.dot, dprNow);
-            spritePx += sp.cv.width * sp.cv.height;
-            // пам'ять телефону не може тримати нескінченний склад підписів:
-            // переповнили — скидаємо склад, дешевше перебудувати, ніж заглухнути
-            if (placeSprites.size > PLACE_SPRITE_MAX || spritePx > (docMobile() ? 3.6e6 : 9e6)) {
-                placeSprites.clear();
-                spritePx = sp.cv.width * sp.cv.height;
-            }
-            placeSprites.set(key, sp);
+        // масштаб іконки для поточного пристрою: рахуємо один раз на перебудову,
+        // а не на кожну з тисячі кандидатів
+        let iconSc = iconScale(docMobile());
+
+        function spriteKey(it) {
+            return lang + '|' + it.name + '|' + it.rank + '|' + (it.cap ? 1 : 0) + '|'
+                + (it.dot ? 1 : 0) + '|' + it.kind + '|' + (iconSc < 1 ? 'm' : 'd') + '|' + dprNow.toFixed(2);
+        }
+
+        // чи є готовий малюнок — без друку: під час перебудови це вирок «друкувати
+        // зараз чи відкласти на наступний кадр»
+        function peekSprite(it) {
+            const sp = placeSprites.get(spriteKey(it));
+            if (sp) sp.used = ++spriteTick;
             return sp;
         }
 
-        // розчинення живе на власному rAF, бо мапа у спокої не генерує кадрів:
-        // без цього новий підпис завмер би напівпрозорим назавжди
-        const FADE_MS = docMobile() ? 280 : 220;
-        const FADE_OUT_MS = docMobile() ? 320 : 250;
-        const GHOST_LIMIT = docMobile() ? 200 : 500;
-        // анімація лише «дихає» навколо власної точки: якір не зсувається,
-        // тому на близькому зумі підпис сідає рівно на координату
-        const IN_SCALE = 0.92, OUT_SCALE = 0.95;
-        const easeOut = p => { const q = 1 - p; return 1 - q * q * q; };
-        let fadeRaf = 0;
-        let ghosts = [];
-        let stamp = 0;
-        let lastPaint = 0;
-        function tickFade() {
-            fadeRaf = 0;
-            const now = performance.now();
-            let left = 0;
-            for (let i = 0; i < items.length; i++) {
-                const it = items[i];
-                if (it.a >= 1) continue;
-                it.a = Math.min(1, (now - it.rec.t0) / FADE_MS);
-                it.rec.a = it.a;
-                if (it.a < 1) left++;
+        function bakeSprite(it) {
+            const key = spriteKey(it);
+            let sp = placeSprites.get(key);
+            if (sp) {
+                sp.used = ++spriteTick;
+                return sp;
             }
-            for (let i = ghosts.length - 1; i >= 0; i--) {
-                const it = ghosts[i];
-                it.a = Math.max(0, 1 - (now - it.outAt) / FADE_OUT_MS);
-                if (it.a <= 0) {
-                    fadeOf.delete(it.key);
-                    ghosts.splice(i, 1);
-                } else {
-                    // примара тримає запис живим: повернення підпису під час
-                    // згасання має продовжити з поточної прозорості, а не спалахнути
-                    it.rec.a = it.a;
-                    it.rec.seen = stamp;
-                    left++;
-                }
-            }
-            // кадр мапи вже перемалював полотно з поточними прозоростями —
-            // другий paint у тому ж кадрі на телефоні коштує зайвих мілісекунд
-            if (now - lastPaint > 8) paint();
-            if (left) fadeRaf = requestAnimationFrame(tickFade);
+            sp = buildSprite(it.name, it.rank, it.cap, it.dot, dprNow, it.kind, iconSc);
+            sp.used = ++spriteTick;
+            spritePx += sp.cv.width * sp.cv.height;
+            placeSprites.set(key, sp);
+            // пам'ять телефону не тримає нескінченний склад підписів: найдавніші
+            // вилітають по одному, склад лишається придатним до використання
+            trimSprites(iconSc < 1 ? 3.6e6 : 9e6);
+            return sp;
         }
-        function kickFade() {
-            if (!fadeRaf) fadeRaf = requestAnimationFrame(tickFade);
+
+        // крапки сіл без підпису беруть той самий малюнок, що й іконка підпису:
+        // drawImage маленького полотна дешевший за fill+stroke на сотнях крапок,
+        // і тінь з контуром уже «запечені» в нього
+        const bareIcons = new Map();
+        let bareDpr = 0;
+        function bareIcon(kind, rank) {
+            if (bareDpr !== dprNow) {
+                bareIcons.clear();
+                bareDpr = dprNow;
+            }
+            const key = kind + rank;
+            let b = bareIcons.get(key);
+            if (b) return b;
+            const mob = iconSc < 1;
+            const s = iconExtent(kind, rank, iconSc);
+            const size = Math.ceil((s + 2.6) * 2);
+            const c = document.createElement('canvas');
+            c.width = Math.round(size * dprNow);
+            c.height = Math.round(size * dprNow);
+            const k = c.getContext('2d');
+            k.setTransform(dprNow, 0, 0, dprNow, 0, 0);
+            drawIcon(k, kind, size / 2, size / 2, s, kind === 'cap' ? PLACE_CAP : PLACE_FILL[Math.min(rank, 4)], mob);
+            b = { cv: c, size: size };
+            bareIcons.set(key, b);
+            return b;
+        }
+
+        // черга друку: перебудова після зуму може вимагати сотню нових спрайтів.
+        // друкуємо вісім за кадр — жест залишається рівним, а назва прилітає на
+        // пів кадру пізніше за вже намальовану іконку, а не замість неї
+        let pending = [], bakeAt = 0, bakeRaf = 0;
+        function kickBake() {
+            if (bakeRaf) return;
+            bakeRaf = requestAnimationFrame(function bakeMore() {
+                bakeRaf = 0;
+                const t0 = performance.now();
+                const budget = docMobile() ? 5 : 7;
+                let done = 0;
+                while (bakeAt < pending.length) {
+                    const it = pending[bakeAt++];
+                    if (!it.sp) it.sp = bakeSprite(it);
+                    done++;
+                    // вісім за кадр гарантовано, далі — до витрати часу кадру.
+                    // інакше на швидкій машині назви прилітали б поштучно
+                    if (done >= 8 && (performance.now() - t0 > budget || done >= 120)) break;
+                }
+                paint();
+                if (bakeAt < pending.length) kickBake();
+            });
         }
 
         function paint() {
-            lastPaint = performance.now();
             const s = syncCanvas();
             ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
             ctx.clearRect(0, 0, s.x, s.y);
 
-            // точки сёл без подписи (подпись не влезла в коллизии) — координата есть у каждого
+            // крапки сіл без підпису (підпис не ліг у колізії) — координата є в кожного
             extraDots.forEach(d => {
-                if (d.x < -8 || d.y < -8 || d.x > s.x + 8 || d.y > s.y + 8) return;
-                ctx.beginPath();
-                ctx.arc(d.x, d.y, 1.6, 0, Math.PI * 2);
-                ctx.fillStyle = d.cap ? PLACE_CAP : '#e8eef5';
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(0, 0, 0, .8)';
-                ctx.lineWidth = 0.9;
-                ctx.stroke();
+                if (d.x < -10 || d.y < -10 || d.x > s.x + 10 || d.y > s.y + 10) return;
+                const b = bareIcon(d.kind, d.rank);
+                ctx.drawImage(b.cv, d.x - b.size / 2, d.y - b.size / 2, b.size, b.size);
             });
 
-            for (let i = 0; i < ghosts.length; i++) {
-                const it = ghosts[i];
-                if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
-                const sp = it.sp, k = 1 - (1 - OUT_SCALE) * (1 - it.a);
-                ctx.globalAlpha = it.a * it.a;
-                ctx.drawImage(sp.cv, it.x + sp.x * k, it.y + sp.y * k, sp.w * k, sp.h * k);
-            }
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
                 if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
                 const sp = it.sp;
-                if (it.a >= 1) {
-                    ctx.drawImage(sp.cv, it.x + sp.x, it.y + sp.y, sp.w, sp.h);
+                if (!sp) {
+                    // підпис ще в черзі на друк: іконка точно на координаті вже
+                    // є, тому назва домальовується, а не з'являється з нічого
+                    if (!it.dot) continue;
+                    const b = bareIcon(it.kind, it.rank);
+                    ctx.drawImage(b.cv, it.x - b.size / 2, it.y - b.size / 2, b.size, b.size);
                     continue;
                 }
-                const e = easeOut(it.a), k = IN_SCALE + (1 - IN_SCALE) * e;
-                ctx.globalAlpha = e;
-                ctx.drawImage(sp.cv, it.x + sp.x * k, it.y + sp.y * k, sp.w * k, sp.h * k);
-                ctx.globalAlpha = 1;
+                ctx.drawImage(sp.cv, it.x + sp.x, it.y + sp.y, sp.w, sp.h);
             }
-            if (ghosts.length) ctx.globalAlpha = 1;
         }
 
         let lastSig = '';
-        // Смале місто не повинно вискакувати на мапі різким плямим: підпис
-        // розчинається, а вже знайомий продовжує з того ж місця, а не спалахує
-        // наново на кожній перебудові набору.
-        const fadeOf = new Map();
 
         function rebuild() {
-            // не перестраиваем подписи, если вид и язык не изменились
+            // набір назв не перебудовуємо, якщо вигляд і мова не змінились
             const size0 = viewSize();
             const fr = camFrame(map);
             if (!fr) return;
             const c = map.getCenter ? map.getCenter() : { lng: 0, lat: 0 };
             const sig = lang + '|' + map.getZoom().toFixed(3) + '|' + c.lng.toFixed(3) + ',' + c.lat.toFixed(3) +
                 '|' + Math.round(size0.x) + 'x' + Math.round(size0.y);
-            if (sig === lastSig && (items.length || ghosts.length)) return;
+            if (sig === lastSig && items.length) return;
             lastSig = sig;
-            stamp++;
 
             const prevItems = items;
-            const keptKeys = new Set();
-            let anim = false;
             items = [];
             extraDots = [];
+            pending = [];
+            bakeAt = 0;
             const list = collect();
             const size = size0;
             const mob = docMobile();
             // телефон тягне кадр із підписів: кожен — окремий drawImage, тому
             // стеля тут удвічі нижча за десктопну. решта міст лишається крапками
             const limit = mob
-                ? Math.max(60, Math.min(150, Math.round(size.x * size.y / 2600)))
-                : Math.max(PLACE_MIN_LIMIT, Math.min(PLACE_MAX_LIMIT, Math.round(size.x * size.y / 1000)));
+                ? Math.max(55, Math.min(110, Math.round(size.x * size.y / 2600)))
+                : Math.max(PLACE_MIN_LIMIT, Math.min(PLACE_MAX_LIMIT, Math.round(size.x * size.y / 2000)));
             const zoom = map.getZoom();
             const dotLimit = mob ? 90 : PLACE_DOT_LIMIT;
             // набір відсортовано за важливістю (столиця, ранг, населення), тому
             // обрізання просто відкидає найдрібніше. без стелі на телефоні тут
             // перебираються тисячі сіл, і саме це вішає кадр
-            const maxScan = mob ? 900 : 4000;
+            const maxScan = mob ? 600 : 2200;
             // сітка колізій: раніше кожен кандидат порівнювався з кожною
             // вільною рамкою — сотні тисяч порівнянь на перебудову
             const CELL = 76;
             const grid = new Map();
-            const now0 = performance.now();
             const addDot = (it, x, y) => {
                 if (extraDots.length >= dotLimit) return;
-                extraDots.push({ mx: it.mx, my: it.my, x: x, y: y, cap: it.cap });
+                extraDots.push({
+                    mx: it.mx, my: it.my, x: x, y: y,
+                    cap: it.cap, kind: it.kind, rank: it.rank
+                });
             };
             const seenBox = (x0, y0, x1, y1) => {
                 for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) {
@@ -1896,64 +2112,70 @@
                     }
                 }
             };
+            iconSc = iconScale(mob);
+            const cand = [];
             const n = Math.min(list.length, maxScan);
             for (let s = 0; s < n; s++) {
                 const it = list[s];
-                const mx = mercX(it.coord[0]), my = mercY(it.coord[1]);
+                const mx = it.mx, my = it.my;
                 const px = fr.px0 + mx * fr.ws;
                 const py = fr.py0 + my * fr.ws;
-                if (px < -80 || py < -40 || px > size.x + 80 || py > size.y + 40) continue;
-                it.mx = mx; it.my = my;
-                const dotEligible = it.rank >= 3 && zoom >= 9.6;
-                if (items.length >= limit) { if (dotEligible) addDot(it, px, py); continue; }
+                if (px < -80 || py < -50 || px > size.x + 80 || py > size.y + 50) continue;
+                it.px = px; it.py = py;
+                // місто й столицю завжди виводимо з іконкою на самій координаті;
+                // село отримує кружок лише коли масштаб вже дозволяє читати
+                // підпис над ним, інакше іконки зайняли б третину екрана
+                it.dot = it.kind !== 'vil' || zoom >= 9.6;
+                cand.push(it);
+            }
+            const shown = new Set();
+            for (let i = 0; i < prevItems.length; i++) shown.add(prevItems[i].key);
+            // друкуємо не більше кадру за раз: решта назв наздожене у наступних
+            // кадрах, а сам жест зуму залишається рівним
+            const bakeCap = mob ? 26 : 70;
+            let bakes = 0;
+            for (let s = 0; s < cand.length; s++) {
+                const it = cand[s];
+                const px = it.px, py = it.py;
+                if (items.length >= limit) { if (it.dot) addDot(it, px, py); continue; }
                 const w = measure(it.name, it.rank);
                 const h = PLACE_SIZE[it.rank] + 4;
-                const y0 = dotEligible ? py - 7 - h : py - h / 2;
-                const y1 = dotEligible ? py + 2 : py + h / 2;
-                const x0 = px - w / 2, x1 = px + w / 2;
-                if (seenBox(x0, y0, x1, y1)) { if (dotEligible) addDot(it, px, py); continue; }
-                pushBox({ x0: x0, x1: x1, y0: y0, y1: y1 });
-                const key = it.name + '@' + Math.round(it.coord[0] * 1e4) + ',' + Math.round(it.coord[1] * 1e4);
-                let rec = fadeOf.get(key);
-                if (!rec) {
-                    rec = { a: 0, t0: now0 };
-                    fadeOf.set(key, rec);
-                } else {
-                    // знайомий підпис продовжує з того ж рівня прозорості, а не
-                    // спалахує наново на кожній перебудові набору
-                    rec.t0 = now0 - rec.a * FADE_MS;
+                const mk = it.dot ? iconExtent(it.kind, it.rank, iconSc) : 0;
+                const halfBox = Math.max(w / 2, mk + 2);
+                const y0 = it.dot ? py - (mk + 2.8) - h : py - h / 2;
+                const y1 = it.dot ? py + mk + 1.6 : py + h / 2;
+                const x0 = px - halfBox, x1 = px + halfBox;
+                // рамка, що зовсім не зачіпає полотна, нікому не видна: тож не
+                // вартує ні бліту, ні місця в наборі. без цього край кадру тримає
+                // десятки невидимих назв, які спалахують на кожному кроці зуму
+                if (x1 < 0 || y1 < 0 || x0 > size.x || y0 > size.y) continue;
+                // гістерезис: назва, яка вже показана, терпить чверть перекриття,
+                // перш ніж вилетіти в крапку. без неї на межі свободи один крок
+                // зуму перемикає «підпис ↔ крапка» — оце й є «мігають»
+                let tx0 = x0, tx1 = x1, ty0 = y0, ty1 = y1;
+                if (shown.has(it.key)) {
+                    const hw = (x1 - x0) * .11, hh = (y1 - y0) * .13;
+                    tx0 += hw; tx1 -= hw; ty0 += hh; ty1 -= hh;
                 }
-                rec.seen = stamp;
+                if (seenBox(tx0, ty0, tx1, ty1)) { if (it.dot) addDot(it, px, py); continue; }
+                pushBox({ x0: x0, x1: x1, y0: y0, y1: y1 });
                 const item = {
-                    key: key, coord: it.coord, mx: mx, my: my, rec: rec, a: rec.a,
-                    name: it.name, rank: it.rank, cap: it.cap, x: px, y: py, w: w, h: h, dot: dotEligible
+                    key: it.key, coord: it.coord, mx: it.mx, my: it.my,
+                    name: it.name, rank: it.rank, cap: it.cap, kind: it.kind,
+                    x: px, y: py, w: w, h: h, dot: it.dot
                 };
-                item.sp = spriteOf(item);
+                item.sp = peekSprite(item);
+                if (!item.sp) {
+                    if (bakes < bakeCap) { item.sp = bakeSprite(item); bakes++; }
+                    else pending.push(item);
+                }
                 items.push(item);
-                keptKeys.add(key);
-                if (item.a < 1) anim = true;
             }
-            // зникаючі назви не видаляються одним кадром — вони догортають
-            // камеру та плавно розчиняються; нові перекривають їх зверху
-            ghosts = ghosts.filter(g => !keptKeys.has(g.key));
-            for (let i = 0; i < prevItems.length && ghosts.length < GHOST_LIMIT; i++) {
-                const old = prevItems[i];
-                if (keptKeys.has(old.key)) continue;
-                old.rec.a = old.a;
-                ghosts.push({
-                    key: old.key, rec: old.rec, sp: old.sp, mx: old.mx, my: old.my,
-                    x: old.x, y: old.y, a: old.a,
-                    outAt: now0 - (1 - old.a) * FADE_OUT_MS
-                });
-            }
-            if (ghosts.length) anim = true;
-            // запис про прозорість живий, лише поки назва в кадрі або ще згасає:
-            // пішла за межі — забуваємо відразу, щоб повернення знову розчинялося,
-            // а не вискакувало готовим
-            for (let i = 0; i < ghosts.length; i++) ghosts[i].rec.seen = stamp;
-            for (const [fk, fr] of fadeOf) if (fr.seen !== stamp) fadeOf.delete(fk);
-            if (fadeOf.size > 6000) fadeOf.clear();
-            if (anim) kickFade();
+            if (pending.length) kickBake();
+            // seam для браузерних тестів: який набір назв вийшов після перебудови.
+            // у продакшні такої глобальної змінної немає, тому рядок коштує один
+            // пошук властивості
+            if (window.__ltPlacesDebug) window.__ltPlacesDebug(items, extraDots);
             paint();
         }
 
@@ -1967,11 +2189,6 @@
             }
             for (let i = 0; i < extraDots.length; i++) {
                 const d = extraDots[i];
-                d.x = fr.px0 + d.mx * fr.ws;
-                d.y = fr.py0 + d.my * fr.ws;
-            }
-            for (let i = 0; i < ghosts.length; i++) {
-                const d = ghosts[i];
                 d.x = fr.px0 + d.mx * fr.ws;
                 d.y = fr.py0 + d.my * fr.ws;
             }
@@ -1995,47 +2212,83 @@
             reposition();
         }
 
+        // набір назв перебудовуємо ТІЛЬКИ коли камера зупинилась: під час жеста
+        // кожен проміжний масштаб породжував новий перелік, і назви на межі
+        // свободи міняли «підпис ↔ крапка» на ковному кадрі
+        function settle() {
+            clearTimeout(settleT);
+            settleT = setTimeout(() => {
+                settleT = 0;
+                if (map.isMoving && (map.isMoving() || map.isEasing())) { settle(); return; }
+                scheduleBuild(0);
+            }, docMobile() ? 300 : 240);
+        }
+
         map.on('move', () => { needFrame = true; });
         map.on('render', onFrame);
         map.on('moveend', () => {
             needFrame = true;
             onFrame();
-            scheduleBuild(40);
+            settle();
         });
-        map.on('zoomend', () => scheduleBuild(40));
-        map.on('resize', () => { needFrame = true; scheduleBuild(40); });
-        map.on('idle', () => scheduleBuild(120));
+        map.on('zoomend', settle);
+        map.on('resize', () => { needFrame = true; settle(); });
+        map.on('idle', settle);
 
-        // сторож: если подписей нет, а зум позволяет — пробуем снова,
-        // пока не появятся (страховка от пропущенных событий/сбоев стиля)
+        // сторож: якщо назв немає, а зум уже дозволяє — пробуємо знову,
+        // поки не з'являться (убезпечення від пропущених подій та збоїв стилю)
         const watchdog = setInterval(() => {
             if (items.length || map.getZoom() < PLACE_MIN_ZOOM) return;
             scheduleBuild(0);
         }, 2500);
 
+        // веб-шрифт прилітає вже по тому, як перші назви надруковані fallback-
+        // гарнітурою: мірка слів тоді вужча, набір виходить удвічі щільнішим,
+        // а спрайти назавжди лишаються в чужому шрифті. щойно шрифт готовий —
+        // скидаємо все виміряне й надруковане й перебудовуємо набір наново
+        function dropFontCaches() {
+            widths.clear();
+            placeSprites.clear();
+            spritePx = 0;
+            lastSig = '';
+        }
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(() => {
+                if (!widths.size && !placeSprites.size) return;
+                dropFontCaches();
+                scheduleBuild(0);
+            });
+        }
+
         return {
             setTheme(theme) { },
             refresh() {
                 lang = currentLang;
-                lastSig = '';
-                ghosts = [];
-                placeSprites.clear();
-                spritePx = 0;
-                widths.clear();
-                if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { lastSig = ''; scheduleBuild(0); });
+                dropFontCaches();
+                // перемикання мови будувало набір двічі, бо шрифта чекали
+                // «на всяк випадок»: він уже готовий і другий прохід нічого
+                // не змінює, а коштує повного перебору й перепекання.
+                // відкладаємося лише на незавершене завантаження
+                if (document.fonts && document.fonts.status !== 'loaded') {
+                    document.fonts.ready.then(() => {
+                        if (widths.size || placeSprites.size) dropFontCaches();
+                        scheduleBuild(0);
+                    });
+                }
                 scheduleBuild(0);
             },
             destroy() {
                 clearInterval(watchdog);
-                if (fadeRaf) cancelAnimationFrame(fadeRaf);
-                ghosts = [];
+                clearTimeout(timer);
+                clearTimeout(settleT);
+                if (bakeRaf) cancelAnimationFrame(bakeRaf);
                 if (cv.parentNode) cv.parentNode.removeChild(cv);
                 placeEngines.delete(map);
             }
         };
     }
 
-    // качество подписей для снимка: рендерим оверлей в том же DPR, что и карта
+    // якість підписів для знімка: оверлей рендеримо в тому ж DPR, що й карта
     function setPlaceDpr(map, value) {
         placeDprOverride = Math.max(0, Number(value) || 0);
         const eng = map && placeEngines.get(map);
@@ -2731,6 +2984,8 @@
 
     function removeLayerObjects(map, id) {
         if (map._ltObjects) map._ltObjects.drop(id);
+        const fs = fxState.get(map);
+        if (fs) fs.run.delete(id);
         ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'f_', 'sh_', 'xs_', 'xb_'].forEach(p => {
             if (map.getLayer(p + id)) map.removeLayer(p + id);
         });
@@ -2739,13 +2994,96 @@
         if (map.getSource('x_' + id)) map.removeSource('x_' + id);
     }
 
+    /* ------------------------------ плавна поява шарів ------------------------------ */
+    // Шар раніше став visible/none одним кадром: на телефоні це виглядало як
+    // блимання. Тепер кожен шар має множник прозорості 0..1, який доходить до
+    // цільового значення за чверть секунди, а 'none' отримує лише коли дійшов до нуля.
+    const fxState = new WeakMap();
+
+    function fxs(map) {
+        let s = fxState.get(map);
+        if (!s) { s = { run: new Map(), raf: 0, hooks: new Map() }; fxState.set(map, s); }
+        return s;
+    }
+
+    const fxEase = p => p * p * (3 - 2 * p);
+
+    function fxCurrent(map, id) {
+        const s = fxState.get(map);
+        if (!s) return 1;
+        const e = s.run.get(id);
+        return e ? e.v : 1;
+    }
+
+    // шар ще тримає прозорість (тільки-но з'являється або ще згасає) —
+    // полотно зникати не повинно, інакше плавність перетворюється на клік
+    function fxLive(map, id) {
+        const s = fxState.get(map);
+        if (!s) return false;
+        const e = s.run.get(id);
+        return !!e && e.v > 0.004;
+    }
+
+    function fxTick(map) {
+        const s = fxState.get(map);
+        if (!s) return;
+        s.raf = 0;
+        const now = performance.now();
+        const dur = docMobile() ? 300 : 260;
+        let left = false;
+        s.run.forEach((e, id) => {
+            if (e.v === e.to) return;
+            const p = Math.max(0, Math.min(1, (now - e.t0) / dur));
+            let want = p >= 1 ? e.to : e.from + (e.to - e.from) * fxEase(p);
+            // один кадр долає не більше чверті шляху: після довгого зависання
+            // інак замість згасання виходить непомітний, але різкий стрибок
+            const d = want - e.v;
+            e.v = Math.abs(d) > 0.26 ? e.v + (d > 0 ? 0.26 : -0.26) : want;
+            if (e.v !== e.to) left = true;
+            if (e.l) applyLayerPaint(map, e.l, e.to > 0);
+        });
+        s.hooks.forEach(fn => { try { fn(!left); } catch (e) { } });
+        if (left) s.raf = requestAnimationFrame(() => fxTick(map));
+    }
+
+    function fxKick(map) {
+        const s = fxs(map);
+        if (!s.raf) s.raf = requestAnimationFrame(() => fxTick(map));
+    }
+
+    function fxValue(map, id, l, visible) {
+        const s = fxs(map);
+        const to = visible ? 1 : 0;
+        let e = s.run.get(id);
+        if (!e) {
+            s.run.set(id, (e = { v: to, to: to, from: to, t0: 0, l: l }));
+            return to;
+        }
+        e.l = l;
+        if (e.to !== to) {
+            e.from = e.v;
+            e.to = to;
+            e.t0 = performance.now();
+            fxKick(map);
+        }
+        return e.v;
+    }
+
     function applyLayerPaint(map, l, visible) {
         if (!map.getLayer('f_' + l.id)) return;
 
         const s = l.style;
-        const vis = visible ? 'visible' : 'none';
+        // fx — поточний крок плавного переходу 0..1; «приховано» стає лише
+        // коли воно дійшло до нуля, інакше зникнення буде різким
+        const fx = fxValue(map, l.id, l, !!visible);
+        const vis = fx > 0.004 ? 'visible' : 'none';
+        const k = Math.max(0, Math.min(1, fx));
         const pattern = s.pattern && s.pattern !== 'none';
         const glow = s.border === 'glow';
+        // «без контуру» — це не тонша лінія, а жодної лінії: зникає й усе,
+        // що тримається на ній (тінь, внутрішнє світло, блик по краю), інакше
+        // на місці контуру лишається м'яке темне кільце
+        const noLine = s.border === 'none';
         const igo = Math.max(0, Math.min(100, s.iglow == null ? 0 : s.iglow)) / 100;
         const blended = s.blend && s.blend !== 'normal';
         const gradient = s.grad === true;
@@ -2757,32 +3095,32 @@
         const flatFill = (pattern || blended || gradient) ? 'none' : vis;
         map.setLayoutProperty('f_' + l.id, 'visibility', flatFill);
         map.setLayoutProperty('p_' + l.id, 'visibility', pattern && !gradient ? vis : 'none');
-        map.setLayoutProperty('l_' + l.id, 'visibility', vis);
+        map.setLayoutProperty('l_' + l.id, 'visibility', noLine ? 'none' : vis);
         map.setLayoutProperty('g_' + l.id, 'visibility', glow ? vis : 'none');
-        map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 ? vis : 'none');
+        map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && !noLine ? vis : 'none');
         const zone = l.kind === 'zone';
-        map.setLayoutProperty('sh_' + l.id, 'visibility', zone ? vis : 'none');
+        map.setLayoutProperty('sh_' + l.id, 'visibility', zone && !noLine ? vis : 'none');
         map.setLayoutProperty('gw_' + l.id, 'visibility', glow ? vis : 'none');
-        map.setLayoutProperty('rh_' + l.id, 'visibility', zone ? vis : 'none');
+        map.setLayoutProperty('rh_' + l.id, 'visibility', zone && !noLine ? vis : 'none');
 
         map.setPaintProperty('f_' + l.id, 'fill-color', s.color);
-        map.setPaintProperty('f_' + l.id, 'fill-opacity', s.alpha);
-        map.setPaintProperty('f_' + l.id, 'fill-outline-color', s.bcol);
+        map.setPaintProperty('f_' + l.id, 'fill-opacity', s.alpha * k);
+        map.setPaintProperty('f_' + l.id, 'fill-outline-color', noLine ? 'rgba(0,0,0,0)' : s.bcol);
 
         if (pattern) {
             map.setPaintProperty('p_' + l.id, 'fill-pattern', ensurePattern(map, s.pattern, s.color, s.patternScale || 22));
         }
-        map.setPaintProperty('p_' + l.id, 'fill-opacity', s.alpha);
+        map.setPaintProperty('p_' + l.id, 'fill-opacity', s.alpha * k);
 
         map.setPaintProperty('l_' + l.id, 'line-color', s.bcol);
         map.setPaintProperty('l_' + l.id, 'line-width', glow ? s.bw + 1 : s.bw);
-        map.setPaintProperty('l_' + l.id, 'line-opacity', Math.min(1, s.alpha + 0.35));
+        map.setPaintProperty('l_' + l.id, 'line-opacity', Math.min(1, s.alpha + 0.35) * k);
         map.setPaintProperty('l_' + l.id, 'line-dasharray', dashFor(s));
 
         map.setPaintProperty('g_' + l.id, 'line-color', s.bcol);
         const gAmt = Math.max(0, Math.min(100, s.glow == null ? 60 : s.glow)) / 100;
         map.setPaintProperty('g_' + l.id, 'line-width', Math.max(6, s.bw * 5) * (0.5 + gAmt));
-        map.setPaintProperty('g_' + l.id, 'line-opacity', Math.min(0.65, 0.6 * gAmt + s.alpha * 0.15));
+        map.setPaintProperty('g_' + l.id, 'line-opacity', Math.min(0.65, 0.6 * gAmt + s.alpha * 0.15) * k);
         map.setPaintProperty('g_' + l.id, 'line-blur', Math.max(4, s.bw * 4) * (0.5 + gAmt));
 
         // свечение внутри контура: сдвинутая внутрь размытая линия
@@ -2790,7 +3128,7 @@
         map.setPaintProperty('ig_' + l.id, 'line-color', s.igcol || s.bcol);
         map.setPaintProperty('ig_' + l.id, 'line-width', igW);
         map.setPaintProperty('ig_' + l.id, 'line-blur', Math.max(1.5, igW * 0.24));
-        map.setPaintProperty('ig_' + l.id, 'line-opacity', Math.min(0.9, 0.25 + igo * 0.65));
+        map.setPaintProperty('ig_' + l.id, 'line-opacity', Math.min(0.9, 0.25 + igo * 0.65) * k);
         // отрицательный сдвиг уходит внутрь контура при обходе CCW (см. rewindFC)
         map.setPaintProperty('ig_' + l.id, 'line-offset', -Math.max(2, igW * 0.34));
 
@@ -2798,31 +3136,32 @@
         map.setPaintProperty('sh_' + l.id, 'line-color', '#04060a');
         map.setPaintProperty('sh_' + l.id, 'line-width', Math.max(12, s.bw * 3.4));
         map.setPaintProperty('sh_' + l.id, 'line-blur', Math.max(7, s.bw * 2.6));
-        map.setPaintProperty('sh_' + l.id, 'line-opacity', Math.min(0.5, 0.22 + s.alpha * 0.3));
+        map.setPaintProperty('sh_' + l.id, 'line-opacity', Math.min(0.5, 0.22 + s.alpha * 0.3) * k);
         map.setPaintProperty('sh_' + l.id, 'line-offset', Math.max(3, s.bw * 1.7));
 
         // широкое гало под узким свечением: глубина свечения в два слоя
         map.setPaintProperty('gw_' + l.id, 'line-color', s.bcol);
         map.setPaintProperty('gw_' + l.id, 'line-width', Math.max(14, s.bw * 9) * (0.6 + gAmt));
         map.setPaintProperty('gw_' + l.id, 'line-blur', Math.max(10, s.bw * 7) * (0.6 + gAmt));
-        map.setPaintProperty('gw_' + l.id, 'line-opacity', Math.min(0.3, 0.2 * gAmt + s.alpha * 0.06));
+        map.setPaintProperty('gw_' + l.id, 'line-opacity', Math.min(0.3, 0.2 * gAmt + s.alpha * 0.06) * k);
 
         // светлая кромка изнутри: резкий блик по границе зоны
         map.setPaintProperty('rh_' + l.id, 'line-color', lightHex(s.bcol, 0.6));
         map.setPaintProperty('rh_' + l.id, 'line-width', Math.max(1, s.bw * 0.7));
-        map.setPaintProperty('rh_' + l.id, 'line-opacity', Math.min(0.75, 0.28 + s.alpha * 0.45));
+        map.setPaintProperty('rh_' + l.id, 'line-opacity', Math.min(0.75, 0.28 + s.alpha * 0.45) * k);
         map.setPaintProperty('rh_' + l.id, 'line-offset', -Math.max(1.1, s.bw * 0.55));
 
         if (arrow3d) {
-            map.setPaintProperty('xb_' + l.id, 'fill-opacity', Math.min(0.5, 0.16 + s.alpha * 0.35));
-            map.setPaintProperty('xs_' + l.id, 'fill-opacity', Math.min(1, 0.55 + s.alpha * 0.4));
-            map.setPaintProperty('xh_' + l.id, 'fill-opacity', Math.min(0.55, 0.2 + s.alpha * 0.35));
+            map.setPaintProperty('xb_' + l.id, 'fill-opacity', Math.min(0.5, 0.16 + s.alpha * 0.35) * k);
+            map.setPaintProperty('xs_' + l.id, 'fill-opacity', Math.min(1, 0.55 + s.alpha * 0.4) * k);
+            map.setPaintProperty('xh_' + l.id, 'fill-opacity', Math.min(0.55, 0.2 + s.alpha * 0.35) * k);
         }
 
         const label = !!(s.label || l.viewLabel) && !!((s.labelText || '').trim() || l.name);
         const mark = layerLabelStore(map).get(l.id);
         if (mark) {
             mark.el.style.display = label && visible ? '' : 'none';
+            mark.el.style.opacity = label ? k : 0;
             if (label) {
                 mark.el.style.color = s.labelColor || '#e8eef5';
                 mark.el.style.fontSize = Math.max(9, Math.min(42, s.labelSize || 12)) + 'px';
@@ -2841,9 +3180,16 @@
     }
 
     function pulseLayer(map, l, v) {
-        const a = l.style.alpha * v;
+        // пульсація не повинна перекривати плавну появу: множимо на той самий крок
+        const a = l.style.alpha * v * fxCurrent(map, l.id);
         if (map.getLayer('f_' + l.id)) map.setPaintProperty('f_' + l.id, 'fill-opacity', a);
         if (map.getLayer('p_' + l.id)) map.setPaintProperty('p_' + l.id, 'fill-opacity', a);
+    }
+
+    // плавний перехід малює ще й own-canvas шара — хук дозволяє blend-рушію
+    // перемалюватися в такт, не знаю про fx нічого
+    function fxHooks(map, key, fn) {
+        fxs(map).hooks.set(key, fn);
     }
 
     /* ------------------------------ режимы наложения ------------------------------ */
@@ -3048,17 +3394,45 @@
     }
     // стеля на зсув точки від спрощення: півтора css-пікселя на поточному
     // масштабі. Далі спрощення вже видно оком — контур «їде» за пальцем.
-    // масштаб беремо з кроком 0.5 і в більший бік, щоб кеш спрощень не
-    // перебудовувався на кождому пікселі скролу
     function tolCapAt(z) {
-        z = Math.ceil(z * 2) / 2;
         const deg = 1.6 / (0.711 * Math.pow(2, z));
         return deg > 0 ? deg : 1;
     }
-    function tolCap(map) {
-        let z = 9;
-        try { z = map.getZoom(); } catch (e) { }
-        return tolCapAt(z);
+    // Сходи спрощень, якими реально ходить кадр: стеля змінюється неперервно,
+    // а спрощене коло має бути готовим у кеші, тому значень небагато. Різниця
+    // між сусідніми сходинками — третина, тож форма уточнюється помітно, але
+    // без подвоєння деталі одним кадром
+    const RUNGS = (function () {
+        const out = [];
+        for (let t = 0.016; t > 0.00021; t *= 0.62) out.push(+t.toFixed(7));
+        return out.reverse();
+    })();
+    // найбільша сходинка, що не перевищує tol (тобто не грубіша за неї)
+    function lodRung(tol) {
+        if (!(tol > 0)) return 0;
+        let hit = 0;
+        for (let i = 0; i < RUNGS.length; i++) {
+            if (RUNGS[i] <= tol) hit = RUNGS[i]; else break;
+        }
+        return hit || RUNGS[0];
+    }
+    // сходинка, на яку можна податися за один тік: не далі сусідньої
+    function nextRung(cur, want) {
+        if (cur === want || want === 0 || cur === 0) return want;
+        if (want > cur) {
+            let hit = want;
+            for (let i = 0; i < RUNGS.length; i++) {
+                const r = RUNGS[i];
+                if (r > cur && r < hit) hit = r;
+            }
+            return hit;
+        }
+        let hit = want;
+        for (let i = 0; i < RUNGS.length; i++) {
+            const r = RUNGS[i];
+            if (r < cur && r > hit) hit = r;
+        }
+        return hit;
     }
     // Кільце у пласкому вигляді [lng,lat,lng,lat,…] і вже перевірене. Кадр тоді
     // не читає масив координат, не робить isFinite на кожній вершині і не плодить
@@ -3159,29 +3533,13 @@
     let lodLadder = null;
     function lodTols() {
         if (lodLadder) return lodLadder;
-        const set = new Set();
-        for (let z = 3; z <= 14; z += 0.5) {
-            set.add(Math.min(lodTol(z, false), tolCapAt(z)));
-            set.add(Math.min(lodTol(z, true), tolCapAt(z)));
-        }
-        lodLadder = [];
-        set.forEach(t => { if (t > 0) lodLadder.push(t); });
-        lodLadder.sort((a, b) => a - b);
+        lodLadder = RUNGS.slice();
         return lodLadder;
     }
 
-    function warmGeometry(fcs, zooms) {
+    function warmGeometry(fcs) {
         const t0 = performance.now();
-        const list = lodTols().slice();
-        if (zooms && zooms.length) {
-            const extra = new Set();
-            zooms.forEach(z => {
-                const cap = tolCapAt(z);
-                extra.add(Math.min(lodTol(z, false), cap));
-                extra.add(Math.min(lodTol(z, true), cap));
-            });
-            extra.forEach(t => { if (t > 0 && list.indexOf(t) < 0) list.push(t); });
-        }
+        const list = lodTols();
         let rings = 0;
         (fcs || []).forEach(fc => {
             bakeParts(fc).forEach(part => part.rings.forEach(pr => {
@@ -3209,6 +3567,66 @@
         let moving = false;
         let followOn = false;
         let paintCam = null;
+        // спрощення під час руху не заморожуємо на початку жесту (тоді до кінця
+        // жесту контур лишається неприродно грубий і в кінці бідкається), а водимо
+        // його сходами: одна сходинка за тік — форма уточнюється плавно
+        let tolCur = -1;
+        let tolSet = 0;
+        let tolRaf = 0;
+        let cheapFollow = false;
+        let costAvg = 0;
+        let moveEnd = 0;
+        let lastRatio = null;
+        let lastFadePaint = 0;
+
+        function wantTol(z, motion) {
+            const raw = lodTol(z, motion);
+            if (!(raw > 0)) return 0;
+            return lodRung(Math.min(raw, tolCapAt(z)));
+        }
+
+        function pickTol(now) {
+            let z;
+            try { z = map.getZoom(); } catch (e) { return tolCur > 0 ? tolCur : 0; }
+            const want = wantTol(z, moving);
+            if (tolCur === want) return tolCur;
+            if (tolCur < 0) { tolCur = want; tolSet = now; return tolCur; }
+            // у русі — не частіше, ніж раз на кілька кадрів, інакше кромка
+            // ворушиться щосвіжого кадру; після руху досходить за один кадр
+            if (moving && now - tolSet < (isMobile() ? 110 : 70)) return tolCur;
+            tolSet = now;
+            tolCur = nextRung(tolCur, want);
+            if (tolCur !== want) climb();
+            return tolCur;
+        }
+
+        // після завершення руху лишні сходинки добираємо коротким ланцюжком
+        function climb() {
+            if (tolRaf) return;
+            tolRaf = requestAnimationFrame(() => {
+                tolRaf = 0;
+                if (moving) return;
+                let z;
+                try { z = map.getZoom(); } catch (e) { return; }
+                if (tolCur === wantTol(z, false)) return;
+                const before = tolCur;
+                const t = pickTol(performance.now());
+                if (t !== before) { forced = true; paint(); }
+                if (tolCur !== wantTol(z, false)) climb();
+            });
+        }
+
+        // рух завершено: знімаємо трансформацію лише тоді, коли під неї вже
+        // є свіжий кадр, інакше на мить видно геометрію початку жесту
+        function endMove() {
+            clearTimeout(moveEnd);
+            moving = false;
+            if (followOn) { forced = true; paint(); }
+            followReset();
+            forced = true;
+            schedule();
+            climb();
+        }
 
         function isMobile() {
             try { return (deviceState || detectDevice()).mobile; } catch (e) { return false; }
@@ -3308,25 +3726,65 @@
             }
         }
 
+        function paintBudget() {
+            if (!isMobile()) return 7;
+            return lowEndDevice() ? 12 : 10;
+        }
+
+        // Головний шлях кадру: поки камера рухається, полотно перемальовується
+        // щоразу з тією самою геометрією. Вершини після culling коштують копійки
+        // (дві операції на вершину з готового меркатор-масиву), зате контур
+        // приклеєний до мапи — без розтягнутоїBitmap-рамки та її «повзучості».
+        // Якщо фарба виявилась дорожчою за бюджет (слабкий телефон, купа шарів),
+        // жест додивляється дешевшим шляхом: трансформація + рідкісні перемальовки.
+        function onCameraFrame() {
+            if (!host) return;
+            if (!moving) { forced = true; schedule(); return; }
+            if (cheapFollow) { followCamera(); return; }
+            const t0 = performance.now();
+            paint();
+            const cost = performance.now() - t0;
+            costAvg = costAvg ? costAvg * 0.7 + cost * 0.3 : cost;
+            if (costAvg > paintBudget()) {
+                cheapFollow = true;
+                followOn = false;
+                applyFollow('');
+            }
+        }
+
         function ensureHost() {
             if (host) return host;
             host = document.createElement('div');
             host.id = 'lt-blend';
             document.body.appendChild(host);
             map.on('resize', () => { syncCanvases(); followReset(); schedule(); });
-            map.on('render', schedule);
-            map.on('movestart', () => { moving = true; });
-            map.on('move', followCamera);
-            map.on('moveend', () => {
-                moving = false;
-                // спершу свіжий кадр під кінцеву камеру, і лише потім
-                // знімаємо трансформацію: інакше мить показуємо геометрію
-                // початку жесту без масштабу — стрибок в кінці руху
-                if (followOn) { forced = true; paint(); }
-                followReset();
-                forced = true;
-                schedule();
+            // Кадр жесту фарбуємо ПОСІРЯД з GL-кадром, а не перед ним. На 'move'
+            // полотно встигало намалюватися за ракурс, який MapLibre ще тільки
+            // збирався відмалювати, тому заливання відставало від контуру рівно
+            // на кадр — на повільному телефоні це ціла помітна фора. На 'render'
+            // малюємо той самий ракурс, що щойно ліг на полотно мапи, і обидва
+            // композитяться в один кадр браузера: зона приклеєна до лінії.
+            map.on('render', () => { if (moving) onCameraFrame(); else schedule(); });
+            map.on('movestart', () => {
+                clearTimeout(moveEnd);
+                moving = true;
+                cheapFollow = false;
+                costAvg = 0;
             });
+            map.on('move', () => {
+                // плавний зум інерцією — це купa коротких jumpTo одне за одним:
+                // кожен із них формально завершує рух. жест вважається
+                // чинним, доки камера хоч трохи рухається, інакше сходи
+                // спрощень сідал б щокадру
+                clearTimeout(moveEnd);
+                if (!moving) {
+                    moving = true;
+                    cheapFollow = false;
+                    costAvg = 0;
+                }
+                moveEnd = setTimeout(endMove, 70);
+            });
+            map.on('moveend', () => { clearTimeout(moveEnd); moveEnd = setTimeout(endMove, 70); });
             return host;
         }
 
@@ -3338,7 +3796,8 @@
         function activeLayers() {
             return Object.values(getLayers() || {})
                 .filter(l => l && needsCanvas(l)
-                    && l.data && l.data.features && l.data.features.length && isVisible(l))
+                    && l.data && l.data.features && l.data.features.length
+                    && (isVisible(l) || fxLive(map, l.id)))
                 .sort((a, b) => a.z - b.z);
         }
 
@@ -3451,7 +3910,7 @@
             };
             // жорсткіша стеля на близькому огляді: там спрощення видно оком,
             // воно не економить кадр (вершин і так мало після culling)
-            const tol = Math.min(lodTol(map.getZoom(), moving), tolCap(map));
+            const tol = pickTol(lastPaint);
             const pad = padPx();
             const tinyPx = isMobile() ? 3.4 : 2.4;
             const rimMinPx = lowEndDevice() ? 13 : 7;
@@ -3464,6 +3923,9 @@
 
                 const l = it.layer;
                 if (!l) return;
+                // полотно шара малюється у власній альф — плавна поява шару
+                // має домальовувати і сюди, інакше blend-шари «мигають»
+                const fxA = fxCurrent(map, l.id);
                 const fc = displayFC ? displayFC(l) : l.data;
                 const parts = bakeParts(fc);
                 if (!parts.length) return;
@@ -3480,7 +3942,7 @@
                 // + дрібні шматки на слабкому телефоні не светяться взагалі
 
                 ctx.globalCompositeOperation = 'source-over';
-                ctx.fillStyle = hexA(l.style.color, l.style.alpha);
+                ctx.fillStyle = hexA(l.style.color, l.style.alpha * fxA);
                 ctx.beginPath();
                 let pts = 0;
                 // кромка світіння збирається одразу у Path2D: другий прохід по
@@ -3543,7 +4005,7 @@
                         const half = Math.abs((maxX - minX) * dx) / 2 + Math.abs((maxY - minY) * dy) / 2;
                         if (half > 0.5) {
                             const g2 = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
-                            const a = Number(l.style.alpha);
+                            const a = Number(l.style.alpha) * fxA;
                             g2.addColorStop(0, hexA(l.style.color, Math.min(1, a * 1.12)));
                             g2.addColorStop(0.52, hexA(midHex(l.style.color, l.style.gcol || '#04101c'), a * 0.92));
                             g2.addColorStop(1, hexA(l.style.gcol || '#04101c', Math.max(0, a * 0.86)));
@@ -3556,7 +4018,7 @@
                     // окремий Path2D — тільки великі частини, без дрібних плям
                     if (rimPath) {
                         ctx.globalCompositeOperation = 'lighter';
-                        ctx.strokeStyle = hexA(lightHex(l.style.color, 0.62), Math.min(0.5, Number(l.style.alpha) * 0.55));
+                        ctx.strokeStyle = hexA(lightHex(l.style.color, 0.62), Math.min(0.5, Number(l.style.alpha) * 0.55 * fxA));
                         ctx.lineWidth = Math.max(1.2, 2.2 * rx);
                         ctx.lineJoin = 'round';
                         ctx.stroke(rimPath);
@@ -3577,9 +4039,9 @@
         }
 
         function schedule() {
-            // під час руху камери полотно веде трансформація — повна
-            // відмальовка лише на місці або при втраті покриття
-            if (moving && followOn && paintCam) return;
+            // під час жесту кадр веде onCameraFrame; у дешевому режимі рішення
+            // про свіжу фарбу приймає followCamera
+            if (moving && !cheapFollow) return;
             if (queued) return;
             if (!forced && cameraKey() === camKey) return;
             queued = true;
@@ -3591,8 +4053,23 @@
             }
         }
 
+        // згасання шару торкається і наших полотен: без цього blend-заливка
+        // зникає одним кадром, поки контур ще тане. під час руху кадри веде
+        // onCameraFrame — там же й трансформація, тому не влізаємо
+        fxHooks(map, 'blend', settled => {
+            if (moving) { forced = true; return; }
+            const now = performance.now();
+            // перемальовувати всі полотна на кожен кадр фейду дорожче за сам
+            // фейд: п'ять кроків на чверть секунди оку достатньо
+            if (!settled && now - lastFadePaint < (isMobile() ? 80 : 55)) return;
+            lastFadePaint = now;
+            syncCanvases(lastRatio);
+            forced = true;
+            paint();
+        });
+
         return {
-            sync(ratio) { syncCanvases(ratio); forced = true; paint(); },
+            sync(ratio) { lastRatio = ratio; syncCanvases(ratio); forced = true; paint(); },
             draw() { forced = true; schedule(); }
         };
     }
@@ -3850,7 +4327,7 @@
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,
         store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage },
-        Calendar, BASE, createMap, baseSwitcher,
+        Calendar, BASE, createMap, baseSwitcher, smoothZoom,
         flagSVG: key => FLAG_SVG[key], pixelLabels, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,

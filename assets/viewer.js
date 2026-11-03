@@ -61,7 +61,7 @@
                     water: s.water === true,
                     pattern: ['none', 'hatch', 'diag', 'grid', 'dots', 'cross', 'bricks', 'waves', 'hazard'].indexOf(s.pattern) >= 0 ? s.pattern : 'none',
                     patternScale: Number.isFinite(s.patternScale) ? Math.min(60, Math.max(8, s.patternScale)) : 22,
-                    border: ['solid', 'dashed', 'glow'].indexOf(s.border) >= 0 ? s.border : 'solid',
+                    border: ['solid', 'dashed', 'glow', 'none'].indexOf(s.border) >= 0 ? s.border : 'solid',
                     anim,
                     glow: Number.isFinite(s.glow) ? Math.min(100, Math.max(0, s.glow)) : 60,
                     iglow: Number.isFinite(s.iglow) ? Math.min(100, Math.max(0, s.iglow)) : 0,
@@ -2415,6 +2415,7 @@
     const mapTools = LT.installMapTools(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 120 }), 'bottom-right');
+    LT.smoothZoom(map);
 
     LT.setLayerLabelDrag(map, (id, pos) => {
         const l = state.layers[id];

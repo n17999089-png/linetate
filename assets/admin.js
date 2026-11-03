@@ -45,7 +45,7 @@
     /* ============================ СЛОИ ============================ */
 
     const PATTERNS = ['none', 'hatch', 'diag', 'grid', 'dots', 'cross', 'bricks', 'waves', 'hazard'];
-    const BORDERS = ['solid', 'dashed', 'glow'];
+    const BORDERS = ['solid', 'dashed', 'glow', 'none'];
     const ANIMS = ['none', 'pulse', 'flow', 'march'];
 
     const STYLE_PRESETS = {
@@ -975,6 +975,14 @@
         toast(t('admin.merged', { name: above.name }));
     }
 
+    // без лінії немає чому світитися: повзуни силы світіння й внутрішнього
+    // світла живуть саме на контурі, тому з «без контуру» їх вимикаємо
+    function syncBorderFields(l) {
+        const off = l.style.border === 'none';
+        $('f-glow').disabled = off;
+        $('f-iglow').disabled = off;
+    }
+
     function uiStyle() {
         const l = currentLayer();
         const body = $('style-body');
@@ -1028,6 +1036,7 @@
         $('f-pscale').value = l.style.patternScale;
         $('f-pscale').disabled = l.style.pattern === 'none';
         $('f-border').value = l.style.border;
+        syncBorderFields(l);
         $('f-glow').value = l.style.glow;
         $('f-iglow').value = l.style.iglow || 0;
         $('f-igcol').value = l.style.igcol || '#ffffff';
@@ -1945,7 +1954,7 @@
             autoSave();
         });
         $('f-pscale').addEventListener('input', styleChange((l, el) => { l.style.patternScale = Math.min(60, Math.max(8, +el.value)); }));
-        $('f-border').addEventListener('change', styleChange((l, el) => { l.style.border = el.value; }));
+        $('f-border').addEventListener('change', styleChange((l, el) => { l.style.border = el.value; syncBorderFields(l); }));
         $('f-anim').addEventListener('change', e => {
             const l = currentLayer();
             if (!l) return;
@@ -2227,6 +2236,7 @@
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 120 }), 'bottom-right');
+    LT.smoothZoom(map);
 
     const UKRAINE_BOUNDS = [[22.0, 44.2], [40.6, 52.6]];
     map.fitBounds(UKRAINE_BOUNDS, {
