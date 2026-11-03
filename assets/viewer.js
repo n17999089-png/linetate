@@ -2006,8 +2006,7 @@
         LT.set3D(map, !!on, {
             layers: state.layers,
             isVisible,
-            deferRelief: !!deferRelief,
-            pauseBlend: on2 => { if (blend) blend.pause(on2); }
+            deferRelief: !!deferRelief
         });
     }
 

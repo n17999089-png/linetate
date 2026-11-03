@@ -2267,6 +2267,16 @@
         map.on('resize', () => { needFrame = true; settle(); });
         map.on('idle', settle);
 
+        // рельєф доходить частинами: DEM-тайли підвантажуються тоді, коли камера
+        // вже стоїть, і з ними їде висота точки, а отже й map.project. жесту при
+        // цьому немає, тому підписи залишалися там, де їх зупинив попередній
+        // кадр, — на 3–12 px вище чи нижче за своє місто. позначку кадру
+        // виставляємо на будь-яку зміну рельєфу: перерахунок — це лише
+        // project() на набір назв, а не перебудова
+        map.on('data', e => {
+            if (e && e.sourceId === 'lt-dem') needFrame = true;
+        });
+
         // сторож: якщо назв немає, а зум уже дозволяє — пробуємо знову,
         // поки не з'являться (убезпечення від пропущених подій та збоїв стилю)
         const watchdog = setInterval(() => {
@@ -2666,15 +2676,45 @@
         return stops;
     }
 
+    // та сама висота, що й у екструзії, але вже в метрах поточного кадру.
+    // wallStops лінійно інтерполює метри між цілими зумами, тому і сюди має
+    // лягати інтерпольоване значення: візьмеш pxToM без проміжку — і заливка
+    // сяде вище або нижче верхньої грані блока посеред жесту зуму.
+    // px — висота конкретного шару: з нею заливка полотна лягає саме на його
+    // верхню грань, а не на середню по мапі
+    function topHeight(z, px) {
+        const h = px || WALL_PX;
+        if (z <= 5) return Math.round(pxToM(h, 5));
+        if (z >= 19) return Math.round(pxToM(h, 19));
+        const zi = Math.floor(z);
+        const a = Math.round(pxToM(h, zi));
+        return a + (Math.round(pxToM(h, zi + 1)) - a) * (z - zi);
+    }
+
     // «Сонце» з північного заходу — як у гірських тінях, тож тінь іде на
     // південний схід. По меридіану зсув удвічі більший: по-перше, при нахилі 55°
     // кадр стискає північ-південь, по-друге, тінь мусить вилізти за стіну
-    // (24 px) і за об'ємний контур (30 px), інакше лежить під блоком і її не
+    // (24 px) і за об'ємний контур, інакше лежить під блоком і її не
     // видно взагалі
     const CAST_PX = [18, 64];
     const RIM_PX = 3.2;
-    const RIM_H_PX = 30;
     const WALL_PX = 24;
+    // обвід — це бордюр НА верхній грані блока, а не другий блок поруч: він
+    // починається там, де закінчується стіна. інакше його зовнішня стіна лежить
+    // у тій самій площині, що й стіна зони, і буфер глибини на кожному кадрі
+    // вирішує навмання, котра з них видна — на екрані «тин» уздовж контуру
+    const RIM_UP_PX = 3.5;
+    // кожен наступний за z-індексом шар стоїть вище за попередній. без цього
+    // дві верхні грані в одній площині мігають, а обвід нижчого шару
+    // (w + RIM_UP_PX) лізе на тіло вищого — те, що користувач називає
+    // «битва з індексами». підйом більший за бордюр, тому обвід нижчого шару
+    // завжди опиняється під верхньою гранню вищого
+    const LIFT_PX = 4;
+    const RANK_MAX = 3;
+
+    function zoneWallPx(rank) {
+        return WALL_PX + Math.min(rank, RANK_MAX) * LIFT_PX;
+    }
 
     function polyRings(geom) {
         const out = [];
@@ -3586,18 +3626,19 @@
             }
         });
         map.addLayer({
-            // об'ємний контур: вузька смуга вздовж того ж кільця, піднята трохи
-            // вище за стіну. без неї контур лишався плоскою лінією на землі, поки
-            // сама зона стояла стіною. вища на 6 px спеціально: два однойменні
-            // верхні грані на одній висоті дають мігання z-fighting
+            // об'ємний контур: вузька смуга вздовж того ж кільця, але бордюром
+            // на верхній грані, а не другим блоком поруч. смуга від землі мала б
+            // зовнішню стіну в тій самій площині, що й стіна зони, і буфер
+            // глибини щоразу вирішував би навмання, котра видна — «тин» уздовж
+            // усього контуру
             id: 'fr_' + l.id, type: 'fill-extrusion', source: 'x_' + l.id,
             layout: { visibility: 'none' },
             filter: ['==', ['get', 'role'], 'rim'],
             paint: {
                 'fill-extrusion-color': s.bcol,
                 'fill-extrusion-opacity': 0.98,
-                'fill-extrusion-base': 0,
-                'fill-extrusion-height': wallStops(RIM_H_PX),
+                'fill-extrusion-base': wallStops(WALL_PX),
+                'fill-extrusion-height': wallStops(WALL_PX + RIM_UP_PX),
                 'fill-extrusion-vertical-gradient': false
             }
         });
@@ -3849,9 +3890,26 @@
     }
 
     function orderLayerObjects(map, layers) {
+        // порядок z-індексу має бути порядком і в висоті: два блоки однакової
+        // висоти мають співарядні верхні грані, а буфер глибини не знає, котрий
+        // «вище» за стилем. тому кожен наступний шар піднімається на LIFT_PX,
+        // і обвід нижнього (w + RIM_UP_PX) лишається під верхньою гранню
+        // верхнього
+        let rank = 0;
         Object.values(layers)
             .sort((a, b) => a.z - b.z)
             .forEach(l => {
+                if (map.getLayer('fe_' + l.id)) {
+                    const w = l.kind === 'zone' ? zoneWallPx(rank++) : WALL_PX;
+                    if (l._w3d !== w) {
+                        l._w3d = w;
+                        map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height', wallStops(w));
+                        if (map.getLayer('fr_' + l.id)) {
+                            map.setPaintProperty('fr_' + l.id, 'fill-extrusion-base', wallStops(w));
+                            map.setPaintProperty('fr_' + l.id, 'fill-extrusion-height', wallStops(w + RIM_UP_PX));
+                        }
+                    }
+                }
                 ['xb_', 'xs_', 'cs_', 'sh_', 'f_', 'p_', 'fe_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
                     if (map.getLayer(p + l.id)) map.moveLayer(p + l.id);
                 });
@@ -3869,9 +3927,10 @@
 
     const THREE_D_PITCH = 55;
 
-    // Системне перемикання 3D: нахил камери + екструзія зон. Плоскі полотна
-    // бленд-рушія при нахилі не збігаються з контуром, тому їх ставлять на
-    // паузу через opts.pauseBlend; підписи самі переходять на map.project.
+    // Системне перемикання 3D: нахил камери + екструзія зон. Полота бленд-рушія
+    // ходять за камерою перспективною проєкцією (заливка лягає на верхню грань
+    // блока), тож multiply та решта наложень працюють і під нахилом; підписи
+    // самі переходять на map.project.
     // opts.layers + opts.isVisible потрібні, щоб перекласти видимість заливок
     // і екструзій для всіх шарів одразу.
     function set3D(map, on, opts) {
@@ -3895,7 +3954,6 @@
             // рідний wheel-зум тримає якір під курсором і при нахилі; наш
             // smoothZoom припускає плоску камеру, тому на час 3D відступає
             if (map.scrollZoom) map.scrollZoom.enable();
-            if (opts.pauseBlend) opts.pauseBlend(true);
             // на старті сторінки рельєф не потрібен у першу ж секунду: DEM-тайли
             // з мережі й розбір висот забирають головний потік, і під завісою
             // мапа показує кадр на три секунди пізніше. тому підйом 3D після
@@ -3921,7 +3979,6 @@
                 if (map.dragRotate) map.dragRotate.disable();
                 if (map.touchPitch) map.touchPitch.disable();
                 if (map.scrollZoom) map.scrollZoom.disable();
-                if (opts.pauseBlend) opts.pauseBlend(false);
                 unbind3dZoom(map);
                 const st = z3d(map);
                 st.reliefPending = false;
@@ -3932,7 +3989,7 @@
             set3D._off = off;
             map.on('moveend', off);
             // камера вже рівна (нахил не встиг піднятися) — moveend не буде
-            // ніколи, і полота лишилися б на паузі назавжди
+            // ніколи, і 3D лишився б не зібраним назавжди
             if (level()) off();
         }
     }
@@ -4031,7 +4088,7 @@
     // Вісь y у меркатора росте вниз, тому південь дає більший y — як і на
     // екрані. Формула збігається з map.project до 1e-9 пікселя.
     // Об'єкт один на весь рушій: кадр не повинен плодити сміття щосекунди
-    const CAM_F = { ws: 0, px0: 0, py0: 0 };
+    const CAM_F = { ws: 0, px0: 0, py0: 0, persp: false };
 
     // плоска меркатор-рамка описує екран лише коли камера дивиться вертикально
     // вниз і тримає північ вгору. у 3D і під час обертання валідна тільки
@@ -4056,7 +4113,106 @@
         CAM_F.ws = ws;
         CAM_F.px0 = w / 2 - mercX(c.lng) * ws;
         CAM_F.py0 = h / 2 - mercY(c.lat) * ws;
+        CAM_F.persp = false;
         return CAM_F;
+    }
+
+    /* ---------------------- проекція під нахилом ---------------------- */
+
+    // Під нахилом заливка має йти тими самими матрицями, що й сам MapLibre для
+    // map.project: pixelMatrix приймає меркатор-координату і висоту в МЕТРАХ
+    // (переведення метрів у пікселі вже вписане в матрицю) і віддає екранний
+    // піксель лише після ділення на w. Точність — нуль, перевірено на 400
+    // точках кадру проти map.project.
+    //
+    // h — висота, на якій лежить заливка: верхня грань екструзії зони. Flat-рамка
+    // задає екран у css-пікселях, полотна більші за в'юпорт — далі ті самі
+    // rx/ry/offX/offY, що й для плоского випадку.
+    const FR = { ws: 0, px0: 0, py0: 0, m: null, c0: 0, c1: 0, cw: 0, persp: true };
+
+    // w прямо біля площини near дає виворітну координату; нижче цієї межі
+    // вершину вважаємо «за камерою» і ріжемо площиною, а не відкидаємо
+    const NEAR = 1e-4;
+
+    function tiltFrame(map, h) {
+        const t = map && map.transform;
+        const m = t && t.pixelMatrix;
+        if (!m || !(t.worldSize > 0)) return null;
+        FR.ws = t.worldSize;
+        FR.m = m;
+        FR.c0 = m[8] * h + m[12];
+        FR.c1 = m[9] * h + m[13];
+        FR.cw = m[11] * h + m[15];
+        return FR;
+    }
+
+    // Кільце в перспективі: проєкція разом із різанням площиною near. w
+    // уздовж відрізка змінюється лінійно, тому точку перетину рахуємо точно —
+    // інакше одна вершина «за камерою» перевертає весь контур зони і по
+    // екрані йде гігантський сміттєвий многокутник. Пишемо у спільний буфер:
+    // кадр не плодить масив на кожне кільце
+    let RING_OUT = new Float64Array(8192);
+
+    function projectRing(f, fr, rx, ry, ox, oy) {
+        const len = f.length;
+        if (RING_OUT.length < len + 8) RING_OUT = new Float64Array((len + 8) * 2);
+        const m = fr.m;
+        let n = 0;
+        // кільце замкнене, тому попередня вершина — остання
+        let pX = f[len - 2] * fr.ws, pY = f[len - 1] * fr.ws;
+        let ax = m[0] * pX + m[4] * pY + fr.c0;
+        let ay = m[1] * pX + m[5] * pY + fr.c1;
+        let aw = m[3] * pX + m[7] * pY + fr.cw;
+        let inA = aw > NEAR;
+        for (let i = 0; i < len; i += 2) {
+            const X = f[i] * fr.ws, Y = f[i + 1] * fr.ws;
+            const bx = m[0] * X + m[4] * Y + fr.c0;
+            const by = m[1] * X + m[5] * Y + fr.c1;
+            const bw = m[3] * X + m[7] * Y + fr.cw;
+            const inB = bw > NEAR && bw < 1e12;
+            if (inB) {
+                if (!inA) {
+                    const t = (NEAR - aw) / (bw - aw), w = aw + t * (bw - aw);
+                    RING_OUT[n++] = ((ax + t * (bx - ax)) / w) * rx + ox;
+                    RING_OUT[n++] = ((ay + t * (by - ay)) / w) * ry + oy;
+                }
+                RING_OUT[n++] = (bx / bw) * rx + ox;
+                RING_OUT[n++] = (by / bw) * ry + oy;
+            } else if (inA) {
+                const t = (NEAR - aw) / (bw - aw), w = aw + t * (bw - aw);
+                RING_OUT[n++] = ((ax + t * (bx - ax)) / w) * rx + ox;
+                RING_OUT[n++] = ((ay + t * (by - ay)) / w) * ry + oy;
+            }
+            ax = bx; ay = by; aw = bw; inA = inB;
+        }
+        return n;
+    }
+
+    // рамка кільця в перспективі: чотири кути, бо протилежних кутів більше
+    // не достатньо. хоч один кут за камерою — null, і шматок не відсікається:
+    // краще зайвий малюнок, ніж зона, що зникла без причини
+    const BX4 = new Float64Array(8);
+
+    function perspBox(fr, box, rx, ry, ox, oy) {
+        const m = fr.m;
+        BX4[0] = mercX(box[0]) * fr.ws; BX4[1] = mercY(box[1]) * fr.ws;
+        BX4[2] = mercX(box[2]) * fr.ws; BX4[3] = BX4[1];
+        BX4[4] = BX4[2];               BX4[5] = mercY(box[3]) * fr.ws;
+        BX4[6] = BX4[0];               BX4[7] = BX4[5];
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < 8; i += 2) {
+            const w = m[3] * BX4[i] + m[7] * BX4[i + 1] + fr.cw;
+            if (!(w > NEAR) || !(w < 1e12)) return null;
+            const x = ((m[0] * BX4[i] + m[4] * BX4[i + 1] + fr.c0) / w) * rx + ox;
+            const y = ((m[1] * BX4[i] + m[5] * BX4[i + 1] + fr.c1) / w) * ry + oy;
+            if (!isFinite(x) || !isFinite(y) || Math.abs(x) > 1e7 || Math.abs(y) > 1e7) return null;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+        BR_OUT[0] = minX; BR_OUT[1] = minY; BR_OUT[2] = maxX; BR_OUT[3] = maxY;
+        return BR_OUT;
     }
 
     // меркатор кілець теж кешується: перетворення з синусом і логарифмом не
@@ -4103,6 +4259,7 @@
         const f = fr || camFrame(map);
         if (!f) return null;
         const sx = ox || 0, sy = oy || 0;
+        if (f.persp) return perspBox(f, box, rx, ry, sx, sy);
         // меркатор лінійний по довготі, тому достатньо двох протилежних кутів
         const x0 = (f.px0 + mercX(box[0]) * f.ws) * rx + sx;
         const x1 = (f.px0 + mercX(box[2]) * f.ws) * rx + sx;
@@ -4336,8 +4493,10 @@
         let tolSet = 0;
         let tolRaf = 0;
         let cheapFollow = false;
-        let paused = false;
         let costAvg = 0;
+        // окремий лічильник для перспективного кадру: він не бере участі в
+        // рішенні про розтяг, але без нього не сказати, чого коштує 3D
+        let tiltAvg = 0;
         let moveEnd = 0;
         let lastRatio = null;
         let lastFadePaint = 0;
@@ -4506,7 +4665,19 @@
         // де вершин справді багато; на масштабі міста правило — свіжа геометрія
         // кожного кадру, навіть ціною кадрів.
         function onCameraFrame() {
-            if (!host || paused) return;
+            if (!host) return;
+            // під нахилом полотно перспективне, і подібність (зсув + поворот +
+            // масштаб) його не докриває — єдиний шлях кадру єдна проєкція.
+            // дешевий режим розтягу повертається сам, щойно камера ляже рівно,
+            // тож тут лише знімаємо накладену трансформацію
+            if (cameraTilted(map)) {
+                if (cheapFollow || followOn) { cheapFollow = false; followReset(); }
+                const t0 = performance.now();
+                paint();
+                const c = performance.now() - t0;
+                tiltAvg = tiltAvg ? tiltAvg * 0.7 + c * 0.3 : c;
+                return;
+            }
             if (cheapFollow) { followCamera(); return; }
             const t0 = performance.now();
             paint();
@@ -4560,12 +4731,19 @@
                 moveEnd = setTimeout(endMove, 70);
             });
             map.on('moveend', () => { clearTimeout(moveEnd); moveEnd = setTimeout(endMove, 70); });
+            // те саме з рельєфом: тайли DEM приходять, коли камера вже нерухома,
+            // а з висотою їде і екранне положення зони. без примусового кадру
+            // заливка лишалася на старому рельєфі й «від’їжджала» від контуру
+            map.on('data', e => {
+                if (e && e.sourceId === 'lt-dem') { forced = true; schedule(); }
+            });
             // шов для вимірювання прилипання: який ракурс реально лежить на
             // полотні в той самий момент, що й на мапі
             if (window.__ltBlendDebug) {
                 window.__ltBlendDebug(() => ({
-                    moving, cheapFollow, followOn, costAvg, paused, painted: paintCam,
-                    key: cameraKey(), camKey, flatOn, n: host.children.length, map
+                    moving, cheapFollow, followOn, costAvg, tiltAvg, painted: paintCam,
+                    key: cameraKey(), camKey, flatOn, n: host.children.length, map,
+                    canvases: [...items.values()]
                 }));
             }
             return host;
@@ -4673,13 +4851,14 @@
 
 
         function paint() {
-            if (!host || paused) return;
-            // рамка нижче плоска: під нахилом чи з обертанням полотна малювати
-            // не можна — заливки ляжуть не туди. повернемося, коли камера стане
-            // рівною (cameraKey тоді зміниться сам)
-            if (cameraTilted(map)) { followReset(); return; }
-            const fr = camFrame(map);
-            if (!fr) return;
+            if (!host) return;
+            // Рівна камера — чисте афінне перетворення. Під нахилом полотно веде
+            // перспективна рамка, і заливка лягає на висоту верхньої грані
+            // екструзії, тож multiply бачне й у 3D
+            const tilted = cameraTilted(map);
+            const zoom = map.getZoom();
+            const frame0 = tilted ? null : camFrame(map);
+            if (!tilted && !frame0) { followReset(); return; }
             const key = cameraKey();
             if (!forced && key === camKey) return;
             camKey = key;
@@ -4710,6 +4889,13 @@
 
                 const l = it.layer;
                 if (!l) return;
+                // рамка — по висоті саме цього шару: блоки стоять на різній
+                // висоті за z-індексом, тож і заливка має лягати на його
+                // власну верхню грань, а не на середню по мапі. верхньою
+                // гранню користувач бачить бордюр контуру, тому рамка йде по
+                // його верху, а не по грані блока
+                const fr = tilted ? tiltFrame(map, topHeight(zoom, (l._w3d || WALL_PX) + RIM_UP_PX)) : frame0;
+                if (!fr) return;
                 // полотно шара малюється у власній альф — плавна поява шару
                 // має домальовувати і сюди, інакше blend-шари «мигають»
                 const fxA = fxCurrent(map, l.id);
@@ -4725,6 +4911,10 @@
                 // коштує два множники й дві суми, замість map.project
                 const kx = fr.ws * rx, ky = fr.ws * ry;
                 const zx = fr.px0 * rx + offX, zy = fr.py0 * ry + offY;
+                // у перспективі рамка кільця рахується лише по чотирьох кутах, а
+                // проєкція може виповзати за них до горизонту — відсікаємо
+                // щедріше, ніж на плоскій камері
+                const padC = tilted ? pad * 2.5 : pad;
                 // запас на светіння і розмиті контури навколо видимої області
                 // + дрібні шматки на слабкому телефоні не светяться взагалі
 
@@ -4740,7 +4930,7 @@
                 parts.forEach(part => {
                     // умная прорисовка: фича целиком вне экрана не проектируется
                     // и не попадает в путь — на фронте это половина слоёв
-                    if (part.box && !onScreen(map, part.box, rx, ry, cv.width, cv.height, pad, offX, offY, fr)) return;
+                    if (part.box && !onScreen(map, part.box, rx, ry, cv.width, cv.height, padC, offX, offY, fr)) return;
 
                     for (let ri = 0; ri < part.rings.length; ri++) {
                         const pr = part.rings[ri];
@@ -4750,7 +4940,7 @@
                             if (rr) {
                                 // частина поза екраном або мікроскопічна на цьому
                                 // огляді — не малюємо і в градієнт не рахуємо
-                                if (rr[2] < -pad || rr[0] > cv.width + pad || rr[3] < -pad || rr[1] > cv.height + pad) continue;
+                                if (rr[2] < -padC || rr[0] > cv.width + padC || rr[3] < -padC || rr[1] > cv.height + padC) continue;
                                 if (rr[2] - rr[0] < tinyPx && rr[3] - rr[1] < tinyPx) continue;
                                 // кромку світіння на дрібних частинах не малюємо
                                 if (rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx) rim = false;
@@ -4763,21 +4953,41 @@
                         const rp = rim ? rimPath : null;
                         // кожна лінія — окремий підшлях: інакше канвас тягне
                         // прямі сполучні лінії між далекими частинами фронту
-                        for (let i = 0; i < len; i += 2) {
-                            const x = zx + f[i] * kx;
-                            const y = zy + f[i + 1] * ky;
-                            if (x < minX) minX = x;
-                            if (x > maxX) maxX = x;
-                            if (y < minY) minY = y;
-                            if (y > maxY) maxY = y;
-                            if (i === 0) {
-                                ctx.moveTo(x, y);
-                                if (rp) rp.moveTo(x, y);
-                            } else {
-                                ctx.lineTo(x, y);
-                                if (rp) rp.lineTo(x, y);
+                        if (tilted) {
+                            const n = projectRing(f, fr, rx, ry, offX, offY);
+                            if (n < 6) continue;
+                            for (let i = 0; i < n; i += 2) {
+                                const x = RING_OUT[i], y = RING_OUT[i + 1];
+                                if (x < minX) minX = x;
+                                if (x > maxX) maxX = x;
+                                if (y < minY) minY = y;
+                                if (y > maxY) maxY = y;
+                                if (i === 0) {
+                                    ctx.moveTo(x, y);
+                                    if (rp) rp.moveTo(x, y);
+                                } else {
+                                    ctx.lineTo(x, y);
+                                    if (rp) rp.lineTo(x, y);
+                                }
+                                pts++;
                             }
-                            pts++;
+                        } else {
+                            for (let i = 0; i < len; i += 2) {
+                                const x = zx + f[i] * kx;
+                                const y = zy + f[i + 1] * ky;
+                                if (x < minX) minX = x;
+                                if (x > maxX) maxX = x;
+                                if (y < minY) minY = y;
+                                if (y > maxY) maxY = y;
+                                if (i === 0) {
+                                    ctx.moveTo(x, y);
+                                    if (rp) rp.moveTo(x, y);
+                                } else {
+                                    ctx.lineTo(x, y);
+                                    if (rp) rp.lineTo(x, y);
+                                }
+                                pts++;
+                            }
                         }
                         ctx.closePath();
                         if (rp) rp.closePath();
@@ -4857,14 +5067,7 @@
 
         return {
             sync(ratio) { lastRatio = ratio; syncCanvases(ratio); forced = true; paint(); },
-            draw() { forced = true; schedule(); },
-            // 3D-режим: плоскі полотна ховаються на час нахилу й повертаються
-            // зі свіжим кадром, коли камера знову плоска
-            pause(on) {
-                paused = !!on;
-                if (host) host.style.display = paused ? 'none' : '';
-                if (!paused) { forced = true; schedule(); }
-            }
+            draw() { forced = true; schedule(); }
         };
     }
 
