@@ -321,11 +321,27 @@
         return el;
     }
 
+    // Шари, які належать шару даних і їх можна вибирати кліком. cs_/sh_/gw_/rh_
+    // сюди НЕ входять: у 3D тінь від зони лежить ПОНАД самою зоною, і без цього
+    // списку queryRenderedFeatures віддавав саме її — regex її не знав, тож клік
+    // у середину зони провалювався й вибір зникав. fe_/fr_ — об'ємні стіна й
+    // верхня грань, їх теж треба бачити як клікабельні.
+    const PICK_PREFIX = ['f', 'p', 'l', 'g', 'ig', 'xb', 'xs', 'xh', 'fe', 'fr'];
+
     function pickLayer(point) {
+        const ids = [];
+        Object.keys(state.layers).forEach(id => {
+            for (let i = 0; i < PICK_PREFIX.length; i++) {
+                const li = PICK_PREFIX[i] + '_' + id;
+                if (map.getLayer(li)) ids.push(li);
+            }
+        });
         let hits = [];
-        try { hits = map.queryRenderedFeatures(point); } catch (e) { return ''; }
+        try {
+            hits = ids.length ? map.queryRenderedFeatures(point, { layers: ids }) : map.queryRenderedFeatures(point);
+        } catch (e) { return ''; }
         for (const f of hits) {
-            const m = /^(?:f|p|l|g|ig|xb|xs|xh)_(.+)$/.exec(f.layer.id);
+            const m = /^(?:f|p|l|g|ig|xb|xs|xh|fe|fr)_(.+)$/.exec(f.layer.id);
             if (m && state.layers[m[1]]) return m[1];
         }
         return '';
@@ -2452,7 +2468,7 @@
     map = LT.createMap('map', { center: [37.6, 48.35], zoom: 7 });
     const mapTools = LT.installMapTools(map);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 120 }), 'bottom-right');
+    map.addControl(LT.scaleBar(map), 'bottom-right');
     LT.smoothZoom(map);
 
     LT.setLayerLabelDrag(map, (id, pos) => {
@@ -2680,16 +2696,31 @@
         });
 
         let hoverTimer = 0;
+        let hoverPt = null;
+        const hoverPick = () => {
+            hoverTimer = 0;
+            if (!hoverPt) return;
+            try { map.getCanvas().style.cursor = pickLayer(hoverPt) ? 'pointer' : ''; } catch (err) { }
+        };
+        // у 3D запит «що під курсором» — це кілька синхронних читань кадрів із
+        // GPU (readPixels), по п’ять на запит. Під час жесту це ламає кожен
+        // кадр, тому курсор наводимо лише коли камера стала: на moveend
+        const queueHover = pt => {
+            hoverPt = pt;
+            if (map.isMoving && map.isMoving()) return;
+            clearTimeout(hoverTimer);
+            hoverTimer = setTimeout(hoverPick, 90);
+        };
         map.on('mousemove', e => {
             if (pen) { penMove(e); return; }
             if (shape) { shapeMove(e); return; }
             if (arrow) { arrowMove(e); return; }
             if (tool) { toolHover(e); return; }
             if (e.originalEvent && e.originalEvent.buttons) return;
-            clearTimeout(hoverTimer);
-            hoverTimer = setTimeout(() => {
-                try { map.getCanvas().style.cursor = pickLayer(e.point) ? 'pointer' : ''; } catch (err) { }
-            }, 90);
+            queueHover(e.point);
+        });
+        map.on('moveend', () => {
+            if (hoverPt && !hoverTimer) hoverTimer = setTimeout(hoverPick, 60);
         });
 
         $('prev-date').addEventListener('click', () => shiftDate(-1));

@@ -2235,7 +2235,7 @@
         }
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 120 }), 'bottom-right');
+    map.addControl(LT.scaleBar(map), 'bottom-right');
     LT.smoothZoom(map);
 
     const UKRAINE_BOUNDS = [[22.0, 44.2], [40.6, 52.6]];

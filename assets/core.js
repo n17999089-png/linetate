@@ -1301,6 +1301,40 @@
             fadeDuration: dev.mobile ? 120 : 300
         }, options || {}));
 
+        // MapLibre 3.6 під рельєфом робить unproject через синхронне читання
+        // пікселя з GPU-буфера координат (readPixels), і робить це в
+        // конструкторі КОЖНОЇ події миші: mousemove/mouseover під жестом — це
+        // десятки читань на кадр з однією і тією ж камерою. За профайлом на
+        // реальній GPU це 97 % часу кадру в 3D (7 с з 7.2 с жесту). unproject
+        // чистий відносно камери, тому мемоізуємо за ключем камери+піксель:
+        // семантика та сама, читань стає ~1 на стан камери замість ~77/с.
+        (map => {
+            const raw = map.unproject.bind(map);
+            const cache = new Map();
+            const camKey = () => {
+                const c = map.getCenter();
+                return map.getZoom().toFixed(4) + ',' + c.lng.toFixed(6) + ',' + c.lat.toFixed(6) +
+                    ',' + map.getPitch().toFixed(2) + ',' + map.getBearing().toFixed(2);
+            };
+            // піксель приходить у двох формах: Pointer (inside lngLat of events)
+            // і масив [x, y] (усі наші виклики й рідні жести). ключ має бути за
+            // значенням, інакше всі масивні точки злипаються в один NaN-запис
+            map.unproject = pt => {
+                const x = typeof pt.x === 'number' ? pt.x : pt[0];
+                const y = typeof pt.y === 'number' ? pt.y : pt[1];
+                if (!Number.isFinite(x) || !Number.isFinite(y)) return raw(pt);
+                const k = camKey() + '|' + Math.round(x) + ',' + Math.round(y);
+                const v = cache.get(k);
+                if (v) return v;
+                const r = raw(pt);
+                if (cache.size > 96) cache.clear();
+                cache.set(k, r);
+                return r;
+            };
+            // новий тайл DEM змінює висоти: кеш скидаємо, не чекаючи зсуву камери
+            map.on('data', e => { if (e && e.sourceId === 'lt-dem') cache.clear(); });
+        })(map);
+
         const applyFitZoom = () => {
             try {
                 const z = fitZoomFor(map, MAP_BOUNDS);
@@ -1517,6 +1551,51 @@
         uk: '<svg viewBox="0 0 90 60" preserveAspectRatio="none"><rect width="90" height="30" fill="#0057b7"/><rect y="30" width="90" height="30" fill="#ffd700"/></svg>',
         en: '<svg viewBox="0 0 60 30" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><clipPath id="union-clip"><path d="M0 0h60v30H0z"/></clipPath><clipPath id="union-diagonal"><path d="M30 15h30v15zM30 15v15H0zM30 15H0V0zM30 15V0h30z"/></clipPath></defs><g clip-path="url(#union-clip)"><path d="M0 0h60v30H0z" fill="#012169"/><path d="m0 0 60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="m0 0 60 30m0-30L0 30" stroke="#c8102e" stroke-width="4" clip-path="url(#union-diagonal)"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#c8102e" stroke-width="6"/></g></svg>'
     };
+
+    // MapLibre 3.6: Marker з увімкненим рельєфом на кожен «move» озброює
+    // таймер, який синхронно витягує 1 піксель із GPU-буфера координат
+    // (gl.readPixels), щоб приглушити мітку за горизонтом. У 3D це ~20
+    // читань на секунду з двох міток, і за профайлом саме вони з’їдають
+    // 95 % головного потоку кадру (105 с на 24 с жесту; на телефоні
+    // зворотне читання ще дорожче). Горизонтальне приглушення нам не
+    // потрібне: мітки показуємо самі, тому вимикаємо рівно цей шлях.
+    (() => {
+        const M = window.maplibregl && maplibregl.Marker;
+        if (!M || !M.prototype) return;
+        try {
+            Object.defineProperty(M.prototype, '_opacityTimeout', {
+                configurable: true,
+                get: () => 1,
+                set: () => { }
+            });
+        } catch (e) { }
+    })();
+
+    // Лінійка масштабу власна: рідна ScaleControl на кожен «move» двічі
+    // кличе map.unproject, а під рельєфом unproject — синхронне читання
+    // GPU-буфера посеред кадру (за профайлом — найбільший шматок кадру в 3D).
+    // Метри на піксель — чиста математика з зума й широти, без GPU.
+    function scaleBar(map) {
+        const box = document.createElement('div');
+        box.className = 'maplibregl-ctrl maplibregl-ctrl-scale';
+        const paint = () => {
+            if (!box.isConnected) return;
+            const z = map.getZoom();
+            const lat = map.getCenter().lat;
+            const maxM = 120 * 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
+            const km = maxM > 999;
+            const v = km ? maxM / 1000 : maxM;
+            const e = Math.pow(10, String(Math.max(1, Math.floor(v))).length - 1);
+            let r = v / e;
+            r = r >= 10 ? 10 : r >= 5 ? 5 : r >= 3 ? 3 : r >= 2 ? 2 : 1;
+            const dist = e * r;
+            box.style.width = Math.min(120, 120 * (dist / v)) + 'px';
+            box.innerHTML = `${dist}&nbsp;${km ? 'км' : 'м'}`;
+        };
+        map.on('move', paint);
+        paint();
+        return { onAdd: () => box, onRemove: () => { } };
+    }
 
     /* ------------------------------ пиксельные подписи ------------------------------ */
 
@@ -2012,6 +2091,16 @@
         // друкуємо вісім за кадр — жест залишається рівним, а назва прилітає на
         // пів кадру пізніше за вже намальовану іконку, а не замість неї
         let pending = [], bakeAt = 0, bakeRaf = 0;
+
+        // Поява назви: прозорість нарощує smoothstep, іконка з назвою відкривається
+        // на 6 % довкола ВЛАСНОЇ координати — ніякого зсуву, бо зміщена під час
+        // анімації назва читається як баг, а не як полірування. Запис живе в anim,
+        // поки назва в кадрі: та, що не вилітала, не відтворює анімацію повторно,
+        // а повернення з-за краю кадру починає її знову. Таймер рухається стіною
+        // (performance.now), тому просідання кадру не пропускає анімацію.
+        const PLACE_IN_MS = 260;
+        const anim = new Map();
+        let animEpoch = 0, animRaf = 0;
         function kickBake() {
             if (bakeRaf) return;
             bakeRaf = requestAnimationFrame(function bakeMore() {
@@ -2034,6 +2123,8 @@
 
         function paint() {
             const s = syncCanvas();
+            const now = performance.now();
+            let live = false;
             ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
             ctx.clearRect(0, 0, s.x, s.y);
 
@@ -2048,16 +2139,39 @@
                 const it = items[i];
                 if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
                 const sp = it.sp;
+                let a = 1;
+                const an = it.an;
+                if (an) {
+                    const p = (now - an.born) / PLACE_IN_MS;
+                    if (p < 1) { a = fxEase(p < 0 ? 0 : p); live = true; }
+                }
+                const k = a === 1 ? 1 : 0.94 + 0.06 * a;
+                const grow = a !== 1;
+                // у переході початок координат переносимо в саму точку міста:
+                // тож scale ростить підпис навколо неї, а не зсуває її
+                if (grow) {
+                    ctx.save();
+                    ctx.globalAlpha = a;
+                    ctx.translate(it.x, it.y);
+                    ctx.scale(k, k);
+                }
+                const ox = grow ? 0 : it.x, oy = grow ? 0 : it.y;
                 if (!sp) {
                     // підпис ще в черзі на друк: іконка точно на координаті вже
                     // є, тому назва домальовується, а не з'являється з нічого
-                    if (!it.dot) continue;
-                    const b = bareIcon(it.kind, it.rank);
-                    ctx.drawImage(b.cv, it.x - b.size / 2, it.y - b.size / 2, b.size, b.size);
-                    continue;
+                    if (it.dot) {
+                        const b = bareIcon(it.kind, it.rank);
+                        ctx.drawImage(b.cv, ox - b.size / 2, oy - b.size / 2, b.size, b.size);
+                    }
+                } else {
+                    ctx.drawImage(sp.cv, ox + sp.x, oy + sp.y, sp.w, sp.h);
                 }
-                ctx.drawImage(sp.cv, it.x + sp.x, it.y + sp.y, sp.w, sp.h);
+                if (grow) ctx.restore();
             }
+            if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; }
+            // домальовуємо лише доки є хоч одна назва в переході: далі полотно
+            // стоїть, а не гріє кадр у холста
+            if (live) animRaf = requestAnimationFrame(() => { animRaf = 0; paint(); });
         }
 
         let lastSig = '';
@@ -2077,6 +2191,7 @@
             lastSig = sig;
 
             const prevItems = items;
+            animEpoch++;
             items = [];
             extraDots = [];
             pending = [];
@@ -2185,6 +2300,12 @@
                     name: it.name, rank: it.rank, cap: it.cap, kind: it.kind,
                     x: px, y: py, w: w, h: h, dot: it.dot
                 };
+                // назва, яка лишилась у кадрі, зберігає вже повну прозорість;
+                // нова (або така, що повернулась) народжується просто зараз
+                let an = anim.get(item.key);
+                if (!an) { an = { born: performance.now(), epoch: animEpoch }; anim.set(item.key, an); }
+                an.epoch = animEpoch;
+                item.an = an;
                 item.sp = peekSprite(item);
                 if (!item.sp) {
                     if (bakes < bakeCap) { item.sp = bakeSprite(item); bakes++; }
@@ -2193,6 +2314,9 @@
                 items.push(item);
             }
             if (pending.length) kickBake();
+            // чого немає в цьому кадрі — те вилетіло за край: запис прибрати, щоб
+            // повернення міста почало появу заново, а не вилетіло вже готовим
+            anim.forEach((v, key) => { if (v.epoch !== animEpoch) anim.delete(key); });
             // seam для браузерних тестів: який набір назв вийшов після перебудови.
             // у продакшні такої глобальної змінної немає, тому рядок коштує один
             // пошук властивості
@@ -2324,6 +2448,7 @@
                 clearTimeout(timer);
                 clearTimeout(settleT);
                 if (bakeRaf) cancelAnimationFrame(bakeRaf);
+                if (animRaf) cancelAnimationFrame(animRaf);
                 if (cv.parentNode) cv.parentNode.removeChild(cv);
                 placeEngines.delete(map);
             }
@@ -3189,7 +3314,7 @@
     // від запеченої більш ніж у 1.3 раза: стрибок на екрані непомітний.
     // таймер перезапускаємо на кожну подію зуму, а коли мапа досі рухається —
     // перебудову не робимо зовсім: один кадр на повільному пристрої триває
-    // секунду, тож навіть debounce спливав би між кроками жести. добудовує
+    // секунду, тож навіть debounce спливав би між кроками жеста. добудовує
     // moveend, який приходить рівно раз на кінець
     function queueZone3d(map, force) {
         if (!map._lt3d) return;
@@ -3393,8 +3518,71 @@
         setRelief(map, true);
     }
 
-    // setTerrain чіпає стиль, тому міняємо екстраполяцію лише коли різниця
-    // реально помітна, а не на кожен кадр жесту
+    // MapLibre 3.6.2 дістає точку під курсором з GPU: Terrain.pointCoordinate
+    // читає 1 піксель з coords-буфера (readPixels), а це примусова синхронізація
+    // конвеєра — 50 мс на подію миші, 7.3 с з 11.6 с жесту в 3D. По CPU той самий
+    // перетин променя з рельєфом шукається не за висотою, а за екранним зсувом:
+    // те u, за якого вершина рельєфу проектується ровно в піксель e. Перетин
+    // буває й за межами плоскої точки (u > 1), тому інтервал розширюємо, а
+    // наприкінці перевіряємо власний round-trip — не зійшлося, питаємо GPU.
+    function cpuTerrainPick(map) {
+        const tr = map.terrain;
+        if (!tr || tr._ltCpuPick || typeof tr.getElevationForLngLatZoom !== 'function') return;
+        const t = map.transform;
+        const gpu = tr.pointCoordinate;
+        let proto = null;
+        const coordAt = (x, y, z) => {
+            if (!proto) proto = Object.getPrototypeOf(t.pointCoordinate({ x: 1, y: 1 }));
+            const c = Object.create(proto);
+            c.x = x; c.y = y; c.z = z;
+            return c;
+        };
+        const st = tr._ltPickStats = { cpu: 0, nulls: 0, back: 0 };
+        tr.pointCoordinate = function (e) {
+            if (!e || !Number.isFinite(e.x) || !Number.isFinite(e.y)) { st.back++; return gpu.call(tr, e); }
+            if (e.x < 0 || e.y < 0 || e.x >= t.width || e.y >= t.height) { st.nulls++; return null; }
+            if (!(t.pitch >= 1)) { st.nulls++; return null; }
+            const c = t.pointCoordinate(t.getCameraPoint());
+            const f = t.pointCoordinate(e);
+            if (!c || !f) { st.back++; return gpu.call(tr, e); }
+            const dx = f.x - c.x, dy = f.y - c.y;
+            const dAt = (u) => {
+                const ll = coordAt(c.x + dx * u, c.y + dy * u, 0).toLngLat();
+                const p = t.locationPoint(ll, tr);
+                if (!p || !Number.isFinite(p.y)) return 1e9;
+                return p.y - e.y;
+            };
+            if (!(dAt(0) > 0)) { st.back++; return gpu.call(tr, e); }
+            let hi = 1;
+            let dh = dAt(hi);
+            for (let g = 0; g < 3 && !(dh < 0); g++) { hi += 0.35; dh = dAt(hi); }
+            if (!(dh < 0)) { st.nulls++; return null; }
+            let lo = 0;
+            for (let k = 1; k <= 12; k++) {
+                const u = hi * k / 12;
+                if (dAt(u) < 0) { hi = u; break; }
+                lo = u;
+            }
+            for (let it = 0; it < 10; it++) {
+                const mid = (lo + hi) / 2;
+                if (dAt(mid) > 0) lo = mid; else hi = mid;
+            }
+            const u2 = (lo + hi) / 2;
+            const x = c.x + dx * u2, y = c.y + dy * u2;
+            const ll = coordAt(x, y, 0).toLngLat();
+            const h = tr.getElevationForLngLatZoom(ll, t.tileZoom);
+            const chk = t.locationPoint(ll, tr);
+            if (!chk || !Number.isFinite(chk.x) || Math.hypot(chk.x - e.x, chk.y - e.y) > 20) {
+                st.back++; return gpu.call(tr, e);
+            }
+            st.cpu++;
+            return coordAt(x, y, Number.isFinite(h) ? h : 0);
+        };
+        tr._ltCpuPick = true;
+    }
+
+    // setTerrain чіпає стиль, тому екстраполяцію правимо лише коли різниця помітна
+
     function applyReliefEx(map, force) {
         const s = zone3d.get(map);
         const p = s && s.relief;
@@ -3402,7 +3590,15 @@
         const e = Math.max(0.001, reliefEx(p, map.getZoom()));
         if (!force && Math.abs(e - s.ex) < 0.05) return;
         s.ex = e;
-        try { map.setTerrain({ source: 'lt-dem', exaggeration: e }); } catch (err) { }
+        const tr = map.terrain;
+        if (tr && tr.options && tr.options.source === 'lt-dem' && Number.isFinite(e)) {
+            tr.options.exaggeration = e;
+            tr.exaggeration = e;
+            map.triggerRepaint();
+        } else {
+            try { map.setTerrain({ source: 'lt-dem', exaggeration: e }); } catch (err) { }
+        }
+        cpuTerrainPick(map);
         if (map.getLayer('lt-relief')) {
             try {
                 // підлога 0.55: гори зникають із кадра разом із екстраполяцією
@@ -4288,11 +4484,92 @@
     // h — висота, на якій лежить заливка: верхня грань екструзії зони. Flat-рамка
     // задає екран у css-пікселях, полотна більші за в'юпорт — далі ті самі
     // rx/ry/offX/offY, що й для плоского випадку.
-    const FR = { ws: 0, px0: 0, py0: 0, m: null, c0: 0, c1: 0, cw: 0, persp: true };
+    const FR = { ws: 0, px0: 0, py0: 0, m: null, c0: 0, c1: 0, cw: 0, d0: 0, d1: 0, dw: 0, a8: 0, a9: 0, a11: 0, persp: true };
 
     // w прямо біля площини near дає виворітну координату; нижче цієї межі
     // вершину вважаємо «за камерою» і ріжемо площиною, а не відкидаємо
     const NEAR = 1e-4;
+
+    // Висоти рельєфу для вершин під нахилом.
+    //
+    // map.project під рельєфом сам дістає висоту DEM-тайла й ставить точку на
+    // схилі — так рахуються підписи міст. Наша швидка рамка знала лише сталу
+    // висоту стіни, тому над пагорбом заливка й об'ємний контур «злипали» зі
+    // своїх стін і з назв на 6–15 px.
+    //
+    // Одне читання DEM коштує ~2.2 мкс (виміряно в браузері: 20 000 вершин =
+    // 44 мс), а кадр під нахилом — близько 3 000 вершин, тобто 6.6 мс щокадру.
+    // Тому висоти кешуються поряд із меркатор-масивом кільця й перераховуються
+    // лише коли тайли рельєфу справді дозавантажились. Бюджет на кадр тримає
+    // перебудову без сплеску: кільце без кешу цей кадр іде по сталій висоті
+    // (як раніше), а частково заповнене — по свіжих вершинах і по торішніх
+    // висотах решти, де різниця одиниці метрів.
+    const demCache = new WeakMap();
+    const DEM = { map: null, on: false, ep: -1, gen: 1, busy: 0, ex: 1, elev: 0, left: 0 };
+    let demScratch = null;
+
+    function demSync(map) {
+        const tr = map.terrain, t = map.transform;
+        if (!tr || !t || typeof tr.getElevationForLngLatZoom !== 'function') { DEM.on = false; return false; }
+        if (DEM.map !== map) {
+            DEM.map = map;
+            const isDem = ev => !!(ev && (ev.sourceId || ev.sourceID) === 'lt-dem');
+            map.on('dataloading', ev => { if (isDem(ev)) DEM.busy = 1; });
+            map.on('data', ev => { if (isDem(ev)) DEM.busy = 1; });
+            // нові тайли = нова висотна сітка. оновлюємо кеш лише коли джерело
+            // втихло: посеред завантаження рушій віддає нулі за відсутні тайли,
+            // і зона сіла б на рівень моря
+            map.on('idle', () => { if (DEM.busy) { DEM.busy = 0; DEM.gen++; } });
+        }
+        DEM.on = true;
+        DEM.ep = DEM.gen;
+        DEM.ex = typeof tr.exaggeration === 'number' && tr.exaggeration > 1e-6 ? tr.exaggeration : 1;
+        DEM.elev = t.elevation || 0;
+        return true;
+    }
+
+    // плаский масив меркатор-вершин → висоти рельєфу в МЕТРАХ (без множника
+    // підняття: той змінюється на кожен крок зума, а перераховувати через нього
+    // весь кеш — зайве). null — кеш ще порожній, кільце йде по сталій висоті.
+    function ringDem(map, f) {
+        let hit = demCache.get(f);
+        if (!hit) {
+            hit = { ep: -1, wip: -1, at: 0, bad: 0, m: new Float64Array(f.length >> 1) };
+            demCache.set(f, hit);
+        }
+        if (hit.bad) return null;
+        if (hit.ep === DEM.ep) return hit.m;
+        if (hit.wip !== DEM.ep) {
+            hit.wip = DEM.ep;
+            hit.at = 0;
+            // перший захід: ще не заповнені вершини не повинні падати на нуль,
+            // бо нуль — це рівень моря, а не «без поправки». стартуємо з
+            // висоти камери: поправка для таких вершин дорівнює нулю
+            if (hit.ep < 0) hit.m.fill(DEM.elev / DEM.ex);
+        }
+        if (DEM.left > 0) {
+            const tr = map.terrain, t = map.transform;
+            const LL = window.maplibregl && maplibregl.LngLat;
+            if (!LL) { hit.bad = 1; return null; }
+            if (!demScratch) demScratch = new LL(0, 0);
+            const m = hit.m, n = m.length, k = 1 / DEM.ex;
+            try {
+                for (; hit.at < n && DEM.left > 0; hit.at++) {
+                    const j = hit.at * 2;
+                    demScratch.lng = f[j] * 360 - 180;
+                    demScratch.lat = 57.29577951308232 * Math.atan(Math.sinh(Math.PI * (1 - 2 * f[j + 1])));
+                    m[hit.at] = tr.getElevationForLngLatZoom(demScratch, t.tileZoom) * k;
+                    DEM.left--;
+                }
+            } catch (e) {
+                // позамежна широта або збій тайла: кільце лишаємо без рельєфу
+                hit.bad = 1;
+                return null;
+            }
+            if (hit.at >= n) hit.ep = DEM.ep;
+        }
+        return hit.at > 0 ? hit.m : null;
+    }
 
     function tiltFrame(map, h) {
         const t = map && map.transform;
@@ -4303,6 +4580,19 @@
         FR.c0 = m[8] * h + m[12];
         FR.c1 = m[9] * h + m[13];
         FR.cw = m[11] * h + m[15];
+        if (DEM.on) {
+            // те саме, але з винесеною висотою камери: далі до кожної вершини
+            // додається лише її власний перевищення рельєфу
+            FR.a8 = m[8] * DEM.ex;
+            FR.a9 = m[9] * DEM.ex;
+            FR.a11 = m[11] * DEM.ex;
+            FR.d0 = FR.c0 - m[8] * DEM.elev;
+            FR.d1 = FR.c1 - m[9] * DEM.elev;
+            FR.dw = FR.cw - m[11] * DEM.elev;
+        } else {
+            FR.a8 = 0; FR.a9 = 0; FR.a11 = 0;
+            FR.d0 = FR.c0; FR.d1 = FR.c1; FR.dw = FR.cw;
+        }
         return FR;
     }
 
@@ -4311,24 +4601,31 @@
     // інакше одна вершина «за камерою» перевертає весь контур зони і по
     // екрані йде гігантський сміттєвий многокутник. Пишемо у спільний буфер:
     // кадр не плодить масив на кожне кільце
+    //
+    // dem — висоти рельєфу цього кільця в МЕТРАХ (null, якщо кеш ще не готовий
+    // або рельєфу немає): тоді рамка лишається на сталій висоті стіни, як раніше
     let RING_OUT = new Float64Array(8192);
 
-    function projectRing(f, fr, rx, ry, ox, oy) {
+    function projectRing(f, fr, rx, ry, ox, oy, dem) {
         const len = f.length;
         if (RING_OUT.length < len + 8) RING_OUT = new Float64Array((len + 8) * 2);
         const m = fr.m;
+        const c0 = dem ? fr.d0 : fr.c0, c1 = dem ? fr.d1 : fr.c1, cw = dem ? fr.dw : fr.cw;
+        const a8 = dem ? fr.a8 : 0, a9 = dem ? fr.a9 : 0, a11 = dem ? fr.a11 : 0;
         let n = 0;
         // кільце замкнене, тому попередня вершина — остання
         let pX = f[len - 2] * fr.ws, pY = f[len - 1] * fr.ws;
-        let ax = m[0] * pX + m[4] * pY + fr.c0;
-        let ay = m[1] * pX + m[5] * pY + fr.c1;
-        let aw = m[3] * pX + m[7] * pY + fr.cw;
+        let pd = dem ? dem[(len - 2) >> 1] : 0;
+        let ax = m[0] * pX + m[4] * pY + c0 + a8 * pd;
+        let ay = m[1] * pX + m[5] * pY + c1 + a9 * pd;
+        let aw = m[3] * pX + m[7] * pY + cw + a11 * pd;
         let inA = aw > NEAR;
         for (let i = 0; i < len; i += 2) {
             const X = f[i] * fr.ws, Y = f[i + 1] * fr.ws;
-            const bx = m[0] * X + m[4] * Y + fr.c0;
-            const by = m[1] * X + m[5] * Y + fr.c1;
-            const bw = m[3] * X + m[7] * Y + fr.cw;
+            const d = dem ? dem[i >> 1] : 0;
+            const bx = m[0] * X + m[4] * Y + c0 + a8 * d;
+            const by = m[1] * X + m[5] * Y + c1 + a9 * d;
+            const bw = m[3] * X + m[7] * Y + cw + a11 * d;
             const inB = bw > NEAR && bw < 1e12;
             if (inB) {
                 if (!inA) {
@@ -4820,7 +5117,7 @@
         // Головний шлях кадру: поки камера рухається, полотно перемальовується
         // щоразу з тією самою геометрією. Вершини після culling коштують копійки
         // (дві операції на вершину з готового меркатор-масиву), зате контур
-        // приклеєний до мапи — без розтягнутоїBitmap-рамки та її «повзучості».
+        // приклеєний до мапи — без розтягнутої Bitmap-рамки та її «повзучості».
         // Дешевий шлях (трансформація замість фарби) допускається лише далеко,
         // де вершин справді багато; на масштабі міста правило — свіжа геометрія
         // кожного кадру, навіть ціною кадрів.
@@ -5019,6 +5316,12 @@
             const zoom = map.getZoom();
             const frame0 = tilted ? null : camFrame(map);
             if (!tilted && !frame0) { followReset(); return; }
+            // висоти рельєфу: кеш кілець оновлюється з бюджетом на кадр. Читання
+            // DEM — ~2.2 мкс на вершину, тож 3–8 тис. це 7–18 мс і здебільшого
+            // вистачає зійтися за один кадр; надлишок добирається наступним
+            if (tilted) {
+                if (demSync(map)) DEM.left = isMobile() ? 3000 : 8000;
+            } else DEM.on = false;
             const key = cameraKey();
             if (!forced && key === camKey) return;
             camKey = key;
@@ -5114,7 +5417,8 @@
                         // кожна лінія — окремий підшлях: інакше канвас тягне
                         // прямі сполучні лінії між далекими частинами фронту
                         if (tilted) {
-                            const n = projectRing(f, fr, rx, ry, offX, offY);
+                            const dm = DEM.on ? ringDem(map, f) : null;
+                            const n = projectRing(f, fr, rx, ry, offX, offY, dm);
                             if (n < 6) continue;
                             for (let i = 0; i < n; i += 2) {
                                 const x = RING_OUT[i], y = RING_OUT[i + 1];
@@ -5184,6 +5488,12 @@
                 }
             });
 
+            // рельєф довантажується порціями: хвіст кілець добирається тільки
+            // коли камера спокійна. під час жеста просити додатковий кадр
+            // марно — наступний кадр і так перемальовується, а по три тисячі
+            // вершин на телефоні давали ланцюг зайвих повних перемальовок
+            if (tilted && !moving && DEM.left <= 0) { forced = true; schedule(); }
+
             // склеюємо шари в один композитний шар (звичайне змішування —
             // асоціативне, картинка виходить піксель-в-піксель та сама)
             if (flatOn && flat) {
@@ -5224,6 +5534,16 @@
             forced = true;
             paint();
         });
+
+        // вимірювальний шов: «зона лежить на рельєфі» має бути числом із
+        // браузера, а не словами. у продакшні такої глобальної немає, тому
+        // рядок коштує одну перевірку ініціалізації
+        if (window.__ltDemDebug) {
+            window.__ltDemDebug({
+                DEM: DEM, tiltFrame: tiltFrame, projectRing: projectRing,
+                ringDem: ringDem, out: () => RING_OUT
+            });
+        }
 
         return {
             sync(ratio) { lastRatio = ratio; syncCanvases(ratio); forced = true; paint(); },
@@ -5490,6 +5810,7 @@
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,
         syncLayerLabel, setLayerLabelDrag, set3D,
         reliefProfile, reliefArm, zone3dState: map => zone3d.get(map), pxToM, zone3dBudget,
+        scaleBar,
         blendEngine, featBox, onScreen, bakeParts, warmGeometry, lodTols,
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,

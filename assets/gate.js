@@ -12,9 +12,9 @@
     const SALT = ['f401ef53', '29b7b000'];
     const FILES = [
         '../assets/regions.js?v=23',
-        '../assets/core.js?v=84',
+        '../assets/core.js?v=85',
         '../assets/map-tools.js?v=40',
-        '../assets/admin.js?v=41'
+        '../assets/admin.js?v=42'
     ];
 
     function rotr(x, n) {
