@@ -115,7 +115,8 @@
             bytes += v.length + k.length;
             if (k.indexOf(PREFIX) === 0) dates++;
         });
-        return { kb: Math.round(bytes / 1024), dates };
+        // 'idb' — документи дат у розширеному сховищі й квота localStorage більше не заважає
+        return { kb: Math.round(bytes / 1024), dates, tier: db ? 'idb' : 'local' };
     }
 
     // при переповненні переписуємо всі збережені дати компактніше й пробуємо знову
@@ -261,6 +262,7 @@
             'file.optimized': 'ОПТИМІЗОВАНО · ЗВІЛЬНЕНО {kb} KB',
             'file.optimizedNone': 'ПАМ’ЯТЬ ВЖЕ ОПТИМІЗОВАНА · {kb} KB · {dates} дат',
             'file.usage': 'У пам’яті браузера: {kb} KB · {dates} дат',
+            'file.usageIdb': 'Розширене сховище: {kb} KB · {dates} дат · межі знято',
             'views.title': 'Перегляди карти', 'views.device': 'Цей пристрій', 'views.public': 'Усі пристрої',
             'views.total': 'Відкриттів', 'views.days': 'Днів із переглядом', 'views.today': 'Сьогодні',
             'views.last': 'Останній перегляд', 'views.none': 'Ще не було', 'views.byDay': 'По днях',
@@ -428,6 +430,7 @@
             'file.optimized': 'OPTIMISED · FREED {kb} KB',
             'file.optimizedNone': 'STORAGE ALREADY OPTIMISED · {kb} KB · {dates} dates',
             'file.usage': 'In browser storage: {kb} KB · {dates} dates',
+            'file.usageIdb': 'Extended storage: {kb} KB · {dates} dates · no limit',
             'views.title': 'Map views', 'views.device': 'This device', 'views.public': 'All devices',
             'views.total': 'Opens', 'views.days': 'Days with views', 'views.today': 'Today',
             'views.last': 'Last view', 'views.none': 'Nothing yet', 'views.byDay': 'By day',
@@ -650,20 +653,242 @@
 
     /* ------------------------------ хранилище ------------------------------ */
 
-    // доступ к localStorage может кидать SecurityError (Opera GX с запретом cookie/данных сайтов)
-    const mem = {
-        get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-        set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } },
-        del(k) { try { localStorage.removeItem(k); } catch (e) { } },
-        keys() {
+    /* ------------------------------ другий рівень: IndexedDB ------------------------------ */
+
+    // Квоти localStorage (≈10 МБ) вистачає на 6-7 дат, а без вільного місця не можна
+    // створити навіть карту на завтра. IndexedDB має сотні мегабайт, тому великі документи
+    // дат живуть у синхронному пам'ятному дзеркалі й зливаються туди; дрібні ключі лишаються в localStorage.
+    const IDB_NAME = 'LINETATE';
+    const IDB_STORE = 'docs';
+    const isDateKey = k => k.indexOf(PREFIX) === 0 && DATE_RE.test(k.slice(PREFIX.length));
+
+    // savedAt стоїть другим полем у кожному записаному документі, тож свіжість видно з голови рядка
+    // без JSON.parse мегабайтного GeoJSON
+    function headSavedAt(raw) {
+        const m = /^\{"date":"\d{4}-\d{2}-\d{2}","savedAt":(\d+)/.exec(raw || '');
+        return m ? Number(m[1]) : 0;
+    }
+
+    const docs = new Map();      // ключ → рядок документа (синхронний рівень)
+    const dirty = new Set();     // ще не злиті в IndexedDB записи
+    const gone = new Set();      // ще не злиті в IndexedDB видалення
+    let db = null;               // IDBDatabase, коли сховище відкрилося
+    let dbDead = false;          // IndexedDB недоступний — працюємо як раніше, лише через localStorage
+    let hydration = null;        // один запущений міграційний прохід
+    let flushTimer = null;
+
+    function openIdb() {
+        return new Promise(resolve => {
+            if (typeof indexedDB === 'undefined' || !indexedDB) { dbDead = true; return resolve(null); }
+            let req;
+            try { req = indexedDB.open(IDB_NAME, 1); } catch (e) { dbDead = true; return resolve(null); }
+            let settled = false;
+            req.onupgradeneeded = () => {
+                const d = req.result;
+                if (!d.objectStoreNames.contains(IDB_STORE)) d.createObjectStore(IDB_STORE, { keyPath: 'k' });
+            };
+            req.onsuccess = () => {
+                const d = req.result;
+                d.onversionchange = () => { try { d.close(); } catch (e) { } };
+                // база могла відкритися вже після того, як старт карти втопився й пішов на localStorage
+                if (!dbDead && !db) db = d;
+                settled = true;
+                resolve(d);
+            };
+            req.onerror = () => { dbDead = true; settled = true; resolve(null); };
+            req.onblocked = () => { dbDead = true; settled = true; resolve(null); };
+            // інша вкладка тримає базу — старт карти не повинен чекати нескінченно
+            setTimeout(() => { if (!settled) resolve(null); }, 4000);
+        });
+    }
+
+    function idbReadAll(d) {
+        return new Promise(resolve => {
+            if (!d) return resolve(null);
+            const rows = [];
             try {
-                const out = [];
+                const tx = d.transaction(IDB_STORE, 'readonly');
+                tx.oncomplete = () => resolve(rows);
+                tx.onerror = tx.onabort = () => resolve(null);
+                tx.objectStore(IDB_STORE).openCursor().onsuccess = ev => {
+                    const cur = ev.target.result;
+                    if (cur) { rows.push(cur.value); cur.continue(); }
+                };
+            } catch (e) { resolve(null); }
+        });
+    }
+
+    function idbWrite(d, mode, keys, rows) {
+        return new Promise(resolve => {
+            if (!d || !keys.length) return resolve(true);
+            try {
+                const tx = d.transaction(IDB_STORE, 'readwrite');
+                const box = tx.objectStore(IDB_STORE);
+                if (mode === 'put') keys.forEach((k, i) => box.put(rows[i]));
+                else keys.forEach(k => box.delete(k));
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = tx.onabort = () => resolve(false);
+            } catch (e) { resolve(false); }
+        });
+    }
+
+    function dropLocal(k) {
+        try { localStorage.removeItem(k); } catch (e) { }
+    }
+
+    function scheduleFlush() {
+        if (flushTimer || !db) return;
+        flushTimer = setTimeout(flushNow, 250);
+    }
+
+    function flushNow() {
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+        if (!db) return Promise.resolve(false);
+        const keys = Array.from(dirty).filter(k => docs.has(k));
+        const rows = keys.map(k => ({ k, savedAt: headSavedAt(docs.get(k)), v: docs.get(k) }));
+        const dels = Array.from(gone);
+        keys.forEach(k => dirty.delete(k));
+        dels.forEach(k => gone.delete(k));
+        if (!keys.length && !dels.length) return Promise.resolve(true);
+        return Promise.all([idbWrite(db, 'put', keys, rows), idbWrite(db, 'del', dels)])
+            .then(ok => {
+                const good = !!(ok[0] && ok[1]);
+                // стару квоту звільняємо лише коли запис у базу підтверджено
+                if (good) keys.forEach(dropLocal);
+                else { keys.forEach(k => dirty.add(k)); dels.forEach(k => gone.add(k)); }
+                return good;
+            })
+            .catch(() => {
+                keys.forEach(k => dirty.add(k));
+                dels.forEach(k => gone.add(k));
+                return false;
+            });
+    }
+
+    if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushNow(); });
+        window.addEventListener('pagehide', flushNow);
+    }
+
+    // старі локальні копії не стираємо, доки запис у IndexedDB підтверджено; свіжіша версія завжди перемагає
+    async function hydrateStorage() {
+        const d = await openIdb();
+        const localKeys = [];
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (isDateKey(k)) localKeys.push(k);
+            }
+        } catch (e) { }
+        const local = [];
+        localKeys.forEach(k => {
+            let raw = null;
+            try { raw = localStorage.getItem(k); } catch (e) { }
+            if (!raw) return;
+            if (!docs.has(k)) docs.set(k, raw);
+            local.push({ k, savedAt: headSavedAt(raw), v: raw });
+        });
+        if (!d) return false;
+        db = d;
+        const rows = await idbReadAll(d);
+        if (!rows) { db = null; dbDead = true; return false; }
+        const held = new Map();
+        rows.forEach(r => {
+            if (r && isDateKey(r.k) && typeof r.v === 'string') held.set(r.k, r);
+        });
+        held.forEach((r, k) => docs.set(k, r.v));
+        const carry = local.filter(r => {
+            const prev = held.get(r.k);
+            if (prev && (Number(prev.savedAt) || 0) >= r.savedAt) { dropLocal(r.k); return false; }
+            docs.set(r.k, r.v);   // локальна копія свіжіша — дзеркало в пам'яті має тримати саме її
+            return true;
+        });
+        if (!carry.length) return true;
+        if (await idbWrite(d, 'put', carry.map(r => r.k), carry)) carry.forEach(r => dropLocal(r.k));
+        else carry.forEach(r => { dirty.add(r.k); });
+        scheduleFlush();
+        return true;
+    }
+
+    function storageInit() {
+        if (!hydration) hydration = hydrateStorage().then(flushNow, () => false);
+        return hydration;
+    }
+
+    /* Інша вкладка (редактор) записала документ у своє дзеркало — ця вкладка бачить лише
+       зміну службового ключа, тож документи треба перечитати з IndexedDB. */
+    const mirrorListeners = [];
+    let pulling = false;
+
+    function onMirrorUpdate(fn) {
+        if (typeof fn === 'function') mirrorListeners.push(fn);
+    }
+
+    async function pullMirror(force) {
+        if (!db || pulling) return false;
+        pulling = true;
+        const rows = await idbReadAll(db);
+        pulling = false;
+        if (!rows) return false;
+        let changed = false;
+        rows.forEach(r => {
+            if (!r || !isDateKey(r.k) || typeof r.v !== 'string') return;
+            if (dirty.has(r.k)) return;   // незлита правка цієї вкладки свіжіша за будь-яку копію з бази
+            const mine = docs.get(r.k);
+            if (mine === r.v) return;
+            if (mine && !force && (Number(r.savedAt) || headSavedAt(r.v)) <= headSavedAt(mine)) return;
+            docs.set(r.k, r.v);
+            changed = true;
+        });
+        if (changed) {
+            metaCache.clear();
+            metaStamp = '';
+            mirrorListeners.forEach(fn => { try { fn(); } catch (e) { } });
+        }
+        return changed;
+    }
+
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+        let pullTimer = null;
+        window.addEventListener('storage', () => {
+            // запис сусідньої вкладки ще зливається у базу — тягнемо з затримкою, однократно на сплеск подій
+            if (pullTimer) clearTimeout(pullTimer);
+            pullTimer = setTimeout(() => { pullTimer = null; pullMirror(false); }, 700);
+        });
+    }
+
+    // доступ до localStorage може кидати SecurityError (Opera GX із забороною cookie/даних сайтів)
+    const mem = {
+        get(k) {
+            if (isDateKey(k) && docs.has(k)) return docs.get(k);
+            try { return localStorage.getItem(k); } catch (e) { return null; }
+        },
+        set(k, v) {
+            if (isDateKey(k)) {
+                docs.set(k, v);
+                if (db) { dirty.add(k); scheduleFlush(); return true; }
+            }
+            try { localStorage.setItem(k, v); return true; } catch (e) { return false; }
+        },
+        del(k) {
+            if (isDateKey(k)) {
+                docs.delete(k);
+                dirty.delete(k);
+                if (db) { gone.add(k); scheduleFlush(); }
+            }
+            dropLocal(k);
+        },
+        keys() {
+            const out = [];
+            const seen = new Set();
+            try {
                 for (let i = 0; i < localStorage.length; i++) {
                     const k = localStorage.key(i);
-                    if (k) out.push(k);
+                    if (k && !seen.has(k)) { seen.add(k); out.push(k); }
                 }
-                return out;
-            } catch (e) { return []; }
+            } catch (e) { return out; }
+            docs.forEach((v, k) => { if (!seen.has(k)) { seen.add(k); out.push(k); } });
+            return out;
         }
     };
 
@@ -730,6 +955,8 @@
     let remoteVersion = 0;
 
     async function loadRemoteData(url) {
+        // сховище відкривається асинхронно, а всі читання дат — синхронні, тож старт чекає саме тут
+        await storageInit();
         if (!url) return 0;
         try {
             const sep = url.indexOf('?') >= 0 ? '&' : '?';
@@ -3430,23 +3657,26 @@
     const RELIEF_BASE = ['lt-bg', 'hybrid-sat', 'hybrid-roads'];
 
     // стіна зони на z=13 — це 307 м, а пагорби Донбасу до ~360 м: без згасання
-    // блок просто тоне в рельєфі. тому екстраполяція йде до нуля заздалегідь,
-    // і на близькому зумі мапа знову плоска — там користувачеві потрібен
-    // точний контур, а не гори.
+    // блок просто тоне в рельєфі. тому підняття зменшуємо заздалегідь —
+    // на близькому зумі користувачеві потрібен точний контур, а не гори.
+    // але зводити в нуль більше не може: тоді на z≥13 мапа стає пласкою й
+    // зони лежать на «папері», рельєф крізь них не читається взагалі. тому
+    // залишаємо підлогу підняття, на якій хребти лишаються, але вже не
+    // заважають читатися межі.
     // тінь від нахилу (hillshade) геометрію не зсуває взагалі, тож її сила
     // окрема величина й згасати разом із висотою не повинна: саме вона
     // показує хребти там, де підняття ще не варте пікселя. 0.42 із 20 % кадра
     // давало різницю в 32 відтінки — на супутнику це «нічого не видно»
     function reliefProfile() {
         const dev = deviceState || detectDevice();
-        if (!dev.mobile) return { maxzoom: 11, ex: 1.35, hill: 0.85, full: 11, zero: 13.2 };
-        if (lowEndDevice()) return { maxzoom: 7, ex: 0.8, hill: 0.45, full: 9.4, zero: 11.6 };
-        return { maxzoom: 8, ex: 1, hill: 0.6, full: 10.2, zero: 12 };
+        if (!dev.mobile) return { maxzoom: 11, ex: 1.35, hill: 0.85, full: 11, zero: 13.2, floor: .9 };
+        if (lowEndDevice()) return { maxzoom: 7, ex: 0.8, hill: 0.45, full: 9.4, zero: 11.6, floor: .5 };
+        return { maxzoom: 8, ex: 1, hill: 0.6, full: 10.2, zero: 12, floor: .7 };
     }
 
     function reliefEx(p, z) {
         const t = Math.max(0, Math.min(1, (p.zero - z) / (p.zero - p.full)));
-        return p.ex * t * t * (3 - 2 * t);
+        return Math.max(p.floor, p.ex * t * t * (3 - 2 * t));
     }
 
     function setRelief(map, on) {
@@ -3587,7 +3817,7 @@
         const s = zone3d.get(map);
         const p = s && s.relief;
         if (!p || !s.armed) return;
-        const e = Math.max(0.001, reliefEx(p, map.getZoom()));
+        const e = reliefEx(p, map.getZoom());
         if (!force && Math.abs(e - s.ex) < 0.05) return;
         s.ex = e;
         const tr = map.terrain;
@@ -3601,11 +3831,11 @@
         cpuTerrainPick(map);
         if (map.getLayer('lt-relief')) {
             try {
-                // підлога 0.55: гори зникають із кадра разом із екстраполяцією
-                // лише наполовину — на місткому зумі рельєф лишається
-                // затінованим, хоча блок уже не тоне в ньому
+                // підлога 0.8: тінь від нахилу не згасає разом із підняттям.
+                // саме вона показує хребти на місткому зумі, де блок уже не
+                // тоне в горах — без неї там лишається плаский знімок
                 map.setPaintProperty('lt-relief', 'hillshade-exaggeration',
-                    p.hill * Math.max(0.55, Math.min(1, e / p.ex)));
+                    p.hill * Math.max(0.8, Math.min(1, e / p.ex)));
             } catch (err) { }
         }
     }
@@ -4508,6 +4738,97 @@
     const DEM = { map: null, on: false, ep: -1, gen: 1, busy: 0, ex: 1, elev: 0, left: 0 };
     let demScratch = null;
 
+    // Швидке читання рельєфу замість getElevationForLngLatZoom.
+    //
+    // Рушій на КОЖНУ вершину будує OverscaledTileID, збирає рядок-ключ,
+    // домножує матрицю 4x4 і створює новий Uint8Array поверх буфера тайла.
+    // Виміряно в браузері на кадрі фронту: 35–53 мкс на вершину, 0,3–0,4 с
+    // лише на одні висоти — це й є «3д лагає» (39 % часу жесту на z11.6).
+    //
+    // Беремо ту саму сітку з кешу тайлів напряму: той самий тайл, той самий
+    // білінійний перетин, те саме розпакування terrarium — тільки без
+    // аллокацій. Збіг із рушієм перевіряється в браузері до метра. Чого в
+    // індексі немає, читає рушій, тому значення не можуть стати «іншими»,
+    // максимум — повільнішими.
+    const demInfoCache = new WeakMap();
+    const DEMF = {
+        ok: false, z: 0,
+        tab: new Map(),   // тайли на зумі, який просить рушій
+        tabP: new Map(),  // і його батьки: рушій падає вгору, коли тайла ще немає
+        tabG: new Map()
+    };
+    const DEM_K = 16384;  // координата тайла < 2^14, тож цілий ключ без рядків
+
+    function demInfo(d) {
+        let o = demInfoCache.get(d);
+        if (!o) {
+            const up = d.getUnpackVector();
+            o = {
+                u8: new Uint8Array(d.data.buffer), dim: d.dim, stride: d.stride,
+                r: up[0], g: up[1], b: up[2], base: up[3]
+            };
+            demInfoCache.set(d, o);
+        }
+        return o;
+    }
+
+    // один раз на кадр: який зум тайлів читав би рушій і що реально завантажено
+    function demFastReset(map) {
+        DEMF.ok = false;
+        const wrap = map.terrain.sourceCache;
+        const sc = wrap && wrap.sourceCache;
+        const src = sc && sc._source;
+        const tiles = sc && sc._tiles;
+        if (!src || !tiles || typeof src.maxzoom !== 'number') return;
+        const z = Math.max(src.minzoom || 0,
+            Math.min(src.maxzoom, (map.transform.tileZoom || 0) - (wrap.deltaZoom || 0)));
+        if (z < 1 || z > 20) return;
+        DEMF.z = z;
+        DEMF.tab.clear(); DEMF.tabP.clear(); DEMF.tabG.clear();
+        for (const k in tiles) {
+            const tl = tiles[k], d = tl && tl.dem;
+            const c = d && tl.tileID && tl.tileID.canonical;
+            if (!c) continue;
+            let o = null;
+            if (c.z === z) o = DEMF.tab;
+            else if (c.z === z - 1) o = DEMF.tabP;
+            else if (c.z === z - 2) o = DEMF.tabG;
+            if (o) o.set(c.x * DEM_K + c.y, demInfo(d));
+        }
+        DEMF.ok = DEMF.tab.size + DEMF.tabP.size + DEMF.tabG.size > 0;
+    }
+
+    // висота в МЕТРАХ за меркатор-координатою вершини (0..1)
+    function demFast(mx, my) {
+        const P = 1 << DEMF.z;
+        const wx = mx * P, wy = my * P;
+        if (!(wx >= 0 && wx < P && wy >= 0 && wy < P)) return NaN;
+        const tx = wx | 0, ty = wy | 0;
+        let o = DEMF.tab.get(tx * DEM_K + ty), zz = DEMF.z;
+        if (!o) {
+            o = DEMF.tabP.get(((tx >> 1) * DEM_K) + (ty >> 1)); zz = DEMF.z - 1;
+            if (!o) {
+                o = DEMF.tabG.get(((tx >> 2) * DEM_K) + (ty >> 2)); zz = DEMF.z - 2;
+                if (!o) return NaN;
+            }
+        }
+        // координата всередині знайденого тайла: рушій так само бере частку
+        // батьківського тайла, коли власного тайла на цьому зумі ще немає
+        const sh = 1 << (DEMF.z - zz);
+        const ax = wx / sh, ay = wy / sh;
+        const dim = o.dim;
+        const px = (ax - (ax | 0)) * dim, py = (ay - (ay | 0)) * dim;
+        const cx = px | 0, cy = py | 0, dx = px - cx, dy = py - cy;
+        const u8 = o.u8, st = o.stride * 4, r = o.r, g = o.g, b = o.b, bs = o.base;
+        const q = 4 * ((cy + 1) * o.stride + (cx + 1));
+        const n0 = u8[q] * r + u8[q + 1] * g + u8[q + 2] * b - bs;
+        const n1 = u8[q + 4] * r + u8[q + 5] * g + u8[q + 6] * b - bs;
+        const n2 = u8[q + st] * r + u8[q + st + 1] * g + u8[q + st + 2] * b - bs;
+        const n3 = u8[q + st + 4] * r + u8[q + st + 5] * g + u8[q + st + 6] * b - bs;
+        const ix = 1 - dx, iy = 1 - dy;
+        return (n0 * ix + n1 * dx) * iy + (n2 * ix + n3 * dx) * dy;
+    }
+
     function demSync(map) {
         const tr = map.terrain, t = map.transform;
         if (!tr || !t || typeof tr.getElevationForLngLatZoom !== 'function') { DEM.on = false; return false; }
@@ -4525,6 +4846,7 @@
         DEM.ep = DEM.gen;
         DEM.ex = typeof tr.exaggeration === 'number' && tr.exaggeration > 1e-6 ? tr.exaggeration : 1;
         DEM.elev = t.elevation || 0;
+        demFastReset(map);
         return true;
     }
 
@@ -4556,9 +4878,17 @@
             try {
                 for (; hit.at < n && DEM.left > 0; hit.at++) {
                     const j = hit.at * 2;
-                    demScratch.lng = f[j] * 360 - 180;
-                    demScratch.lat = 57.29577951308232 * Math.atan(Math.sinh(Math.PI * (1 - 2 * f[j + 1])));
-                    m[hit.at] = tr.getElevationForLngLatZoom(demScratch, t.tileZoom) * k;
+                    // дно моря не може тягнути рамку нижче за рівень моря: рушій
+                    // для тих самих призм вже обрізає висоту на нулі, і без цієї
+                    // обрізки кільце з-під води йшло б окремим східцем
+                    let e = DEMF.ok ? demFast(f[j], f[j + 1]) : NaN;
+                    if (Number.isFinite(e)) m[hit.at] = e > 0 ? e : 0;
+                    else {
+                        demScratch.lng = f[j] * 360 - 180;
+                        demScratch.lat = 57.29577951308232 * Math.atan(Math.sinh(Math.PI * (1 - 2 * f[j + 1])));
+                        e = tr.getElevationForLngLatZoom(demScratch, t.tileZoom);
+                        m[hit.at] = Math.max(0, e * k);
+                    }
                     DEM.left--;
                 }
             } catch (e) {
@@ -5541,7 +5871,8 @@
         if (window.__ltDemDebug) {
             window.__ltDemDebug({
                 DEM: DEM, tiltFrame: tiltFrame, projectRing: projectRing,
-                ringDem: ringDem, out: () => RING_OUT
+                ringDem: ringDem, out: () => RING_OUT,
+                fast: demFast, flags: DEMF, prep: demFastReset
             });
         }
 
@@ -5803,7 +6134,7 @@
         isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger,
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,
-        store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage },
+        store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage, onMirrorUpdate },
         Calendar, BASE, createMap, baseSwitcher, smoothZoom,
         flagSVG: key => FLAG_SVG[key], pixelLabels, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
