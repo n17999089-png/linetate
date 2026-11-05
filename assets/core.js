@@ -1417,16 +1417,33 @@
             hide();
         }
 
+        let closeT = 0;
+
         function show(iso) {
+            clearTimeout(closeT);
+            closeT = 0;
+            el.classList.remove('closing');
             month = startOfMonth(fromIso(iso || opts.current() || todayIso()));
             build();
             el.classList.add('show');
             setTimeout(() => document.addEventListener('mousedown', onDocDown), 0);
         }
 
+        // календар не зникає ривком: клас closing тримає його на екрані ще
+        // 150 мс, поки програється cal-out, і лише тоді прибирає з розкладки
         function hide() {
-            el.classList.remove('show');
             document.removeEventListener('mousedown', onDocDown);
+            if (!el.classList.contains('show')) {
+                el.classList.remove('closing');
+                return;
+            }
+            el.classList.remove('show');
+            el.classList.add('closing');
+            clearTimeout(closeT);
+            closeT = setTimeout(() => {
+                closeT = 0;
+                el.classList.remove('closing');
+            }, 150);
         }
 
         function toggle(iso) {
@@ -2344,7 +2361,12 @@
         // а повернення з-за краю кадру починає її знову. Таймер рухається стіною
         // (performance.now), тому просідання кадру не пропускає анімацію.
         const PLACE_IN_MS = 260;
+        // зникнення: назва не гине за один кадр, а коротко тане на місці.
+        // на телефоні саме різке зникнення читалося як «підписи смикаються»
+        const PLACE_OUT_MS = 180;
         const anim = new Map();
+        // назви, які щойно вилетіли з набору, але ще дотюхають на екрані
+        let fading = [];
         let animEpoch = 0, animRaf = 0;
         function kickBake() {
             if (bakeRaf) return;
@@ -2383,6 +2405,28 @@
                 ctx.drawImage(b.cv, d.x - b.size / 2, d.y - b.size / 2, b.size, b.size);
             });
 
+            // спочатку тануть назви, яких уже немає в наборі: малюємо їх під
+            // новими, щоб новий підпис не просвічував крізь старий
+            if (fading.length) {
+                for (let i = fading.length - 1; i >= 0; i--) {
+                    const f = fading[i];
+                    const p = (now - f.born) / PLACE_OUT_MS;
+                    if (p >= 1) { fading.splice(i, 1); continue; }
+                    const e = fxEase(p < 0 ? 0 : p);
+                    const k = 1 - 0.05 * e;
+                    ctx.save();
+                    ctx.globalAlpha = 1 - e;
+                    ctx.translate(f.cx, f.cy);
+                    ctx.scale(k, k);
+                    ctx.drawImage(f.cv, -f.w / 2, -f.h / 2, f.w, f.h);
+                    ctx.restore();
+                    live = true;
+                }
+                // шов для браузерних тестів: скільки назв ще тане в цьому кадрі
+                if (window.__ltPlacesFade) window.__ltPlacesFade(fading.length, now);
+            }
+
+            let entering = 0;
             for (let i = 0; i < items.length; i++) {
                 const it = items[i];
                 if (it.x < -100 || it.y < -60 || it.x > s.x + 100 || it.y > s.y + 60) continue;
@@ -2391,7 +2435,7 @@
                 const an = it.an;
                 if (an) {
                     const p = (now - an.born) / PLACE_IN_MS;
-                    if (p < 1) { a = fxEase(p < 0 ? 0 : p); live = true; }
+                    if (p < 1) { a = fxEase(p < 0 ? 0 : p); live = true; entering++; }
                 }
                 const k = a === 1 ? 1 : 0.94 + 0.06 * a;
                 const grow = a !== 1;
@@ -2416,6 +2460,8 @@
                 }
                 if (grow) ctx.restore();
             }
+            // шов для браузерних тестів: скільки назв ще проявляється в цьому кадрі
+            if (entering && window.__ltPlacesEnter) window.__ltPlacesEnter(entering, now);
             if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; }
             // домальовуємо лише доки є хоч одна назва в переході: далі полотно
             // стоїть, а не гріє кадр у холста
@@ -2521,6 +2567,7 @@
             // кадрах, а сам жест зуму залишається рівним
             const bakeCap = mob ? 26 : 70;
             let bakes = 0;
+            let fresh = 0;
             for (let s = 0; s < cand.length; s++) {
                 const it = cand[s];
                 const px = it.px, py = it.py;
@@ -2552,9 +2599,16 @@
                     x: px, y: py, w: w, h: h, dot: it.dot
                 };
                 // назва, яка лишилась у кадрі, зберігає вже повну прозорість;
-                // нова (або така, що повернулась) народжується просто зараз
+                // нова (або така, що повернулась) народжується просто зараз.
+                // на телефоні нові назви прилітають хвилями по 14 мс — набір із
+                // сотні підписів не блимає одним кадром, а проявляється плавно
                 let an = anim.get(item.key);
-                if (!an) { an = { born: performance.now(), epoch: animEpoch }; anim.set(item.key, an); }
+                if (!an) {
+                    const wave = mob ? Math.min(6, Math.floor(fresh / 8)) * 14 : 0;
+                    fresh++;
+                    an = { born: performance.now() + wave, epoch: animEpoch };
+                    anim.set(item.key, an);
+                }
                 an.epoch = animEpoch;
                 item.an = an;
                 item.sp = peekSprite(item);
@@ -2565,13 +2619,34 @@
                 items.push(item);
             }
             if (pending.length) kickBake();
+            // назви, які були на екрані, а в новому наборі не вмістились (колізія
+            // або стеля кадру): не зникають ривком, а коротко тануть на місці.
+            // стеля тут, щоб зміна зуму не вивалила на полотно сотню старих
+            // спрайтів — це був би кадр дорожчий за сам набір
+            const keep = new Set(items.map(i => i.key));
+            fading = [];
+            const fadeCap = mob ? 24 : 40;
+            const nowOut = performance.now();
+            for (let i = 0; i < prevItems.length && fading.length < fadeCap; i++) {
+                const p = prevItems[i];
+                if (!p.sp || keep.has(p.key)) continue;
+                if (p.x < -60 || p.y - p.h < -40 || p.x > size.x + 60 || p.y + p.h > size.y + 40) continue;
+                fading.push({
+                    cv: p.sp.cv, born: nowOut,
+                    cx: p.x + p.sp.x + p.sp.w / 2,
+                    cy: p.y + p.sp.y + p.sp.h / 2,
+                    w: p.sp.w, h: p.sp.h
+                });
+            }
             // чого немає в цьому кадрі — те вилетіло за край: запис прибрати, щоб
             // повернення міста почало появу заново, а не вилетіло вже готовим
             anim.forEach((v, key) => { if (v.epoch !== animEpoch) anim.delete(key); });
             // seam для браузерних тестів: який набір назв вийшов після перебудови.
             // у продакшні такої глобальної змінної немає, тому рядок коштує один
             // пошук властивості
-            if (window.__ltPlacesDebug) window.__ltPlacesDebug(items, extraDots);
+            if (window.__ltPlacesDebug) window.__ltPlacesDebug(items, extraDots, {
+                fading: fading.length, anim: anim.size, fresh: fresh, mobile: mob
+            });
             paint();
         }
 
@@ -2621,9 +2696,12 @@
 
         // набір назв перебудовуємо ТІЛЬКИ коли камера зупинилась: під час жеста
         // кожен проміжний масштаб породжував новий перелік, і назви на межі
-        // свободи міняли «підпис ↔ крапка» на ковному кадрі
+        // свободи міняли «підпис ↔ крапка» на ковному кадрі.
+        // чекаємо від ПЕРШОЇ події, а не від останньої: мапа сипле idle на
+        // кожен перемальований кадр, і старий clearTimeout перезапускав таймер
+        // безкінечно — після зуму назви могли лишитися від попереднього масштабу
         function settle() {
-            clearTimeout(settleT);
+            if (settleT) return;
             settleT = setTimeout(() => {
                 settleT = 0;
                 if (map.isMoving && (map.isMoving() || map.isEasing())) { settle(); return; }
@@ -2632,6 +2710,9 @@
         }
 
         map.on('move', () => { needFrame = true; });
+        // камера рушила одразу після перебудови: назви, що танули, стоять на
+        // старому місці, тож лишати їх на рухомій мапі — це «відірвані» підписи
+        map.on('movestart', () => { if (fading.length) fading = []; });
         map.on('render', onFrame);
         map.on('moveend', () => {
             needFrame = true;
@@ -2688,6 +2769,7 @@
                 if (hidden) {
                     // миттєво розчищаємо екран, не чекаючи наступного кадру мапи
                     if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; }
+                    fading = [];
                     try { paint(); } catch (e) { }
                 } else {
                     scheduleBuild(0);
@@ -3222,7 +3304,7 @@
     // px — висота конкретного шару: з нею заливка полотна лягає саме на його
     // верхню грань, а не на середню по мапі
     function topHeight(z, px) {
-        const h = px || WALL_PX;
+        const h = px == null ? WALL_PX : px;
         if (z <= 5) return Math.round(pxToM(h, 5));
         if (z >= 19) return Math.round(pxToM(h, 19));
         const zi = Math.floor(z);
@@ -3238,20 +3320,13 @@
     const CAST_PX = [18, 64];
     const RIM_PX = 3.2;
     const WALL_PX = 24;
-    // обвід — це бордюр НА верхній грані блока, а не другий блок поруч: він
-    // починається там, де закінчується стіна. інакше його зовнішня стіна лежить
-    // у тій самій площині, що й стіна зони, і буфер глибини на кожному кадрі
-    // вирішує навмання, котра з них видна — на екрані «тин» уздовж контуру
-    const RIM_UP_PX = 3.5;
     // щільність обʼєму зони у 3D. на 0.95 тіло було майже непрозоре й рельєф
     // крізь нього не читався зовсім; 0.62 лишає колір шару впізнаваним, але
     // хребти/тіні гілшейду просвічують крізь обʼєм
     const ZONE_3D_OPACITY = 0.62;
     // кожен наступний за z-індексом шар стоїть вище за попередній. без цього
-    // дві верхні грані в одній площині мігають, а обвід нижчого шару
-    // (w + RIM_UP_PX) лізе на тіло вищого — те, що користувач називає
-    // «битва з індексами». підйом більший за бордюр, тому обвід нижчого шару
-    // завжди опиняється під верхньою гранню вищого
+    // дві верхні грані в одній площині мігають — те, що користувач називає
+    // «битва з індексами»
     const LIFT_PX = 4;
     const RANK_MAX = 3;
 
@@ -4617,10 +4692,6 @@
                     if (l._w3d !== w) {
                         l._w3d = w;
                         map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height', wallStops(w));
-                        if (map.getLayer('fr_' + l.id)) {
-                            map.setPaintProperty('fr_' + l.id, 'fill-extrusion-base', wallStops(w));
-                            map.setPaintProperty('fr_' + l.id, 'fill-extrusion-height', wallStops(w + RIM_UP_PX));
-                        }
                     }
                 }
                 ['xb_', 'xs_', 'cs_', 'sh_', 'f_', 'p_', 'fe_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
@@ -5673,7 +5744,13 @@
 
         function needsCanvas(l) {
             const s = l && l.style;
-            return !!s && ((s.blend && s.blend !== 'normal') || s.grad === true);
+            if (!s) return false;
+            // у 3D обʼємна зона вже стоїть екструзією: друге полотно над нею
+            // дублювало заливку, лягало на 3.5 px вище верхньої грані й на
+            // телефоні «пливло» за камерою (миготіння на краях), а на ПК
+            // плоска зона через це виглядала піднятою над своїм місцем
+            if (l.kind === 'zone' && map._lt3d === true && map._ltZones3d !== false) return false;
+            return (s.blend && s.blend !== 'normal') || s.grad === true;
         }
 
         function activeLayers() {
@@ -5821,8 +5898,12 @@
                 // висоті за z-індексом, тож і заливка має лягати на його
                 // власну верхню грань, а не на середню по мапі. верхньою
                 // гранню користувач бачить бордюр контуру, тому рамка йде по
-                // його верху, а не по грані блока
-                const fr = tilted ? tiltFrame(map, topHeight(zoom, (l._w3d || WALL_PX) + RIM_UP_PX)) : frame0;
+                // його верху, а не по грані блока.
+                // зона без екструзії (обʼємні зони вимкнено) лежить на землі:
+                // підняте полотно зсувало б її від власного місця. обʼємна зона
+                // сюди не доходить — її заливку малює сама екструзія
+                const frameH = l.kind === 'zone' ? 0 : (l._w3d || WALL_PX);
+                const fr = tilted ? tiltFrame(map, topHeight(zoom, frameH)) : frame0;
                 if (!fr) return;
                 // полотно шара малюється у власній альф — плавна поява шару
                 // має домальовувати і сюди, інакше blend-шари «мигають»

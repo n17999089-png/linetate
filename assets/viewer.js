@@ -12,7 +12,7 @@
         savedAt: 0,
         base: 'hybrid',
         regions: true,
-        labels: false,
+        labels: true,
         advance: false,
         relief3d: true,
         reliefFlat: false,
@@ -2000,13 +2000,17 @@
         currentDoc = hit;
     }
 
+    function syncLabelsBtn() {
+        const btn = $('view-labels');
+        if (!btn) return;
+        btn.classList.toggle('active', state.labels);
+        btn.setAttribute('aria-pressed', String(state.labels));
+    }
+
     function setLabels(on) {
         state.labels = !!on;
-        const btn = $('view-labels');
-        if (btn) {
-            btn.classList.toggle('active', state.labels);
-            btn.setAttribute('aria-pressed', String(state.labels));
-        }
+        syncLabelsBtn();
+        try { localStorage.setItem('LINETATE:labels', state.labels ? '1' : '0'); } catch (e) { }
         Object.values(state.layers).forEach(l => {
             l.viewLabel = state.labels;
             if (!mapReady) return;
@@ -2031,6 +2035,9 @@
             isVisible,
             deferRelief: !!deferRelief
         });
+        // набір полотен залежить від режиму: у 3D зони малює екструзія, тож
+        // їхні градієнтні полотна прибираються (і повертаються в площині)
+        if (blend) blend.sync();
         // «РЕЛЬЄФ» має два різні стани (3D/площина) — після перемикання
         // показуємо той, що діє в новому режимі
         syncReliefBtn();
@@ -2092,6 +2099,7 @@
         Object.values(state.layers).forEach(l => {
             if (mapReady) LT.applyLayerPaint(map, l, isVisible(l));
         });
+        if (blend) blend.sync();
         syncZonesBtn();
     }
 
@@ -2572,10 +2580,14 @@
         const rf = localStorage.getItem('LINETATE:reliefflat');
         const pl = localStorage.getItem('LINETATE:places');
         const zn = localStorage.getItem('LINETATE:zones3d');
+        const lb = localStorage.getItem('LINETATE:labels');
         state.relief3d = r3 !== '0';
         state.reliefFlat = rf === '1';
         state.places = pl !== '0';
         state.zones3d = zn !== '0';
+        // назви шарів на самій мапі: раніше вимкнені за замовчуванням, через що
+        // на телефоні назва зʼявлялася лише після тицяння пальцем по шару
+        state.labels = lb !== '0';
     } catch (e) { }
     LT.setReliefPrefs(map, { relief3d: state.relief3d, reliefFlat: state.reliefFlat });
     LT.setZones3d(map, state.zones3d);
@@ -2947,6 +2959,7 @@
         syncReliefBtn();
         syncPlacesBtn();
         syncZonesBtn();
+        syncLabelsBtn();
 
         // завіса падає через два кадри: полотно зон уже намальоване
         requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(liftVeil, 220)));

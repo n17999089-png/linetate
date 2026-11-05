@@ -790,7 +790,7 @@
 .ps-row .input { flex: 1; width: auto; min-width: 0; }
 .ps-row .btn { min-height: 38px; padding: 0 12px; }
 #ps-results { display: none; flex-direction: column; gap: 3px; padding: 0 8px 8px; overflow-y: auto; scrollbar-width: thin; }
-#ps-results.show { display: flex; }
+#ps-results.show { display: flex; animation: dpFade .2s var(--ease); }
 #ps-results .sr {
     display: flex; flex-direction: column; gap: 1px; padding: 8px 10px;
     text-align: left; background: transparent; color: var(--text-2);
@@ -837,7 +837,10 @@
     width: auto; max-height: min(58vh, 470px);
     gap: 7px; padding: 0 9px 9px;
     overflow-y: auto; overscroll-behavior: contain;
-    transform: translateY(14px) scale(.99); transform-origin: bottom center;
+    transform: translateY(26px) scale(.99); transform-origin: bottom center;
+    /* на телефоні панель їде знизу як аркуш: довший і мʼякший хід, ніж
+       на ПК, інакше на вузькому екрані відкриття читається як стрибок */
+    transition: transform .3s var(--ease), opacity .2s ease, visibility .3s;
 }
 .dev-mobile #draw-panel.open { transform: none; }
 .dev-mobile .dp-head { margin: 0 -9px; padding: 7px 7px 7px 12px; }
@@ -863,7 +866,12 @@
 .dev-mobile #place-search {
     top: 68px; left: 8px; right: 8px; width: auto;
     max-height: min(62vh, 480px);
+    transform: translateY(-14px) scale(.985); transform-origin: top center;
+    transition: transform .28s var(--ease), opacity .18s ease, visibility .28s;
 }
+/* без цього правила мобільний зсув перебивав загальне .open: transform ніколи
+   не доходив до нуля, і пошук «виїжджав» лише прозорістю */
+.dev-mobile #place-search.open { transform: none; }
 /* меньше 16px iOS зумит страницу при фокусе и ломает поиск */
 .dev-mobile #ps-q { font-size: 16px; }
 .dev-mobile #ps-results .sr { padding: 10px 11px; }

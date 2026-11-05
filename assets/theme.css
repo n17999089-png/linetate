@@ -273,6 +273,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 /* Date picker */
 .cal { position: absolute; z-index: 1400; display: none; width: 340px; max-width: calc(100vw - 24px); padding: 15px; background: linear-gradient(155deg, #262628, #101011 62%, #050506); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow-white), var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .1); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .cal.show { display: block; animation: cal-in .18s var(--ease); }
+.cal.closing { display: block; animation: cal-out .15s ease forwards; pointer-events: none; }
 .cal-top { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; }
 .cal-title { flex: 1; min-width: 0; text-align: center; font-family: var(--title); font-size: 13px; letter-spacing: .6px; color: var(--text); }
 .cal-nav, .cal-today, .cal-go { min-height: 36px; padding: 0 10px; background: #232325; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .18s ease, color .18s ease; }
@@ -393,6 +394,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .pane.anim .layer:nth-child(n+5) { animation-delay: .12s; }
 
 @keyframes cal-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes cal-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px) scale(.98); } }
 @keyframes pane-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 @keyframes row-in { from { opacity: 0; transform: translateX(-5px); } to { opacity: 1; transform: none; } }
 @keyframes card-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
