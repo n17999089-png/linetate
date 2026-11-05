@@ -1638,6 +1638,34 @@
         } catch (e) { return ''; }
     }
 
+    // токен іде в заголовок Authorization, а fetch не приймає там нічого поза
+    // ISO-8859-1: скопійована з месенджера кирилична «А» ламала публікацію
+    const GH_LOOKALIKE = {
+        'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O',
+        'Р': 'P', 'С': 'C', 'Т': 'T', 'У': 'Y', 'Х': 'X', 'Ѕ': 'S', 'І': 'I', 'Ј': 'J',
+        'а': 'a', 'в': 'b', 'е': 'e', 'к': 'k', 'м': 'm', 'н': 'h', 'о': 'o',
+        'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'х': 'x', 'ѕ': 's', 'і': 'i', 'ј': 'j',
+        'ԁ': 'd', 'ԛ': 'q', 'ԝ': 'w',
+        'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I', 'Κ': 'K',
+        'Μ': 'M', 'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Υ': 'Y', 'Χ': 'X',
+        'α': 'a', 'ε': 'e', 'ι': 'i', 'κ': 'k', 'ν': 'v', 'ο': 'o', 'ρ': 'p',
+        'τ': 't', 'υ': 'u', 'χ': 'x'
+    };
+
+    function ghTokenText(v) {
+        const s = String(v || '');
+        let out = '';
+        for (let i = 0; i < s.length; i++) {
+            const ch = s[i];
+            const code = ch.charCodeAt(0);
+            if (code > 0x20 && code < 0x7f) { out += ch; continue; }
+            out += GH_LOOKALIKE[ch] || '';
+        }
+        return out;
+    }
+
+    function ghTokenOk(v) { return /^[\x21-\x7e]{20,}$/.test(v); }
+
     function ghRemembered() {
         try { return !!localStorage.getItem(GH_TOKEN_DEV); } catch (e) { return false; }
     }
@@ -1649,6 +1677,7 @@
     // без галочки — до закриття вкладки; з галочкою — доки не натиснуть «забути»
     function ghToken(value, remember) {
         if (value !== undefined) {
+            value = ghTokenText(value);
             try {
                 if (value) {
                     if (remember) localStorage.setItem(GH_TOKEN_DEV, vault(value));
@@ -1725,14 +1754,19 @@
 
     async function ghPublish() {
         if (publishing) return;
-        const typed = ($('gh-token').value || '').trim();
-        const token = typed || ghToken();
+        const typedRaw = ($('gh-token').value || '').trim();
+        const typed = ghTokenText(typedRaw);
+        if (typed !== typedRaw) $('gh-token').value = typed;
+        const token = typed || ghTokenText(ghToken());
+        if (typed !== typedRaw) { ghToken(token); uiGh(); }
         const cfg = {
-            repo: ($('gh-repo').value || '').trim(),
-            branch: ($('gh-branch').value || '').trim() || GH_DEFAULT.branch,
-            path: ($('gh-path').value || '').trim() || GH_DEFAULT.path
+            repo: ghTokenText($('gh-repo').value || '').trim(),
+            branch: ghTokenText($('gh-branch').value || '').trim() || GH_DEFAULT.branch,
+            path: ghTokenText($('gh-path').value || '').trim() || GH_DEFAULT.path
         };
+        if (typedRaw && !ghTokenOk(typed)) { toast(t('gh.badToken'), 'err'); return; }
         if (!token || !cfg.repo) { toast(t('gh.need'), 'err'); return; }
+        if (!ghTokenOk(token)) { toast(t('gh.badToken'), 'err'); return; }
         if (!/^[\w.-]+\/[\w.-]+$/.test(cfg.repo)) { toast(t('gh.badRepo'), 'err'); return; }
         ghSaveCfg(cfg);
         if (typed) ghToken(typed, $('gh-remember').checked);
@@ -2240,12 +2274,17 @@
         const vBtn = $('btn-views-refresh');
         if (vBtn) vBtn.addEventListener('click', refreshViews);
         $('btn-gh-publish').addEventListener('click', ghPublish);
-        $('gh-token').addEventListener('input', e => ghToken(e.target.value.trim()));
+        $('gh-token').addEventListener('input', e => {
+            const clean = ghTokenText(e.target.value);
+            if (clean !== e.target.value) e.target.value = clean;
+            ghToken(clean);
+        });
         // галочка = один і той самий токен живе на пристрої; зняв — він забувається
         $('gh-remember').addEventListener('change', e => {
-            const v = ($('gh-token').value || '').trim() || ghToken();
+            const v = ghTokenText(($('gh-token').value || '').trim()) || ghTokenText(ghToken());
             if (e.target.checked) {
                 if (!v) { e.target.checked = false; toast(t('gh.need'), 'err'); return; }
+                if (!ghTokenOk(v)) { e.target.checked = false; toast(t('gh.badToken'), 'err'); return; }
                 try { sessionStorage.removeItem(GH_TOKEN); } catch (err) { }
                 ghToken(v, true);
                 $('gh-token').value = '';
