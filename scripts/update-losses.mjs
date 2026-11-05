@@ -285,6 +285,15 @@ async function main() {
         ru: { ...ru, source: 'Mediazona + Meduza', url: ZONA_PAGE },
         ua: { ...ua, source: 'UALosses', url: 'https://ualosses.org/en/statistics/' }
     };
+    // щоденний прогін без нових цифр не має плодити коміти: показуємо час,
+    // коли дані справді змінилися, а не час останньої перевірки
+    if (prev.ru && prev.ua && JSON.stringify([prev.ru, prev.ua]) === JSON.stringify([doc.ru, doc.ua])) {
+        doc.updatedAt = prev.updatedAt || doc.updatedAt;
+    }
+    if (JSON.stringify(doc) === JSON.stringify(prev)) {
+        console.log('Втрати: без змін');
+        return;
+    }
     writeFileSync(OUT, JSON.stringify(doc, null, 1) + '\n');
     console.log(`Готово → ${OUT}`);
 }
