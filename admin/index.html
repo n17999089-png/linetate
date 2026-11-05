@@ -12,7 +12,7 @@
 <script src="../assets/vendor/maplibre-gl.js?v=3"></script>
 <script src="../assets/vendor/turf.min.js"></script>
 <script src="../assets/vendor/topojson-client.min.js"></script>
-<link rel="stylesheet" href="../assets/theme.css?v=34">
+<link rel="stylesheet" href="../assets/theme.css?v=35">
 <link rel="stylesheet" href="../assets/admin.css?v=34">
 </head>
 <body>
@@ -47,11 +47,9 @@
             </div>
             <div class="row">
                 <button class="btn" id="btn-add-point" data-i18n="admin.addPoint">+ Точка</button>
-                <button class="btn" id="btn-import-image" data-i18n="file.importImage">Імпорт зображення</button>
             </div>
-            <input type="file" id="image-file" accept="image/png,image/jpeg,image/webp" hidden>
             <button class="btn wide danger ghost" id="btn-del-geo" data-i18n="file.delImported">Видалити імпортовані шари</button>
-            <div class="hint" data-i18n="object.hint">Точки й зображення можна перетягувати на карті.</div>
+            <div class="hint" data-i18n="object.hint">Точки можна перетягувати на карті.</div>
             <div id="layer-list"></div>
             <div class="hint" data-i18n="admin.layersHint">Рисование продолжает область: новые штрихи объединяются с уже нарисованным, старые не исчезают. Ластик чистит только выбранный слой. Рисуется только по суше — морская часть обрезается по береговой линии.</div>
         </div>
@@ -361,6 +359,6 @@
     </form>
 </div>
 
-<script src="../assets/gate.js?v=21"></script>
+<script src="../assets/gate.js?v=22"></script>
 </body>
 </html>

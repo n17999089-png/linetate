@@ -11,8 +11,8 @@
 <link href="assets/vendor/maplibre-gl.css" rel="stylesheet">
 <script src="assets/vendor/maplibre-gl.js?v=3"></script>
 <script src="assets/vendor/turf.min.js"></script>
-<link rel="stylesheet" href="assets/theme.css?v=34">
-<link rel="stylesheet" href="assets/viewer.css?v=44">
+<link rel="stylesheet" href="assets/theme.css?v=35">
+<link rel="stylesheet" href="assets/viewer.css?v=45">
 </head>
 <body>
 
@@ -137,17 +137,16 @@
     <div class="dp-hint" id="dp-hint" data-i18n="tools.drawHint">Виберіть інструмент і малюйте поверх карти</div>
 </div>
 
-<div id="place-search" class="panel" aria-hidden="true">
-    <div class="ps-head">
-        <span class="label" data-i18n="search.title">ПОШУК</span>
-        <button type="button" class="legend-close" id="ps-close" title="Закрити" aria-label="Закрити" data-i18n-title="viewer.close">×</button>
+<div id="place-search" role="search" aria-hidden="true">
+    <div class="ps-bar">
+        <svg class="ps-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.6 4.6"/></svg>
+        <input id="ps-q" type="search" autocomplete="off" spellcheck="false" placeholder="Місто, село, район, область" data-i18n-ph="search.placeholder">
+        <button type="button" class="ps-clear" id="ps-clear" aria-label="Очистити" data-i18n-title="search.clear" hidden>×</button>
     </div>
-    <div class="ps-row">
-        <input id="ps-q" class="input" type="search" autocomplete="off" placeholder="Місто, село, район, область" data-i18n-ph="search.placeholder">
-        <button class="btn" id="ps-go" data-i18n="search.go">Знайти</button>
+    <div class="ps-pop" id="ps-pop">
+        <div id="ps-results" role="listbox" aria-label="Результати пошуку"></div>
+        <div class="ps-hint" id="ps-hint"></div>
     </div>
-    <div id="ps-results"></div>
-    <div class="ps-hint" id="ps-hint" data-i18n="search.viewerHint">Клікніть по результату, щоб показати територію.</div>
 </div>
 
 <div id="legend-backdrop"></div>
@@ -235,8 +234,8 @@
 </div>
 
 <script src="assets/regions.js?v=23"></script>
-<script src="assets/core.js?v=96"></script>
+<script src="assets/core.js?v=97"></script>
 <script src="assets/map-tools.js?v=41"></script>
-<script src="assets/viewer.js?v=75"></script>
+<script src="assets/viewer.js?v=76"></script>
 </body>
 </html>

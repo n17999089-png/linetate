@@ -462,6 +462,7 @@
     let searchPick = null;
     let searchMarker = null;
     let searchSeq = 0;
+    let searchTimer = 0;
 
     /* ---------------- рисунки поверх слоёв карты ---------------- */
 
@@ -1580,29 +1581,41 @@
         }
     }
 
-    function renderSearchRows() {
+    function renderSearchRows(emptyMsg) {
         const box = $('ps-results');
+        const pop = $('ps-pop');
         if (!box) return;
         if (!searchRows.length) {
-            box.innerHTML = '';
-            box.classList.remove('show');
+            box.innerHTML = emptyMsg ? `<div class="ps-empty">${esc(emptyMsg)}</div>` : '';
+            if (pop) pop.classList.toggle('show', !!emptyMsg);
             return;
         }
         box.innerHTML = searchRows.map((res, i) => {
             const dn = String(res.display_name || '').split(',').slice(1, 3).join(',').trim();
-            return `<button type="button" class="sr ${i === searchActive ? 'active' : ''}" data-i="${i}">
-                <b>${esc(shortName(res).toUpperCase())}</b>
-                <small>${esc(placeType(res))}${dn ? ' · ' + esc(dn) : ''}</small>
+            return `<button type="button" class="sr${i === searchActive ? ' active' : ''}" data-i="${i}" role="option" aria-selected="${i === searchActive}" style="--i:${i}">
+                <span class="sr-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6.4-5.7 6.4-11A6.4 6.4 0 1 0 5.6 10c0 5.3 6.4 11 6.4 11z"/><circle cx="12" cy="10" r="2.3"/></svg></span>
+                <span class="sr-txt"><b>${esc(shortName(res).toUpperCase())}</b><small><em>${esc(placeType(res))}</em>${dn ? ' · ' + esc(dn) : ''}</small></span>
+                <svg class="sr-go" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
             </button>`;
         }).join('');
-        box.classList.add('show');
+        if (pop) pop.classList.add('show');
+        syncSearchHint();
+    }
+
+    function markSearchActive() {
+        const rows = document.querySelectorAll('#ps-results .sr');
+        rows.forEach(el => {
+            const on = +el.dataset.i === searchActive;
+            el.classList.toggle('active', on);
+            el.setAttribute('aria-selected', String(on));
+        });
     }
 
     function syncSearchHint() {
         const hint = $('ps-hint');
         if (!hint) return;
         if (!searchPick) {
-            hint.textContent = LT.t('search.viewerHint');
+            hint.textContent = '';
             return;
         }
         if (!searchPick.feature) {
@@ -1716,11 +1729,10 @@
         return rows;
     }
 
-    async function doSearch() {
+    async function doSearch(autoPick) {
         const q = String($('ps-q') && $('ps-q').value || '').trim();
         if (!q) return;
-        const btn = $('ps-go');
-        if (btn) btn.disabled = true;
+        const wrap = $('place-search');
         const seq = ++searchSeq;
         const local = localSearchRows(q);
         if (local.length) {
@@ -1728,6 +1740,7 @@
             searchActive = 0;
             renderSearchRows();
         }
+        if (wrap) wrap.classList.add('ps-busy');
         try {
             const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1'
                 + '&polygon_geojson=1&accept-language=' + LT.lang() + '&q=' + encodeURIComponent(q);
@@ -1741,21 +1754,32 @@
                 const merged = rows.concat(local.filter(x => !names.has(x.name.toLowerCase())));
                 searchRows = merged;
                 searchActive = 0;
-                pickSearch(merged[0], 0);
+                renderSearchRows();
+                if (autoPick) pickSearch(merged[0], 0);
             } else if (local.length) {
-                pickSearch(local[0], 0);
+                searchRows = local;
+                searchActive = 0;
+                renderSearchRows();
+                if (autoPick) pickSearch(local[0], 0);
             } else {
                 searchRows = [];
                 searchActive = -1;
-                renderSearchRows();
-                LT.toast(LT.t('search.notFound'), 'err');
+                renderSearchRows(LT.t('search.notFound'));
+                if (autoPick) LT.toast(LT.t('search.notFound'), 'err');
             }
         } catch (e) {
             if (seq !== searchSeq) return;
-            if (local.length) pickSearch(local[0], 0);
-            else LT.toast(LT.t('search.unavailable'), 'err');
+            if (local.length) {
+                searchRows = local;
+                searchActive = 0;
+                renderSearchRows();
+                if (autoPick) pickSearch(local[0], 0);
+            } else {
+                renderSearchRows(LT.t('search.unavailable'));
+                if (autoPick) LT.toast(LT.t('search.unavailable'), 'err');
+            }
         } finally {
-            if (seq === searchSeq && btn) btn.disabled = false;
+            if (seq === searchSeq && wrap) wrap.classList.remove('ps-busy');
         }
     }
 
@@ -1771,10 +1795,9 @@
             if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
         });
         const box = $('ps-results');
-        if (box) {
-            box.innerHTML = '';
-            box.classList.remove('show');
-        }
+        if (box) box.innerHTML = '';
+        const pop = $('ps-pop');
+        if (pop) pop.classList.remove('show');
         syncSearchHint();
     }
 
@@ -2959,14 +2982,48 @@
         $('lang-btn').addEventListener('click', () => LT.switchLang());
 
         $('search-btn').addEventListener('click', () => setSearch(!$('place-search').classList.contains('open')));
-        $('ps-close').addEventListener('click', () => setSearch(false));
-        $('ps-go').addEventListener('click', doSearch);
-        $('ps-q').addEventListener('keydown', e => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                doSearch();
-            }
+        const psQ = $('ps-q');
+        const psClear = $('ps-clear');
+        if (psClear) psClear.addEventListener('click', () => {
+            if (psQ) { psQ.value = ''; psQ.focus(); }
+            psClear.hidden = true;
+            clearSearch();
         });
+        if (psQ) {
+            psQ.addEventListener('input', () => {
+                const q = psQ.value.trim();
+                if (psClear) psClear.hidden = !q;
+                searchSeq++;
+                clearTimeout(searchTimer);
+                if (!q) {
+                    searchRows = [];
+                    searchActive = -1;
+                    renderSearchRows();
+                    return;
+                }
+                const local = q.length >= 2 ? localSearchRows(q) : [];
+                searchRows = local;
+                searchActive = local.length ? 0 : -1;
+                renderSearchRows();
+                if (q.length >= 2) searchTimer = setTimeout(() => doSearch(false), 560);
+            });
+            psQ.addEventListener('keydown', e => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    clearTimeout(searchTimer);
+                    doSearch(true);
+                } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    if (!searchRows.length) return;
+                    e.preventDefault();
+                    const step = e.key === 'ArrowDown' ? 1 : -1;
+                    searchActive = (searchActive + step + searchRows.length) % searchRows.length;
+                    markSearchActive();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setSearch(false);
+                }
+            });
+        }
         $('ps-results').addEventListener('click', e => {
             const row = e.target.closest('.sr');
             if (!row) return;

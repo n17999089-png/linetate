@@ -1867,39 +1867,6 @@
         return l;
     }
 
-    async function importImage(file) {
-        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
-            toast(t('object.imageErr'), 'err');
-            return;
-        }
-        const date = state.date;
-        try {
-            const bitmap = await createImageBitmap(file);
-            if (state.date !== date) { bitmap.close(); return; }
-            const ratio = bitmap.width / bitmap.height;
-            if (ratio < 0.1 || ratio > 10) { bitmap.close(); toast(t('object.imageErr'), 'err'); return; }
-            const scale = Math.min(1, 768 / Math.max(bitmap.width, bitmap.height));
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-            canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-            canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-            bitmap.close();
-            const image = canvas.toDataURL('image/webp', 0.86);
-            if (!LT.validImage(image)) { toast(t('object.imageErr'), 'err'); return; }
-            pushUndo();
-            const l = makeLayer('image', file.name.replace(/\.[^.]+$/, '').slice(0, 32));
-            l.image = image;
-            l.imageRatio = ratio;
-            const center = map.getCenter();
-            l.data.features = [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [center.lng, center.lat] } }];
-            state.activeId = l.id;
-            setMode('drag');
-            commit();
-            selectTab('style');
-            toast(t('object.imageOk'));
-        } catch (e) { toast(t('object.imageErr'), 'err'); }
-    }
-
     function placePoint(e) {
         if (state.mode !== 'point') return;
         pushUndo();
