@@ -311,6 +311,7 @@
             'confirm.reset': 'Видалити всі дати та шари без можливості відновлення?',
             'confirm.deleteAll': 'Видалити всі карти ({n} дат) без можливості відновлення?',
             'err.memFull': 'ПАМ’ЯТЬ БРАУЗЕРА ПЕРЕПОВНЕНА', 'err.badGeo': 'НЕВІРНИЙ GEOJSON',
+            'err.storeMemOnly': 'СХОВИЩЕ БРАУЗЕРА НЕДОСТУПНЕ — ЗМІНИ ЖИВУТЬ ДО ПЕРЕЗАВАНТАЖЕННЯ',
             'err.noPolygons': 'НЕМАЄ ПОЛІГОНІВ', 'err.tooBig': 'ФАЙЛ ЗАВЕЛИКИЙ', 'err.invalidFile': 'НЕВІРНИЙ ФАЙЛ',
             'layer.front': 'ЛІНІЯ ФРОНТУ', 'layer.offensive': 'НАСТУП', 'layer.zone': 'ПОЛІГОН {n}', 'layer.copy': 'КОПІЯ', 'layer.import': 'ІМПОРТ', 'layer.noName': 'БЕЗ НАЗВИ',
             'place.city': 'МІСТО', 'place.village': 'СЕЛО', 'place.hamlet': 'ХУТІР', 'place.hut': 'ХУТІР',
@@ -482,6 +483,7 @@
             'confirm.reset': 'Delete all dates and layers with no way to restore?',
             'confirm.deleteAll': 'Delete all maps ({n} dates) with no way to restore?',
             'err.memFull': 'BROWSER STORAGE IS FULL', 'err.badGeo': 'INVALID GEOJSON',
+            'err.storeMemOnly': 'BROWSER STORAGE UNAVAILABLE — CHANGES LAST UNTIL RELOAD',
             'err.noPolygons': 'NO POLYGONS', 'err.tooBig': 'FILE TOO LARGE', 'err.invalidFile': 'INVALID FILE',
             'layer.front': 'FRONT LINE', 'layer.offensive': 'OFFENSIVE', 'layer.zone': 'POLYGON {n}', 'layer.copy': 'COPY', 'layer.import': 'IMPORT', 'layer.noName': 'NO NAME',
             'place.city': 'CITY', 'place.village': 'VILLAGE', 'place.hamlet': 'HAMLET', 'place.hut': 'FARMSTEAD',
@@ -679,33 +681,68 @@
     const dirty = new Set();     // ще не злиті в IndexedDB записи
     const gone = new Set();      // ще не злиті в IndexedDB видалення
     let db = null;               // IDBDatabase, коли сховище відкрилося
-    let dbDead = false;          // IndexedDB недоступний — працюємо як раніше, лише через localStorage
+    let dbDownUntil = 0;         // невдала спроба відкриття — повторюємо пізніше, а не вимикаємо назавжди
+    let opening = null;          // одне відкриття на всіх, без паралельних запитів
     let hydration = null;        // один запущений міграційний прохід
     let flushTimer = null;
 
+    // IndexedDB не має ліміту localStorage: якщо квота переповнена або відкриття
+    // впало через іншу вкладку, документ лишається в пам'яті й переїде в базу,
+    // щойно вона відкриється. Жодних «пам'ять переповнена» на збереженні дат.
     function openIdb() {
-        return new Promise(resolve => {
-            if (typeof indexedDB === 'undefined' || !indexedDB) { dbDead = true; return resolve(null); }
-            let req;
-            try { req = indexedDB.open(IDB_NAME, 1); } catch (e) { dbDead = true; return resolve(null); }
+        if (opening) return opening;
+        if (typeof indexedDB === 'undefined' || !indexedDB) return Promise.resolve(null);
+        let req;
+        try { req = indexedDB.open(IDB_NAME, 1); } catch (e) {
+            dbDownUntil = Date.now() + 5000;
+            return Promise.resolve(null);
+        }
+        opening = new Promise(resolve => {
             let settled = false;
+            const finish = v => {
+                if (settled) return;
+                settled = true;
+                opening = null;
+                if (!v) dbDownUntil = Date.now() + 5000;
+                resolve(v);
+            };
             req.onupgradeneeded = () => {
                 const d = req.result;
                 if (!d.objectStoreNames.contains(IDB_STORE)) d.createObjectStore(IDB_STORE, { keyPath: 'k' });
             };
             req.onsuccess = () => {
                 const d = req.result;
-                d.onversionchange = () => { try { d.close(); } catch (e) { } };
-                // база могла відкритися вже після того, як старт карти втопився й пішов на localStorage
-                if (!dbDead && !db) db = d;
-                settled = true;
-                resolve(d);
+                d.onversionchange = () => { try { d.close(); } catch (e) { } if (db === d) db = null; };
+                dbDownUntil = 0;
+                if (!db) db = d;
+                finish(d);
+                scheduleFlush();
+                flushNow();
             };
-            req.onerror = () => { dbDead = true; settled = true; resolve(null); };
-            req.onblocked = () => { dbDead = true; settled = true; resolve(null); };
-            // інша вкладка тримає базу — старт карти не повинен чекати нескінченно
-            setTimeout(() => { if (!settled) resolve(null); }, 4000);
+            req.onerror = () => finish(null);
+            // onblocked: сусідня вкладка тримає стару версію бази — чекаємо, поки вона
+            // закриється; раніше тут IndexedDB вмирала до кінця сеансу й усе падало в localStorage
+            setTimeout(() => finish(null), 8000);
         });
+        return opening;
+    }
+
+    function reviveStorage() {
+        if (db) return Promise.resolve(true);
+        if (Date.now() < dbDownUntil) return Promise.resolve(false);
+        return openIdb().then(d => {
+            if (d) { db = d; return true; }
+            dbDownUntil = Date.now() + 5000;
+            return false;
+        });
+    }
+
+    let memWarned = false;
+    function warnMemoryOnly() {
+        if (memWarned) return;
+        memWarned = true;
+        // показуємо після тоста «скопійовано», інакше він його перекриє
+        setTimeout(() => { try { toast(t('err.storeMemOnly'), 'err'); } catch (e) { } }, 150);
     }
 
     function idbReadAll(d) {
@@ -797,12 +834,18 @@
         if (!d) return false;
         db = d;
         const rows = await idbReadAll(d);
-        if (!rows) { db = null; dbDead = true; return false; }
+        if (!rows) {
+            try { d.close(); } catch (e) { }
+            if (db === d) db = null;
+            dbDownUntil = Date.now() + 5000;
+            return false;
+        }
         const held = new Map();
         rows.forEach(r => {
             if (r && isDateKey(r.k) && typeof r.v === 'string') held.set(r.k, r);
         });
-        held.forEach((r, k) => docs.set(k, r.v));
+        // збережене під час відкриття бази свіжіше за те, що встигло лягти на диск
+        held.forEach((r, k) => { if (!dirty.has(k)) docs.set(k, r.v); });
         const carry = local.filter(r => {
             const prev = held.get(r.k);
             if (prev && (Number(prev.savedAt) || 0) >= r.savedAt) { dropLocal(r.k); return false; }
@@ -872,7 +915,10 @@
         set(k, v) {
             if (isDateKey(k)) {
                 docs.set(k, v);
-                if (db) { dirty.add(k); scheduleFlush(); return true; }
+                dirty.add(k);
+                if (db) { scheduleFlush(); return true; }
+                // квота localStorage не межа: база відкриється у фоні й забере документ
+                reviveStorage();
             }
             try { localStorage.setItem(k, v); return true; } catch (e) { return false; }
         },
@@ -880,7 +926,9 @@
             if (isDateKey(k)) {
                 docs.delete(k);
                 dirty.delete(k);
-                if (db) { gone.add(k); scheduleFlush(); }
+                gone.add(k);
+                if (db) scheduleFlush();
+                else reviveStorage();
             }
             dropLocal(k);
         },
@@ -1051,8 +1099,18 @@
                     return retry.length;
                 }
             }
-            const u = storageUsage();
-            throw new Error(t('err.memFull') + ' · ' + u.kb + ' KB · ' + u.dates);
+            // localStorage переповнений, але документ уже в пам'яті: IndexedDB
+            // ліміту не має, тож зберігаємо туди у фоні. Збереження не відмовляє
+            // ніколи — навіть без IndexedDB дата живе до перезавантаження (з попередженням).
+            docs.set(PREFIX + date, payload);
+            dirty.add(PREFIX + date);
+            if (typeof indexedDB === 'undefined' || !indexedDB) warnMemoryOnly();
+            else reviveStorage().then(ok => {
+                if (ok) { scheduleFlush(); flushNow(); }
+                else warnMemoryOnly();
+            });
+            mem.set(VER_KEY, String(Date.now()));
+            return payload.length;
         }
         mem.set(VER_KEY, String(Date.now()));
         return payload.length;
