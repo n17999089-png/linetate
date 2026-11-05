@@ -1972,6 +1972,9 @@
     let statsRes = null;
     let statsBusy = false;
     let statsTab = 'front';
+    let statsLoss = null;
+    let statsLossErr = false;
+    let lossBusy = false;
 
     function syncStatsTabs() {
         document.querySelectorAll('.lt-stats-tab').forEach(btn => {
@@ -1981,20 +1984,38 @@
         });
     }
 
+    function ensureLosses(force) {
+        if (lossBusy) return;
+        lossBusy = true;
+        statsLossErr = false;
+        if (statsTab === 'losses') renderStats();
+        LT.loadLosses(force).then(doc => {
+            statsLoss = doc;
+            lossBusy = false;
+            if (statsTab === 'losses') renderStats();
+        }).catch(() => {
+            lossBusy = false;
+            statsLoss = null;
+            statsLossErr = true;
+            if (statsTab === 'losses') renderStats();
+        });
+    }
+
     function setStatsTab(tab) {
-        tab = tab === 'ua' ? 'ua' : 'front';
+        tab = tab === 'ua' ? 'ua' : tab === 'losses' ? 'losses' : 'front';
         if (statsTab === tab) return;
         statsTab = tab;
         syncStatsTabs();
+        if (tab === 'losses') ensureLosses(false);
         const body = $('stats-body');
         // переписуємо вміст, щоб ріст стовпчиків діаграми стартував заново
-        if (body && statsRes) body.innerHTML = LT.statsRender(statsRes, statsTab);
+        if (body) body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
     }
 
     function renderStats() {
         const body = $('stats-body');
         syncStatsTabs();
-        if (body) body.innerHTML = LT.statsRender(statsRes, statsTab);
+        if (body) body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
     }
 
     function loadStats() {
@@ -2034,7 +2055,11 @@
             btn.classList.toggle('active', open);
             btn.setAttribute('aria-expanded', String(open));
         }
-        if (open) loadStats();
+        if (open) {
+            loadStats();
+            // тягнемо заздалегідь, щоб вкладка «Втрати» відкривалась уже з даними
+            ensureLosses(false);
+        }
     }
 
     function setMenu(open) {
@@ -2924,6 +2949,10 @@
         if (statsClose) statsClose.addEventListener('click', () => setStats(false));
         document.querySelectorAll('.lt-stats-tab').forEach(btn => {
             btn.addEventListener('click', () => setStatsTab(btn.dataset.tab));
+        });
+        const statsBody = $('stats-body');
+        if (statsBody) statsBody.addEventListener('click', e => {
+            if (e.target.closest('.lt-loss-retry')) ensureLosses(true);
         });
         $('date-trigger').addEventListener('click', () => { setMenu(false); cal.toggle(state.date); });
 

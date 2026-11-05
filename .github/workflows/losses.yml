@@ -1,0 +1,59 @@
+name: Update losses data
+
+# Раз на добу тягне підтверджені втрати з незалежних джерел
+# (Mediazona/Meduza — РФ, UALosses — Україна) і комітить data/losses.json.
+# Торкається тільки цього файлу: data/map.json не чіпаємо ніколи.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/update-losses.mjs'
+      - '.github/workflows/losses.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: losses
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Collect losses
+        run: node scripts/update-losses.mjs
+
+      - name: Commit data
+        id: commit
+        run: |
+          if [ -z "$(git status --porcelain -- data/losses.json)" ]; then
+            echo "дані не змінилися"
+            exit 0
+          fi
+          git config user.name "linestate-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/losses.json
+          git commit -m "data: losses $(date -u +%F)"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          echo "pushed=1" >> "$GITHUB_OUTPUT"
+
+      # пуш від GITHUB_TOKEN не запускає інші workflow — деплой кличемо вручну
+      - name: Deploy Pages
+        if: steps.commit.outputs.pushed == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main

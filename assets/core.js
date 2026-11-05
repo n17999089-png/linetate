@@ -201,6 +201,20 @@
             'stats.uaLand': 'ПЛОЩА УКРАЇНИ', 'stats.uaCaptured': 'ЗАХОПИЛА РФ',
             'stats.uaLiberated': 'ЗВІЛЬНИЛА УКРАЇНА', 'stats.uaSince': 'ЗА ВЕСЬ ЧАС',
             'stats.uaChart': 'ЗМІНА ТЕРИТОРІЙ', 'stats.uaNoDays': 'ЩЕ НЕМАЄ ДНІВ ДЛЯ ПОРІВНЯННЯ',
+            'stats.tabLosses': 'ВТРАТИ',
+            'stats.lossAuto': 'АВТООНОВЛЕННЯ', 'stats.lossUpd': 'оновлено',
+            'stats.lossRuCap': 'ВС РФ · ПІДТВЕРДЖЕНО ІМЕН', 'stats.lossUaCap': 'ЗСУ · ПІДТВЕРДЖЕНО ЗАГИБЛИХ',
+            'stats.lossRu': 'РФ', 'stats.lossUa': 'ЗСУ', 'stats.lossPeople': 'осіб',
+            'stats.lossExcess': 'оцінка надсмертності', 'stats.lossMissing': 'зниклих безвісти', 'stats.lossPow': 'у полоні',
+            'stats.lossYears': 'ВТРАТИ ЗА РОКАМИ', 'stats.lossCum': 'НАКОПИЧЕНО З 24.02.2022',
+            'stats.lossEstimate': 'оцінка', 'stats.lossAsOf': 'на',
+            'stats.lossPartial': 'неповний рік — підтвердження запізнюються',
+            'stats.lossCumNote': 'лінія — за датою загибелі; підсумок UALosses — {n}, різниця — записи без дати',
+            'stats.lossSrcRu': 'Джерело: поіменний список «Медіазони» + оцінка надсмертності Meduza',
+            'stats.lossSrcUa': 'Джерело: UALosses — відкриті повідомлення про загибель',
+            'stats.lossWeekly': 'дані оновлюються автоматично',
+            'stats.lossErr': 'НЕ ВДАЛОСЯ ЗАВАНТАЖИТИ ДАНІ', 'stats.lossRetry': 'СПРОБУВАТИ ЩЕ РАЗ',
+            'stats.lossThousand': 'тис. осіб',
             'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
             'tools.rectHint': 'Прямокутник: протягніть по карті', 'tools.circleHint': 'Коло: протягніть по карті',
@@ -401,6 +415,20 @@
             'stats.uaLand': 'UKRAINE AREA', 'stats.uaCaptured': 'RUSSIA CAPTURED',
             'stats.uaLiberated': 'UKRAINE LIBERATED', 'stats.uaSince': 'ALL TIME',
             'stats.uaChart': 'TERRITORY CHANGE', 'stats.uaNoDays': 'NO DAYS TO COMPARE YET',
+            'stats.tabLosses': 'LOSSES',
+            'stats.lossAuto': 'AUTO-UPDATED', 'stats.lossUpd': 'updated',
+            'stats.lossRuCap': 'RU ARMED FORCES · NAMED CONFIRMED', 'stats.lossUaCap': 'UKRAINIAN FORCES · CONFIRMED KILLED',
+            'stats.lossRu': 'RU', 'stats.lossUa': 'UA', 'stats.lossPeople': 'people',
+            'stats.lossExcess': 'excess mortality estimate', 'stats.lossMissing': 'missing', 'stats.lossPow': 'prisoners of war',
+            'stats.lossYears': 'LOSSES BY YEAR', 'stats.lossCum': 'CUMULATIVE SINCE 24.02.2022',
+            'stats.lossEstimate': 'estimate', 'stats.lossAsOf': 'as of',
+            'stats.lossPartial': 'partial year — confirmations lag',
+            'stats.lossCumNote': 'line follows date of death; UALosses project total is {n} — the gap is records without a date',
+            'stats.lossSrcRu': 'Source: Mediazona name list + Meduza excess mortality estimate',
+            'stats.lossSrcUa': 'Source: UALosses — open reports of deaths',
+            'stats.lossWeekly': 'data updates automatically',
+            'stats.lossErr': 'COULD NOT LOAD THE DATA', 'stats.lossRetry': 'TRY AGAIN',
+            'stats.lossThousand': 'thousand people',
             'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
             'tools.rectHint': 'Rectangle: drag on the map', 'tools.circleHint': 'Circle: drag on the map',
@@ -3777,7 +3805,212 @@
         ${res.empty ? `<div class="lt-ua-note">${esc(t('stats.uaNoDays'))}</div>` : ''}`;
     }
 
-    function statsRender(res, tab) {
+    /* ------------------------- вкладка «Втрати» ------------------------- */
+
+    const LOSS_EPOCH = 2022 * 12 + 1;               // лютий 2022
+    const lossMi = key => {
+        const p = String(key).split('-');
+        return Number(p[0]) * 12 + (Number(p[1]) - 1) - LOSS_EPOCH;
+    };
+    const lossNum = v => {
+        try { return new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(Math.round(v || 0)); }
+        catch (e) { return String(Math.round(v || 0)); }
+    };
+    const lossShort = v => {
+        const n = (v || 0) / 1000;
+        try { return new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(n); }
+        catch (e) { return String(Math.round(n * 10) / 10); }
+    };
+    const lossDate = iso => {
+        const p = String(iso || '').split('-');
+        return p.length === 3 ? `${p[2]}.${p[1]}.${p[0]}` : '—';
+    };
+    const lossWhen = iso => {
+        const d = iso ? new Date(iso) : null;
+        if (!d || isNaN(d)) return '—';
+        const z = n => String(n).padStart(2, '0');
+        return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`;
+    };
+
+    // накопичувальні ряди й SVG-графік: суцільна лінія — підтверджені дані,
+    // пунктир у РФ — те, що додалося після останнього повного тижня
+    function lossCumSVG(ru, ua) {
+        const W = 340, H = 172, L = 32, R = 10, T = 12, B = 26;
+        const uaM = (ua && ua.monthly) || [];
+        const ruM = (ru && ru.monthly) || [];
+        const endKey = (ua.asOf || ru.asOf || '2026-10').slice(0, 7);
+        const xMax = Math.max(1, lossMi(endKey));
+        const yMax = Math.max(100000, Math.ceil(Math.max(ru.named || 0, 0) / 50000) * 50000);
+        const px = i => L + Math.max(0, Math.min(xMax, i)) / xMax * (W - L - R);
+        const py = v => (H - B) - (v || 0) / yMax * (H - B - T);
+
+        const cum = list => {
+            const out = [];
+            let sum = 0;
+            for (const [k, v] of list) { sum += v; out.push([lossMi(k), sum]); }
+            return out;
+        };
+        const uaC = cum(uaM);
+        const ruC = cum(ruM);
+        const line = pts => pts.map((p, i) => (i ? 'L' : 'M') + px(p[0]).toFixed(2) + ' ' + py(p[1]).toFixed(2)).join(' ');
+        const area = pts => {
+            if (pts.length < 2) return '';
+            const d = line(pts);
+            return d + ` L${px(pts[pts.length - 1][0]).toFixed(2)} ${H - B} L${px(pts[0][0]).toFixed(2)} ${H - B} Z`;
+        };
+
+        const ruEnd = ru.named ? [lossMi(endKey), ru.named] : null;
+        const tail = ruC.length && ruEnd && ruEnd[0] > ruC[ruC.length - 1][0]
+            ? [ruC[ruC.length - 1], ruEnd] : null;
+
+        let grid = '';
+        for (let i = 0; i <= 4; i++) {
+            const v = yMax / 4 * i;
+            const y = py(v);
+            grid += `<line x1="${L}" x2="${W - R}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"/>`;
+            grid += `<text class="ax" x="${L - 6}" y="${(y + 2.6).toFixed(2)}" text-anchor="end">${lossNum(v / 1000)}</text>`;
+        }
+
+        let xs = '';
+        for (let y = 2022; y <= Number(endKey.slice(0, 4)); y++) {
+            const idx = Math.max(0, lossMi(`${y}-01`));
+            const x = px(idx);
+            xs += `<text class="ax" x="${x.toFixed(2)}" y="${H - 8}" text-anchor="${y === 2022 ? 'start' : 'middle'}">${y}</text>`;
+        }
+
+        const dot = (p, cls) => `<circle class="dot ${cls}" cx="${px(p[0]).toFixed(2)}" cy="${py(p[1]).toFixed(2)}" r="2.1"/>`;
+        let dots = '';
+        const uaL = uaC[uaC.length - 1];
+        const ruL = ruC[ruC.length - 1];
+        if (uaL) dots += dot(uaL, 'ua');
+        if (ruL) dots += dot(ruL, 'ru');
+        if (ruEnd) dots += dot(ruEnd, 'ru-end');
+
+        const label = (p, v, cls, dy) => p ? `<text class="end ${cls}" x="${(px(p[0]) - 3).toFixed(2)}" y="${(py(p[1]) + dy).toFixed(2)}" text-anchor="end">${lossNum(v)}</text>` : '';
+
+        return `<svg class="lt-loss-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t('stats.lossCum'))}">
+            <g class="grid">${grid}</g>
+            <g class="xs">${xs}</g>
+            ${uaC.length > 1 ? `<path class="lt-loss-area ua" d="${area(uaC)}"/>` : ''}
+            ${ruC.length > 1 ? `<path class="lt-loss-area ru" d="${area(ruC)}"/>` : ''}
+            ${ruC.length > 1 ? `<path class="lt-loss-line ru" d="${line(ruC)}" pathLength="1"/>` : ''}
+            ${tail ? `<path class="lt-loss-tail" d="${line(tail)}" pathLength="1"/>` : ''}
+            ${uaC.length > 1 ? `<path class="lt-loss-line ua" d="${line(uaC)}" pathLength="1"/>` : ''}
+            ${dots}
+            ${label(uaL, uaL ? uaL[1] : 0, 'ua', -6)}
+            ${label(ruEnd, ru.named, 'ru', -6)}
+        </svg>`;
+    }
+
+    function statsLosses(L, err) {
+        if (err) {
+            return `<div class="lt-stats-empty lt-loss-err">
+                <b>${esc(t('stats.lossErr'))}</b>
+                <button type="button" class="lt-loss-retry">${esc(t('stats.lossRetry'))}</button>
+                <span>${esc(t('stats.lossWeekly'))}</span>
+            </div>`;
+        }
+        if (!L || !L.ru || !L.ua || !L.ru.named) {
+            return `<div class="lt-stats-loading">${esc(t('stats.loading'))}</div>`;
+        }
+        const ru = L.ru, ua = L.ua;
+        const years = [...new Set([...Object.keys(ru.yearly || {}), ...Object.keys(ua.yearly || {})])].sort();
+        const maxY = Math.max(1, ...years.map(y => Math.max(
+            ru.yearly[y] || 0, (ru.excessYearly && ru.excessYearly[y]) || 0, ua.yearly[y] || 0
+        )));
+        const hgt = v => Math.max(0, Math.round((v || 0) / maxY * 1000) / 10);
+        const lastYear = years[years.length - 1];
+        const partial = y => Number(y) === Number((ua.asOf || '').slice(0, 4)) || Number(y) === Number((ru.asOf || '').slice(0, 4));
+
+        const cols = years.map(y => {
+            const nru = ru.yearly[y] || 0;
+            const ex = (ru.excessYearly && ru.excessYearly[y]) || 0;
+            const nua = ua.yearly[y] || 0;
+            const part = partial(y) ? ' partial' : '';
+            const tipRu = `${y}: ${lossNum(nru)}${ex ? ' · ' + t('stats.lossEstimate') + ' ' + lossNum(ex) : ''}`;
+            const tipUa = `${y}: ${lossNum(nua)}`;
+            return `<div class="lt-loss-col">
+                <div class="lt-loss-pair">
+                    <div class="lt-loss-slot" title="${esc(tipRu)}">
+                        ${ex ? `<i class="lt-loss-ghost" style="--h:${hgt(ex)}%"></i>` : ''}
+                        <i class="lt-loss-bar ru${part}" style="--h:${hgt(nru)}%"><span>${lossShort(nru)}</span></i>
+                    </div>
+                    <div class="lt-loss-slot" title="${esc(tipUa)}">
+                        <i class="lt-loss-bar ua${part}" style="--h:${hgt(nua)}%"><span>${lossShort(nua)}</span></i>
+                    </div>
+                </div>
+                <span class="lt-loss-y">${esc(y)}${part ? '*' : ''}</span>
+            </div>`;
+        }).join('');
+
+        return `<div class="lt-loss-status">
+            <span class="lt-loss-live"><i></i>${esc(t('stats.lossAuto'))}</span>
+            <em>${esc(t('stats.lossUpd'))} ${esc(lossWhen(L.updatedAt))}</em>
+        </div>
+        <div class="lt-loss-heroes">
+            <article class="lt-loss-hero rus">
+                ${statsFlag('ru')}
+                <div class="lt-loss-hero-txt">
+                    <span class="k">${esc(t('stats.lossRuCap'))}</span>
+                    <b>${lossNum(ru.named)}<i>${esc(t('stats.lossPeople'))}</i></b>
+                    <span class="s">${esc(t('stats.lossExcess'))} <em>${lossNum(ru.excess)}</em>${ru.excessAsOf ? ' · ' + esc(t('stats.lossAsOf')) + ' ' + esc(lossDate(ru.excessAsOf)) : ''}</span>
+                    <span class="d">${esc(t('stats.lossAsOf'))} ${esc(lossDate(ru.asOf))}</span>
+                </div>
+            </article>
+            <article class="lt-loss-hero ukr">
+                ${statsFlag('uk')}
+                <div class="lt-loss-hero-txt">
+                    <span class="k">${esc(t('stats.lossUaCap'))}</span>
+                    <b>${lossNum(ua.killed)}<i>${esc(t('stats.lossPeople'))}</i></b>
+                    <span class="s">${esc(t('stats.lossMissing'))} <em>${lossNum(ua.missing)}</em> · ${esc(t('stats.lossPow'))} <em>${lossNum(ua.pow)}</em></span>
+                    <span class="d">${esc(t('stats.lossAsOf'))} ${esc(lossDate(ua.asOf))}</span>
+                </div>
+            </article>
+        </div>
+        <div class="lt-loss-chart lt-loss-years">
+            <div class="lt-loss-head"><span>${esc(t('stats.lossYears'))}</span><em>${esc(t('stats.lossThousand'))}</em></div>
+            <div class="lt-loss-leg">
+                <span class="ru">${esc(t('stats.lossRu'))}</span>
+                <span class="ru est">${esc(t('stats.lossRu'))} · ${esc(t('stats.lossEstimate'))}</span>
+                <span class="ua">${esc(t('stats.lossUa'))}</span>
+            </div>
+            <div class="lt-loss-bars">${cols}</div>
+            <div class="lt-loss-foot"><span>* ${esc(t('stats.lossPartial'))}</span></div>
+        </div>
+        <div class="lt-loss-chart lt-loss-cum">
+            <div class="lt-loss-head"><span>${esc(t('stats.lossCum'))}</span><em>${esc(t('stats.lossThousand'))}</em></div>
+            ${lossCumSVG(ru, ua)}
+            <div class="lt-loss-foot"><span>${esc(t('stats.lossCumNote', { n: lossNum(ua.killed) }))}</span></div>
+        </div>
+        <div class="lt-loss-src">
+            <a href="${esc(ru.url)}" target="_blank" rel="noopener">${esc(t('stats.lossSrcRu'))}</a>
+            <a href="${esc(ua.url)}" target="_blank" rel="noopener">${esc(t('stats.lossSrcUa'))}</a>
+            <span>${esc(t('stats.lossWeekly'))}</span>
+        </div>`;
+    }
+
+    const LOSSES_URL = 'data/losses.json';
+    let lossesCache = null;
+    let lossesPending = null;
+    function loadLosses(force) {
+        const now = Date.now();
+        if (!force && lossesCache && now - lossesCache.at < 6 * 3600e3) return Promise.resolve(lossesCache.doc);
+        if (lossesPending) return lossesPending;
+        const hour = Math.floor(now / 3600e3);
+        lossesPending = fetch(LOSSES_URL + '?h=' + hour, { cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(doc => {
+                if (!doc || !doc.ru || !doc.ua) throw new Error('bad losses data');
+                lossesCache = { at: Date.now(), doc };
+                lossesPending = null;
+                return doc;
+            })
+            .catch(e => { lossesPending = null; throw e; });
+        return lossesPending;
+    }
+
+    function statsRender(res, tab, loss, lossErr) {
+        if (tab === 'losses') return statsLosses(loss, lossErr);
         if (tab === 'ua') return statsUkraine(res);
         if (!res) return `<div class="lt-stats-loading">${esc(t('stats.loading'))}</div>`;
         if (res.empty || !res.rows.length) {
@@ -7108,7 +7341,7 @@
         blendEngine, featBox, onScreen, bakeParts, warmGeometry, lodTols,
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,
-        statsCompute, statsRender, statsRoles, setStatsRoles, statsDetectRoles, statsDate: STATS_START,
+        statsCompute, statsRender, statsRoles, setStatsRoles, statsDetectRoles, statsDate: STATS_START, loadLosses,
         loadFX, saveFX, applyFX, initFX,
         views: { local: localViews, record: recordView, ask: askRemoteViews, cached: cachedRemoteViews, publicHost },
         parseGeoJSON, boundsOf,
