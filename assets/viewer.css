@@ -981,8 +981,9 @@
     transition: background .16s ease, border-color .16s ease, color .16s ease, transform .2s var(--ease-pop), box-shadow .2s ease;
 }
 @keyframes ps-row {
-    from { opacity: 0; transform: translateY(7px); }
-    to { opacity: 1; transform: none; }
+    /* тільки зсув: якщо анімація застрягне на нулі, рядок усе одно видно */
+    from { transform: translateY(7px); }
+    to { transform: none; }
 }
 #ps-results .sr:hover { background: rgba(255, 255, 255, .045); color: var(--text); transform: translateX(2px); }
 #ps-results .sr.active {
