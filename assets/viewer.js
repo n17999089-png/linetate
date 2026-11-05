@@ -1971,10 +1971,30 @@
     let statsOpen = false;
     let statsRes = null;
     let statsBusy = false;
+    let statsTab = 'front';
+
+    function syncStatsTabs() {
+        document.querySelectorAll('.lt-stats-tab').forEach(btn => {
+            const on = btn.dataset.tab === statsTab;
+            btn.classList.toggle('active', on);
+            btn.setAttribute('aria-selected', String(on));
+        });
+    }
+
+    function setStatsTab(tab) {
+        tab = tab === 'ua' ? 'ua' : 'front';
+        if (statsTab === tab) return;
+        statsTab = tab;
+        syncStatsTabs();
+        const body = $('stats-body');
+        // переписуємо вміст, щоб ріст стовпчиків діаграми стартував заново
+        if (body && statsRes) body.innerHTML = LT.statsRender(statsRes, statsTab);
+    }
 
     function renderStats() {
         const body = $('stats-body');
-        if (body) body.innerHTML = LT.statsRender(statsRes);
+        syncStatsTabs();
+        if (body) body.innerHTML = LT.statsRender(statsRes, statsTab);
     }
 
     function loadStats() {
@@ -2902,6 +2922,9 @@
         if (statsBtn) statsBtn.addEventListener('click', () => setStats(!statsOpen));
         const statsClose = $('stats-close');
         if (statsClose) statsClose.addEventListener('click', () => setStats(false));
+        document.querySelectorAll('.lt-stats-tab').forEach(btn => {
+            btn.addEventListener('click', () => setStatsTab(btn.dataset.tab));
+        });
         $('date-trigger').addEventListener('click', () => { setMenu(false); cal.toggle(state.date); });
 
         $('lang-btn').addEventListener('click', () => LT.switchLang());

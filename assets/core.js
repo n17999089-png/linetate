@@ -196,6 +196,11 @@
             'stats.rule2': 'Сіра зона на жовту або порожню землю — мінус Україні.',
             'stats.rule3': 'Сіра зона на червону — мінус Росії й плюс Україні.',
             'stats.rule4': 'Червона зона вперед — плюс Росії й мінус Україні.',
+            'stats.tabOverview': 'ОГЛЯД', 'stats.tabUkraine': 'УКРАЇНА',
+            'stats.uaOcc': 'ЗАРАЗ ПІД КОНТРОЛЕМ РФ', 'stats.uaOfUkraine': 'ВІД ПЛОЩІ УКРАЇНИ',
+            'stats.uaLand': 'ПЛОЩА УКРАЇНИ', 'stats.uaCaptured': 'ЗАХОПИЛА РФ',
+            'stats.uaLiberated': 'ЗВІЛЬНИЛА УКРАЇНА', 'stats.uaSince': 'ЗА ВЕСЬ ЧАС',
+            'stats.uaChart': 'ЗМІНА ТЕРИТОРІЙ', 'stats.uaNoDays': 'ЩЕ НЕМАЄ ДНІВ ДЛЯ ПОРІВНЯННЯ',
             'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
             'tools.rectHint': 'Прямокутник: протягніть по карті', 'tools.circleHint': 'Коло: протягніть по карті',
@@ -391,6 +396,11 @@
             'stats.rule2': 'Grey zone onto yellow or empty land — Ukraine loses.',
             'stats.rule3': 'Grey zone onto red — Russia loses and Ukraine gains.',
             'stats.rule4': 'Red zone advances — Russia gains and Ukraine loses.',
+            'stats.tabOverview': 'OVERVIEW', 'stats.tabUkraine': 'UKRAINE',
+            'stats.uaOcc': 'UNDER RUSSIAN CONTROL NOW', 'stats.uaOfUkraine': 'OF UKRAINE’S AREA',
+            'stats.uaLand': 'UKRAINE AREA', 'stats.uaCaptured': 'RUSSIA CAPTURED',
+            'stats.uaLiberated': 'UKRAINE LIBERATED', 'stats.uaSince': 'ALL TIME',
+            'stats.uaChart': 'TERRITORY CHANGE', 'stats.uaNoDays': 'NO DAYS TO COMPARE YET',
             'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
             'tools.rectHint': 'Rectangle: drag on the map', 'tools.circleHint': 'Circle: drag on the map',
@@ -2072,62 +2082,54 @@
 
     /* ------------------------------ язык ------------------------------ */
 
-    // прапор малюємо як тканину: смуги + статичні складки й затінення країв;
-    // рухоме світло додає CSS, щоб анімація йшла на GPU
-    const FLAG_SVG = {
-        uk: `<svg viewBox="0 0 60 40" preserveAspectRatio="none">
+    // прапор малюємо як полотно без древка: хвилястий силует, складки,
+    // затінення країв і зпечена тінь. Рух додає CSS — лише transform,
+    // тож браузер водить готовим шаром і не перемальовує SVG
+    const FLAG_CLOTH = 'M2 5C10 2.6 20 6.4 30 4 40 1.8 50 4.6 58 3.6L58 35C50 37.4 40 33.8 30 36 20 38.2 10 34.8 2 36.4Z';
+    const flagSvg = (id, stripes, foldStops) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true">
             <defs>
-                <linearGradient id="ltfUkFold" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0" stop-color="#000" stop-opacity=".34"/>
-                    <stop offset=".09" stop-color="#000" stop-opacity=".08"/>
-                    <stop offset=".23" stop-color="#fff" stop-opacity=".17"/>
-                    <stop offset=".4" stop-color="#000" stop-opacity=".13"/>
-                    <stop offset=".57" stop-color="#fff" stop-opacity=".13"/>
-                    <stop offset=".73" stop-color="#000" stop-opacity=".15"/>
-                    <stop offset=".89" stop-color="#fff" stop-opacity=".1"/>
-                    <stop offset="1" stop-color="#000" stop-opacity=".3"/>
-                </linearGradient>
-                <linearGradient id="ltfUkEdge" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stop-color="#fff" stop-opacity=".16"/>
-                    <stop offset=".14" stop-color="#fff" stop-opacity="0"/>
-                    <stop offset=".86" stop-color="#000" stop-opacity="0"/>
-                    <stop offset="1" stop-color="#000" stop-opacity=".24"/>
-                </linearGradient>
-            </defs>
-            <rect width="60" height="20" fill="#0057b7"/>
-            <rect y="20" width="60" height="20" fill="#ffd700"/>
-            <path d="M20 0h.5v40H20z" fill="#000" opacity=".12"/>
-            <path d="M41 0H40v40h1z" fill="#000" opacity=".1"/>
-            <rect width="60" height="40" fill="url(#ltfUkFold)"/>
-            <rect width="60" height="40" fill="url(#ltfUkEdge)"/>
-        </svg>`,
-        ru: `<svg viewBox="0 0 60 40" preserveAspectRatio="none">
-            <defs>
-                <linearGradient id="ltfRuFold" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0" stop-color="#000" stop-opacity=".28"/>
-                    <stop offset=".1" stop-color="#000" stop-opacity=".06"/>
-                    <stop offset=".24" stop-color="#fff" stop-opacity=".2"/>
-                    <stop offset=".41" stop-color="#000" stop-opacity=".12"/>
-                    <stop offset=".58" stop-color="#fff" stop-opacity=".16"/>
-                    <stop offset=".74" stop-color="#000" stop-opacity=".14"/>
-                    <stop offset=".9" stop-color="#fff" stop-opacity=".12"/>
+                <clipPath id="ltf${id}Clip"><path d="${FLAG_CLOTH}"/></clipPath>
+                <linearGradient id="ltf${id}Fold" x1="0" y1="0" x2="1" y2="0">${foldStops}</linearGradient>
+                <linearGradient id="ltf${id}Edge" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#fff" stop-opacity=".17"/>
+                    <stop offset=".16" stop-color="#fff" stop-opacity="0"/>
+                    <stop offset=".84" stop-color="#000" stop-opacity="0"/>
                     <stop offset="1" stop-color="#000" stop-opacity=".26"/>
                 </linearGradient>
-                <linearGradient id="ltfRuEdge" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stop-color="#fff" stop-opacity=".18"/>
-                    <stop offset=".14" stop-color="#fff" stop-opacity="0"/>
-                    <stop offset=".86" stop-color="#000" stop-opacity="0"/>
-                    <stop offset="1" stop-color="#000" stop-opacity=".22"/>
-                </linearGradient>
+                <filter id="ltf${id}Sh" x="-12%" y="-14%" width="124%" height="130%">
+                    <feGaussianBlur stdDeviation="1.7"/>
+                </filter>
             </defs>
-            <rect width="60" height="13.34" fill="#ffffff"/>
-            <rect y="13.34" width="60" height="13.33" fill="#0039a6"/>
-            <rect y="26.67" width="60" height="13.33" fill="#d52b1e"/>
-            <path d="M19 0h.5v40H19z" fill="#000" opacity=".1"/>
-            <path d="M43 0H42v40h1z" fill="#000" opacity=".08"/>
-            <rect width="60" height="40" fill="url(#ltfRuFold)"/>
-            <rect width="60" height="40" fill="url(#ltfRuEdge)"/>
-        </svg>`,
+            <path d="${FLAG_CLOTH}" transform="translate(1.1 2.1)" fill="#000" opacity=".55" filter="url(#ltf${id}Sh)"/>
+            <g clip-path="url(#ltf${id}Clip)">
+                ${stripes}
+                <rect width="60" height="40" fill="url(#ltf${id}Fold)"/>
+                <rect width="60" height="40" fill="url(#ltf${id}Edge)"/>
+            </g>
+        </svg>`;
+    const FLAG_SVG = {
+        uk: flagSvg('Uk',
+            `<rect width="60" height="20" fill="#0057b7"/><rect y="20" width="60" height="20" fill="#ffd700"/>
+             <path d="M21 0h.5v40H21z" fill="#000" opacity=".12"/><path d="M42 0h-1v40h1z" fill="#000" opacity=".1"/>`,
+            `<stop offset="0" stop-color="#000" stop-opacity=".32"/>
+             <stop offset=".1" stop-color="#000" stop-opacity=".06"/>
+             <stop offset=".25" stop-color="#fff" stop-opacity=".18"/>
+             <stop offset=".42" stop-color="#000" stop-opacity=".12"/>
+             <stop offset=".59" stop-color="#fff" stop-opacity=".14"/>
+             <stop offset=".75" stop-color="#000" stop-opacity=".14"/>
+             <stop offset=".9" stop-color="#fff" stop-opacity=".1"/>
+             <stop offset="1" stop-color="#000" stop-opacity=".28"/>`),
+        ru: flagSvg('Ru',
+            `<rect width="60" height="13.34" fill="#ffffff"/><rect y="13.34" width="60" height="13.33" fill="#0039a6"/><rect y="26.67" width="60" height="13.33" fill="#d52b1e"/>
+             <path d="M20 0h.5v40H20z" fill="#000" opacity=".1"/><path d="M43 0h-1v40h1z" fill="#000" opacity=".08"/>`,
+            `<stop offset="0" stop-color="#000" stop-opacity=".26"/>
+             <stop offset=".11" stop-color="#000" stop-opacity=".05"/>
+             <stop offset=".26" stop-color="#fff" stop-opacity=".2"/>
+             <stop offset=".43" stop-color="#000" stop-opacity=".11"/>
+             <stop offset=".6" stop-color="#fff" stop-opacity=".16"/>
+             <stop offset=".76" stop-color="#000" stop-opacity=".13"/>
+             <stop offset=".91" stop-color="#fff" stop-opacity=".12"/>
+             <stop offset="1" stop-color="#000" stop-opacity=".24"/>`),
         en: '<svg viewBox="0 0 60 30" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><clipPath id="union-clip"><path d="M0 0h60v30H0z"/></clipPath><clipPath id="union-diagonal"><path d="M30 15h30v15zM30 15v15H0zM30 15H0V0zM30 15V0h30z"/></clipPath></defs><g clip-path="url(#union-clip)"><path d="M0 0h60v30H0z" fill="#012169"/><path d="m0 0 60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="m0 0 60 30m0-30L0 30" stroke="#c8102e" stroke-width="4" clip-path="url(#union-diagonal)"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#c8102e" stroke-width="6"/></g></svg>'
     };
 
@@ -3611,6 +3613,17 @@
         return t;
     }
 
+    // площа українського геоджесону й те, що зараз під російською зоною:
+    // відсотки у вкладці «Україна» рахуються від цієї площі
+    const UA_AREA_KM2 = 603628;
+    function statsLandInfo(doc, roles) {
+        const land = doc && roles.land ? statsZone(doc, roles.land) : null;
+        const landArea = statsAreaKm2(land) || UA_AREA_KM2;
+        const rus = doc && roles.rus ? statsZone(doc, roles.rus) : null;
+        const occupied = land ? statsCut(rus, land) : rus;
+        return { landArea, occupiedNow: statsAreaKm2(occupied) };
+    }
+
     let statsMemo = null;
 
     function statsCompute(progress) {
@@ -3625,10 +3638,11 @@
             const latest = list.length ? load(list[list.length - 1].date) : null;
             const roles = statsRoles(latest && latest.layers);
             const baseline = first > 0 ? list[first - 1].date : null;
+            const landInfo = statsLandInfo(latest, roles);
             if (first < 0) {
                 const res = {
                     start: STATS_START, baseline: list.length ? list[list.length - 1].date : null,
-                    roles, rows: [], totals: statsTotals([]), empty: true
+                    roles, rows: [], totals: statsTotals([]), empty: true, ...landInfo
                 };
                 statsMemo = { sig, res };
                 return resolve(res);
@@ -3639,7 +3653,7 @@
             let i = 0;
             const step = () => {
                 if (i >= days.length) {
-                    const res = { start: STATS_START, baseline, roles, rows, totals: statsTotals(rows), empty: false };
+                    const res = { start: STATS_START, baseline, roles, rows, totals: statsTotals(rows), empty: false, ...landInfo };
                     statsMemo = { sig, res };
                     return resolve(res);
                 }
@@ -3670,13 +3684,23 @@
         return `<span class="lt-stat-num ${cls}">${txt}</span>`;
     }
 
+    // полотно показуємо трьома смугами: кожна вирізає свою ділянку тієї
+    // самої картинки й коливається зі зсувом фази, тому складки біжать
+    // по тканині. Картинка йде data-URI, тож браузер малює її один раз
+    const statsFlagUri = {};
+    function statsFlag(flag) {
+        if (!statsFlagUri[flag]) {
+            statsFlagUri[flag] = "url('data:image/svg+xml," + encodeURIComponent(FLAG_SVG[flag] || FLAG_SVG.en) + "')";
+        }
+        return `<div class="lt-flag lt-flag-${flag}" style="--flag:${statsFlagUri[flag]}" aria-hidden="true">
+            <span class="lt-flag-strip"></span><span class="lt-flag-strip"></span><span class="lt-flag-strip"></span>
+        </div>`;
+    }
+
     function statsSide(side, flag, name, plus, minus, net) {
         const share = plus + minus > 0 ? Math.round(plus / (plus + minus) * 100) : 50;
         return `<article class="lt-stats-side ${side}">
-            <div class="lt-flag lt-flag-${side}">
-                <span class="lt-flag-pole"></span>
-                <span class="lt-flag-cloth">${FLAG_SVG[flag] || ''}</span>
-            </div>
+            ${statsFlag(flag)}
             <div class="lt-stats-side-txt">
                 <b>${esc(name)}</b>
                 <small>
@@ -3694,7 +3718,67 @@
         return `<i class="lt-stats-bar ${v > 0 ? 'pos' : 'neg'}" style="--w:${Math.max(4, Math.round(Math.abs(v) / max * 100))}%"></i>`;
     }
 
-    function statsRender(res) {
+    function statsPct(v, total) {
+        const p = total > 0 ? v / total * 100 : 0;
+        const digits = p >= 10 ? 1 : p >= 1 ? 2 : p >= 0.1 ? 3 : 4;
+        try { return new Intl.NumberFormat(locale(), { maximumFractionDigits: digits }).format(p); }
+        catch (e) { return String(Number(p.toFixed(digits))); }
+    }
+
+    // вкладка «Україна»: скільки території зараз під РФ, скільки РФ
+    // захопила й скільки Україна звільнила — усе від площі геоджесону
+    function statsUkraine(res) {
+        if (!res) return `<div class="lt-stats-loading">${esc(t('stats.loading'))}</div>`;
+        const T = res.totals || { ukrPlus: 0, rusPlus: 0 };
+        const land = res.landArea || UA_AREA_KM2;
+        const occ = res.occupiedNow || 0;
+        const occPct = land > 0 ? Math.min(100, occ / land * 100) : 0;
+        const max = Math.max(T.rusPlus || 0, T.ukrPlus || 0, 0.001);
+        const h = v => Math.max(7, Math.round((v || 0) / max * 100));
+        const card = (side, flag, label, value, pct) => `<article class="lt-ua-card ${side}">
+            ${statsFlag(flag)}
+            <div class="lt-ua-card-txt">
+                <b>${esc(label)}</b>
+                <strong>${statsSigned(value)}<i>${esc(t('stats.km2'))}</i></strong>
+                <small>${pct}% · ${esc(t('stats.uaOfUkraine'))}</small>
+            </div>
+        </article>`;
+        return `<div class="lt-ua-hero">
+            <span class="k">${esc(t('stats.uaOcc'))}</span>
+            <b>${statsFmt(occ)}<i>${esc(t('stats.km2'))}</i></b>
+            <span class="s">${statsPct(occ, land)}%<em>${esc(t('stats.uaOfUkraine'))}</em></span>
+            <div class="lt-ua-occbar" aria-hidden="true"><i style="--p:${occPct.toFixed(2)}%"></i></div>
+            <span class="lt-ua-land">${esc(t('stats.uaLand'))} — ${statsFmt(land)} ${esc(t('stats.km2'))}</span>
+        </div>
+        <div class="lt-ua-cards">
+            ${card('rus', 'ru', t('stats.uaCaptured'), T.rusPlus || 0, statsPct(T.rusPlus, land))}
+            ${card('ukr', 'uk', t('stats.uaLiberated'), T.ukrPlus || 0, statsPct(T.ukrPlus, land))}
+        </div>
+        <div class="lt-ua-chart">
+            <div class="lt-ua-chart-head"><span>${esc(t('stats.uaChart'))}</span><em>${esc(t('stats.uaSince'))}</em></div>
+            <div class="lt-ua-bars">
+                <div class="lt-ua-col">
+                    <div class="lt-ua-bar rus" style="--h:${h(T.rusPlus)}%">
+                        <span class="lt-ua-bar-v">${statsFmt(T.rusPlus || 0)}</span>
+                        <i class="lt-ua-bar-top"></i><i class="lt-ua-bar-side"></i>
+                    </div>
+                    <span class="lt-ua-col-k">${esc(t('stats.uaCaptured'))}</span>
+                </div>
+                <div class="lt-ua-col">
+                    <div class="lt-ua-bar ukr" style="--h:${h(T.ukrPlus)}%">
+                        <span class="lt-ua-bar-v">${statsFmt(T.ukrPlus || 0)}</span>
+                        <i class="lt-ua-bar-top"></i><i class="lt-ua-bar-side"></i>
+                    </div>
+                    <span class="lt-ua-col-k">${esc(t('stats.uaLiberated'))}</span>
+                </div>
+            </div>
+            <div class="lt-ua-chart-foot"><span>${esc(t('stats.km2'))}</span><em>${res.rows.length ? esc(fmtShort(res.rows[0].date) + ' – ' + fmtShort(res.rows[res.rows.length - 1].date)) : ''}</em></div>
+        </div>
+        ${res.empty ? `<div class="lt-ua-note">${esc(t('stats.uaNoDays'))}</div>` : ''}`;
+    }
+
+    function statsRender(res, tab) {
+        if (tab === 'ua') return statsUkraine(res);
         if (!res) return `<div class="lt-stats-loading">${esc(t('stats.loading'))}</div>`;
         if (res.empty || !res.rows.length) {
             return `<div class="lt-stats-empty"><b>${esc(t('stats.empty'))}</b><span>${esc(t('stats.emptyHint'))}</span></div>`;

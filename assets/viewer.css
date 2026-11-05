@@ -90,6 +90,9 @@
     overflow-y: auto; overscroll-behavior: contain;
     scrollbar-width: thin; scrollbar-color: var(--line-3) transparent;
 }
+/* блоки не мають стискатися під висоту панелі: інакше на телефоні
+   високий вміст обрізався замість прокрутки */
+#stats-body > * { flex: 0 0 auto; }
 #stats-body::-webkit-scrollbar { width: 6px; }
 #stats-body::-webkit-scrollbar-thumb { background: var(--line-3); border-radius: 3px; }
 .stats-btn.active {

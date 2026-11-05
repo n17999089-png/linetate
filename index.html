@@ -11,8 +11,8 @@
 <link href="assets/vendor/maplibre-gl.css" rel="stylesheet">
 <script src="assets/vendor/maplibre-gl.js?v=3"></script>
 <script src="assets/vendor/turf.min.js"></script>
-<link rel="stylesheet" href="assets/theme.css?v=31">
-<link rel="stylesheet" href="assets/viewer.css?v=42">
+<link rel="stylesheet" href="assets/theme.css?v=32">
+<link rel="stylesheet" href="assets/viewer.css?v=43">
 </head>
 <body>
 
@@ -156,6 +156,10 @@
         <span class="label" data-i18n="stats.title">СТАТИСТИКА ФРОНТУ</span>
         <button type="button" class="legend-close" id="stats-close" title="Закрити" aria-label="Закрити" data-i18n-title="viewer.close">×</button>
     </div>
+    <div class="lt-stats-tabs" role="tablist">
+        <button type="button" class="lt-stats-tab active" id="stats-tab-front" role="tab" aria-selected="true" data-tab="front" data-i18n="stats.tabOverview">ОГЛЯД</button>
+        <button type="button" class="lt-stats-tab" id="stats-tab-ua" role="tab" aria-selected="false" data-tab="ua" data-i18n="stats.tabUkraine">УКРАЇНА</button>
+    </div>
     <div class="lt-stats-sub" data-i18n="stats.sub">З 4 ЛИСТОПАДА</div>
     <div id="stats-body"></div>
 </aside>
@@ -230,8 +234,8 @@
 </div>
 
 <script src="assets/regions.js?v=23"></script>
-<script src="assets/core.js?v=94"></script>
+<script src="assets/core.js?v=95"></script>
 <script src="assets/map-tools.js?v=41"></script>
-<script src="assets/viewer.js?v=73"></script>
+<script src="assets/viewer.js?v=74"></script>
 </body>
 </html>
