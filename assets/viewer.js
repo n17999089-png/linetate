@@ -13,7 +13,11 @@
         base: 'hybrid',
         regions: true,
         labels: false,
-        advance: false
+        advance: false,
+        relief3d: true,
+        reliefFlat: false,
+        places: true,
+        zones3d: true
     };
 
     let map = null;
@@ -1822,6 +1826,9 @@
         if (rulerPts.length) drawRuler();
         restack();
         if (blend) blend.sync();
+        // підкладка перебудувала стиль і знесла DEM: рельєф повертаємо за
+        // режимом, інакше після перемикання темна/гібрид він зникає назавжди
+        LT.syncRelief(map);
         scheduleDraw();
     }
 
@@ -2024,11 +2031,69 @@
             isVisible,
             deferRelief: !!deferRelief
         });
+        // «РЕЛЬЄФ» має два різні стани (3D/площина) — після перемикання
+        // показуємо той, що діє в новому режимі
+        syncReliefBtn();
     }
 
     // стан читаємо з самої мапи, а не з класу кнопки: два перемикачі не зможуть
     // розійтися, навіть якщо хтось натисне під час анімації нахилу
     function toggle3D() { set3DView(!map._lt3d); }
+
+    /* ------------------- перемикачі шарів: рельєф / НП / зони ------------------- */
+
+    // «РЕЛЬЄФ» працює за режимом: у 3D керує горами обʼємної карти (типово
+    // увімкнено), у площині вмикає тініювання (типово вимкнено)
+    function syncReliefBtn() {
+        const btn = $('view-relief');
+        if (!btn) return;
+        const on = !!map._lt3d ? state.relief3d : state.reliefFlat;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-pressed', String(on));
+    }
+
+    function setReliefToggle(on) {
+        on = !!on;
+        if (map._lt3d) state.relief3d = on; else state.reliefFlat = on;
+        try {
+            localStorage.setItem(map._lt3d ? 'LINETATE:relief3d' : 'LINETATE:reliefflat', on ? '1' : '0');
+        } catch (e) { }
+        LT.setReliefUser(map, on);
+        syncReliefBtn();
+    }
+
+    function syncPlacesBtn() {
+        const btn = $('view-places');
+        if (!btn) return;
+        btn.classList.toggle('active', !!state.places);
+        btn.setAttribute('aria-pressed', String(!!state.places));
+    }
+
+    function setPlacesToggle(on) {
+        state.places = !!on;
+        try { localStorage.setItem('LINETATE:places', state.places ? '1' : '0'); } catch (e) { }
+        LT.setPlacesVisible(map, state.places);
+        syncPlacesBtn();
+    }
+
+    function syncZonesBtn() {
+        const btn = $('view-zones');
+        if (!btn) return;
+        btn.classList.toggle('active', !!state.zones3d);
+        btn.setAttribute('aria-pressed', String(!!state.zones3d));
+    }
+
+    function setZonesToggle(on) {
+        state.zones3d = !!on;
+        try { localStorage.setItem('LINETATE:zones3d', state.zones3d ? '1' : '0'); } catch (e) { }
+        LT.setZones3d(map, state.zones3d);
+        // перезастосовуємо paint: fe_ (екструзія) зникає, а плоска заливка
+        // повертається, коли обʼємні зони вимкнено
+        Object.values(state.layers).forEach(l => {
+            if (mapReady) LT.applyLayerPaint(map, l, isVisible(l));
+        });
+        syncZonesBtn();
+    }
 
     function centerLabel(id) {
         const l = state.layers[id];
@@ -2499,6 +2564,22 @@
     }
     fitUkraine();
 
+    // стан перемикачів шарів зі сховища. не плутати з підписами шарів:
+    // relief — гори, places — НП, zones3d — обʼємні 3D-зони
+    map._ltBase = state.base;
+    try {
+        const r3 = localStorage.getItem('LINETATE:relief3d');
+        const rf = localStorage.getItem('LINETATE:reliefflat');
+        const pl = localStorage.getItem('LINETATE:places');
+        const zn = localStorage.getItem('LINETATE:zones3d');
+        state.relief3d = r3 !== '0';
+        state.reliefFlat = rf === '1';
+        state.places = pl !== '0';
+        state.zones3d = zn !== '0';
+    } catch (e) { }
+    LT.setReliefPrefs(map, { relief3d: state.relief3d, reliefFlat: state.reliefFlat });
+    LT.setZones3d(map, state.zones3d);
+
     pxLabels = LT.pixelLabels(map);
     pxLabels.setOn(state.base === 'hybrid');
 
@@ -2586,6 +2667,7 @@
         $('play-btn').textContent = LT.t('viewer.play');
         LT.applyMapLang(map);
         LT.ensurePlaceLabels(map, state.base);
+        LT.setPlacesVisible(map, state.places);
         blend = LT.blendEngine(map, () => state.layers, isVisible, l => shownFC.get(l.id) || displayFC(l));
         blend.sync();
         // вимірювальний шов, той самий, що в ядрі для підписів і полотен:
@@ -2742,6 +2824,9 @@
             mapTools.setRegions(on);
         });
         $('view-labels').addEventListener('click', () => setLabels(!state.labels));
+        $('view-relief').addEventListener('click', () => setReliefToggle(!(map._lt3d ? state.relief3d : state.reliefFlat)));
+        $('view-places').addEventListener('click', () => setPlacesToggle(!state.places));
+        $('view-zones').addEventListener('click', () => setZonesToggle(!state.zones3d));
         $('view-3d').addEventListener('click', toggle3D);
         const rail3d = $('tool-3d');
         if (rail3d) rail3d.addEventListener('click', toggle3D);
@@ -2851,11 +2936,17 @@
             b.addEventListener('click', () => {
                 document.querySelectorAll('#base-seg button').forEach(x => x.classList.toggle('active', x === b));
                 state.base = b.dataset.base;
+                // тема підкладки потрібна рельєфу для кольорів тініювання
+                map._ltBase = b.dataset.base;
                 setBase(b.dataset.base);
                 if (pxLabels) pxLabels.setOn(b.dataset.base === 'hybrid');
                 LT.ensurePlaceLabels(map, state.base);
             });
         });
+
+        syncReliefBtn();
+        syncPlacesBtn();
+        syncZonesBtn();
 
         // завіса падає через два кадри: полотно зон уже намальоване
         requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(liftVeil, 220)));

@@ -170,6 +170,9 @@
             'map.overlays': 'ШАРИ КАРТИ', 'map.hint': 'Пунктирні межі областей малюються окремим шаром поверх підкладки й не потрапляють у дані карти.',
             'viewer.menu': 'Шари', 'viewer.labels': 'Підписи', 'viewer.labelsHint': 'Увімкніть підписи й тягніть їх просто по карті. ◎ повертає підпис у центр шару.',
             'viewer.center': 'Підпис у центр шару', 'viewer.advance': 'Просування', 'viewer.advanceHint': 'Підсвітити зміни проти сусідньої дати',
+            'viewer.relief': 'Рельєф', 'viewer.reliefHint': 'У 3D керує горами обʼємної карти, у площині — тініюванням',
+            'viewer.places': 'НП', 'viewer.placesHint': 'Показувати назви населених пунктів',
+            'viewer.zones': 'Зони', 'viewer.zonesHint': 'Обʼємні зони контролю на 3D-карті',
             'viewer.advanceNone': 'НЕМАЄ СУСІДНЬОЇ ДАТИ ДЛЯ ПОРІВНЯННЯ', 'viewer.tagline': 'ОПЕРАТИВНА КАРТА', 'dock.point': 'ТОЧКА',
             'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
@@ -338,6 +341,9 @@
             'map.overlays': 'MAP LAYERS', 'map.hint': 'Dashed region lines are drawn as a separate layer above the basemap and are never written into map data.',
             'viewer.menu': 'Layers', 'viewer.labels': 'Labels', 'viewer.labelsHint': 'Turn labels on and drag them right on the map. ◎ snaps a label back to the layer centre.',
             'viewer.center': 'Label to layer centre', 'viewer.advance': 'Advance', 'viewer.advanceHint': 'Highlight changes against the neighbouring date',
+            'viewer.relief': 'Relief', 'viewer.reliefHint': 'Controls 3D hills on the volume map and shading on the flat map',
+            'viewer.places': 'Places', 'viewer.placesHint': 'Show settlement names',
+            'viewer.zones': 'Zones', 'viewer.zonesHint': 'Volume control zones on the 3D map',
             'viewer.advanceNone': 'NO NEIGHBOURING DATE TO COMPARE', 'viewer.tagline': 'OPERATIONAL MAP', 'dock.point': 'POINT',
             'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
@@ -1668,6 +1674,16 @@
             try {
                 const t = map.transform;
                 if (!anchorPx || !anchorGeo) { map.setZoom(z); return; }
+                if (map._lt3d) {
+                    // під нахилом екран нелінійний, тому лінійна формула нижче
+                    // непридатна. беремо той самий прийом, що й рідні жести:
+                    // ставимо цільовий зум і проєктивно переносимо центр так,
+                    // щоб гео-точка під курсором лишилась у тому ж пікселі
+                    t.zoom = Math.max(map.getMinZoom(), Math.min(map.getMaxZoom(), z));
+                    t.setLocationAtPoint(anchorGeo, anchorPx);
+                    map.jumpTo({ zoom: t.zoom, center: [t.center.lng, t.center.lat] });
+                    return;
+                }
                 const cx = t.width / 2, cy = t.height / 2;
                 const a = map.project(anchorGeo);
                 const k = Math.pow(2, z - t.zoom);
@@ -1711,9 +1727,6 @@
         const onWheel = e => {
             // мультитач-жест і жести браузера лишаємо системі
             if (e.ctrlKey || e.altKey || e.metaKey) return;
-            // у 3D-режимі працює рідний scrollZoom: він правильно тримає якір
-            // під курсором при нахилі камери
-            if (map._lt3d) return;
             const rect = el.getBoundingClientRect();
             const px = { x: e.clientX - rect.left, y: e.clientY - rect.top };
             let base;
@@ -2025,12 +2038,17 @@
         cv.style.left = '0px';
         cv.style.top = '0px';
         cv.style.pointerEvents = 'none';
+        // на телефоні GPU-канвас мапи іноді «піднімається» композитором над
+        // сестринським DOM-вузлом без індексу — тоді назви лишаються намальовані,
+        // але під картою. явний шар guarantee, що оверлей назв поверх GL-канваса
+        cv.style.zIndex = '2';
         cv.setAttribute('aria-hidden', 'true');
         host.appendChild(cv);
 
         let lang = currentLang;
         let items = [];
         let extraDots = [];
+        let hidden = false;
         let timer = 0;
         let settleT = 0;
         let needFrame = false;
@@ -2354,6 +2372,9 @@
             let live = false;
             ctx.setTransform(s.dpr, 0, 0, s.dpr, 0, 0);
             ctx.clearRect(0, 0, s.x, s.y);
+            // «НП» вимкнено перемикачем: полотно розчищене й нічого не друкуємо,
+            // набір назв при цьому лишається в пам'яті — повернення миттєве
+            if (hidden) return;
 
             // крапки сіл без підпису (підпис не ліг у колізії) — координата є в кожного
             extraDots.forEach(d => {
@@ -2404,6 +2425,9 @@
         let lastSig = '';
 
         function rebuild() {
+            // приховані назви не перебираємо: полотно порожнє, а набір лишається
+            // в пам'яті — увімкнення перемикача одразу відновить підписи
+            if (hidden) return;
             // набір назв не перебудовуємо, якщо вигляд і мова не змінились
             const size0 = viewSize();
             const pitch3d = pitched();
@@ -2631,6 +2655,7 @@
         // сторож: якщо назв немає, а зум уже дозволяє — пробуємо знову,
         // поки не з'являться (убезпечення від пропущених подій та збоїв стилю)
         const watchdog = setInterval(() => {
+            if (hidden) return;
             if (items.length || map.getZoom() < PLACE_MIN_ZOOM) return;
             scheduleBuild(0);
         }, 2500);
@@ -2655,6 +2680,19 @@
 
         return {
             setTheme(theme) { },
+            setVisible(v) {
+                v = !!v;
+                if (hidden === !v) return;
+                hidden = !v;
+                lastSig = '';
+                if (hidden) {
+                    // миттєво розчищаємо екран, не чекаючи наступного кадру мапи
+                    if (animRaf) { cancelAnimationFrame(animRaf); animRaf = 0; }
+                    try { paint(); } catch (e) { }
+                } else {
+                    scheduleBuild(0);
+                }
+            },
             refresh() {
                 lang = currentLang;
                 dropFontCaches();
@@ -2687,6 +2725,14 @@
         placeDprOverride = Math.max(0, Number(value) || 0);
         const eng = map && placeEngines.get(map);
         if (eng) eng.refresh();
+    }
+
+    // перемикач «НП» з панелі шарів: ховає/вертає назви населених пунктів
+    // на оверлеї. море/води (pixelLabels) не чіпаємо — це окремий шар
+    function setPlacesVisible(map, on) {
+        const eng = map && placeEngines.get(map);
+        if (!eng) return;
+        eng.setVisible(!!on);
     }
 
     function ensurePlaceLabels(map, theme) {
@@ -2787,6 +2833,7 @@
     function clearAdvance(map) {
         const src = map && map.getSource ? map.getSource('lt-adv') : null;
         if (src) src.setData(EMPTY);
+        if (map) map._ltAdvAnim = null;
         const band = map.getSource('lt-adv-3d');
         if (band) band.setData(EMPTY);
         const s = zone3d.get(map);
@@ -2890,7 +2937,56 @@
         };
         advanceBand(map);
         ADV_LAYERS.forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
+        advancePulse(map);
         return stats;
+    }
+
+    // анімка просування: заливка й межа проявляються з нуля, далі два коротких
+    // пульси межі й спокій. кадрів мало (≈1.4 с), далі рендер не гріємо.
+    // поважаємо prefers-reduced-motion: там просто ставимо фінальні значення
+    function advancePulse(map) {
+        const token = {};
+        map._ltAdvAnim = token;
+        const reduce = typeof matchMedia === 'function'
+            && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const dur = reduce ? 0 : (docMobile() ? 620 : 740);
+        const pulseDur = reduce ? 0 : 760;
+        const fillOp = ADV.fillOp;
+        const bandOp = 0.95;
+        const set = (fillK, lineOp, bandK) => {
+            if (map._ltAdvAnim !== token) return;
+            try {
+                if (map.getLayer('lt-adv-fill')) map.setPaintProperty('lt-adv-fill', 'fill-opacity', fillOp * fillK);
+                if (map.getLayer('lt-adv-line')) map.setPaintProperty('lt-adv-line', 'line-opacity', lineOp);
+                if (map.getLayer('lt-adv-case')) map.setPaintProperty('lt-adv-case', 'line-opacity', 0.5 * fillK);
+                if (map.getLayer('lt-adv-band')) map.setPaintProperty('lt-adv-band', 'fill-extrusion-opacity', bandOp * bandK);
+            } catch (e) { }
+        };
+        if (!dur) { set(1, 1, 1); return; }
+        // перший кадр анімації має застати прозорість на нулі: без цього
+        // між setData і наступним rAF устигає промайнути повна заливка
+        set(0, 0, 0);
+        const ease = t => 1 - Math.pow(1 - t, 3);
+        const t0 = performance.now();
+        const enter = now => {
+            if (map._ltAdvAnim !== token) return;
+            const p = Math.min(1, (now - t0) / dur);
+            set(ease(p), ease(p), ease(p));
+            if (p < 1) { requestAnimationFrame(enter); return; }
+            // два пульси межі: 1 → 0.55 → 1. смуга в 3D замінює лінію, тож
+            // дихає разом із нею — інакше анімації на обʼємній карті не видно
+            const tp = performance.now();
+            const pulse = n => {
+                if (map._ltAdvAnim !== token) return;
+                const q = Math.min(1, (n - tp) / pulseDur);
+                const w = Math.sin(q * Math.PI * 2) * 0.45;
+                set(1, 1 - w, 1 - Math.abs(w) * 0.35);
+                if (q < 1) requestAnimationFrame(pulse);
+                else set(1, 1, 1);
+            };
+            requestAnimationFrame(pulse);
+        };
+        requestAnimationFrame(enter);
     }
 
     function advanceToast(stats, force) {
@@ -3147,6 +3243,10 @@
     // у тій самій площині, що й стіна зони, і буфер глибини на кожному кадрі
     // вирішує навмання, котра з них видна — на екрані «тин» уздовж контуру
     const RIM_UP_PX = 3.5;
+    // щільність обʼєму зони у 3D. на 0.95 тіло було майже непрозоре й рельєф
+    // крізь нього не читався зовсім; 0.62 лишає колір шару впізнаваним, але
+    // хребти/тіні гілшейду просвічують крізь обʼєм
+    const ZONE_3D_OPACITY = 0.62;
     // кожен наступний за z-індексом шар стоїть вище за попередній. без цього
     // дві верхні грані в одній площині мігають, а обвід нижчого шару
     // (w + RIM_UP_PX) лізе на тіло вищого — те, що користувач називає
@@ -3523,14 +3623,16 @@
     function z3d(map) {
         let s = zone3d.get(map);
         if (!s) {
-            s = { byId: new Map(), kp: 0, t: 0, relief: null, ex: 0, bound: null, build: null, armed: false, reliefPending: false, adv: null };
+            s = { byId: new Map(), kp: 0, t: 0, relief: null, ex: 0, bound: null, build: null, armed: false, reliefPending: false, relief3d: true, reliefFlat: false, reliefTheme: null, adv: null };
             zone3d.set(map, s);
-            // перемикання підкладки забирає стиль разом із рельєфом
+            // перемикання підкладки забирає стиль разом із рельєфом: повертаємо
+            // його за режимом — у 3D за замовчуванням увімкнено, у площині лише
+            // якщо користувач сам увімкнув рельєф плоскої мапи
             map.on('style.load', () => {
-                if (!map._lt3d) return;
                 s.kp = 0;
-                setRelief(map, true);
-                queueZone3d(map, true);
+                const want = map._lt3d ? s.relief3d !== false : s.reliefFlat === true;
+                if (want) setRelief(map, true, map._ltBase);
+                if (map._lt3d) queueZone3d(map, true);
             });
         }
         return s;
@@ -3593,42 +3695,24 @@
         s.byId.set(l.id, { geo, shown: !!shown });
         const src = map.getSource('x_' + l.id);
         if (!src) return;
-        let feats = [];
-        if (map._lt3d && shown) {
-            if (!s.kp) s.kp = pxToM(1, map.getZoom()) / 1000;
-            const t0 = performance.now();
-            const stat = { pts: 0, cut: 0, epsPx: 0 };
-            try { feats = zone3dFeatures(prepZone(geo), s.kp, map.getBounds(), stat); } catch (err) { feats = []; s.err = String(err && err.stack || err); }
-            // s.build — це остання ПОВНА перебудова кадру; шар-один тут би її
-            // перезаписував нулями, коли шар прихований, і лічильник брехав би
-            s.buildLayer = { ms: +(performance.now() - t0).toFixed(1), feats: feats.length, pts: stat.pts, cut: stat.cut, eps: stat.epsPx };
-        }
-        src.setData({ type: 'FeatureCollection', features: feats });
+        // обʼємний контур і cast-тінь зон прибрані, тому найдорожчий прохід
+        // zone3dFeatures (тисячі вершин на жест) для зон більше не потрібен:
+        // x_ лишається порожнім, а дорогу геометрію будує лише смуга просування
+        src.setData(EMPTY);
+        s.buildLayer = { ms: 0, feats: 0, pts: 0, cut: 0, eps: 0 };
     }
 
     function refreshZone3d(map) {
         const s = z3d(map);
         if (!map._lt3d || !s.kp) return;
         const t0 = performance.now();
-        const b = map.getBounds();
-        let n = 0, pts = 0, cut = 0, eps = 0;
         s.byId.forEach((e, id) => {
             const src = map.getSource('x_' + id);
-            if (!src) return;
-            let feats = [];
-            if (e.shown) {
-                const stat = { pts: 0, cut: 0, epsPx: 0 };
-                try { feats = zone3dFeatures(prepZone(e.geo), s.kp, b, stat); } catch (err) { s.err = String(err && err.stack || err); }
-                pts += stat.pts;
-                cut += stat.cut;
-                eps = Math.max(eps, stat.epsPx);
-            }
-            n += feats.length;
-            src.setData({ type: 'FeatureCollection', features: feats });
+            if (src) src.setData(EMPTY);
         });
         // перерахунок іде під час жесту, тому тримаємо ціну в числах: без них
         // «оптимізовано для телефона» було б просто словами
-        s.build = { ms: +(performance.now() - t0).toFixed(1), feats: n, pts: pts, cut: cut, eps: eps };
+        s.build = { ms: +(performance.now() - t0).toFixed(1), feats: 0, pts: 0, cut: 0, eps: 0 };
         // стіна просування живе в тому самому кадрі й за тим самим зумом, тому
         // перебудовується цим же проходом, а не окремим таймером
         advanceBand(map);
@@ -3649,12 +3733,23 @@
         advanceBand(map);
     }
 
+    // перемикач «обʼємні 3D-зони»: коли вимкнено, у 3D зони лишаються плоскими
+    // заливками (екструзія fe_ не показується). переглядач після цього
+    // перезастосовує paint до всіх шарів
+    function setZones3d(map, on) {
+        map._ltZones3d = !!on;
+    }
+
     /* ------------------------------ рельеф ------------------------------ */
 
     // terrarium: висота = червоний·256 + зелений + синій/256 − 32768 метрів.
     // джерело безкоштовне, глобальне, тайли 256 px
     const DEM_TILES = ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'];
     const RELIEF_BASE = ['lt-bg', 'hybrid-sat', 'hybrid-roads'];
+    // власні шари-оверлеї над підкладкою: рельєф вставляємо саме перед першим із
+    // них, тож він опиняється над будь-якою базою (темна CARTO чи наш hybrid),
+    // але під зонами й просуваннями
+    const OVERLAY_RE = /^(xb_|xs_|cs_|sh_|f_|p_|fe_|fr_|gw_|g_|ig_|xh_|l_|rh_|lt-adv)/;
 
     // стіна зони на z=13 — це 307 м, а пагорби Донбасу до ~360 м: без згасання
     // блок просто тоне в рельєфі. тому підняття зменшуємо заздалегідь —
@@ -3679,7 +3774,19 @@
         return Math.max(p.floor, p.ex * t * t * (3 - 2 * t));
     }
 
-    function setRelief(map, on) {
+    function reliefThemeColors(theme) {
+        // на супутнику (hybrid) землі яскраві, тож підсвітку робимо холодно-білою,
+        // а тінь майже чорною — хребти читаються як рельєфне тінієвання кадру.
+        // на темній базі (dark CARTO) земля вже чорна: яскравий акцент туди ж
+        // зливався б з дорожньою сіткою, тому беремо приглушений сіро-блакить
+        const dark = theme === 'dark';
+        return {
+            accent: dark ? '#8fa6cc' : '#e6effb',
+            shadow: dark ? '#02040a' : '#04070c'
+        };
+    }
+
+    function setRelief(map, on, theme) {
         const s = z3d(map);
         if (!on) {
             try { map.setTerrain(null); } catch (e) { }
@@ -3690,6 +3797,9 @@
             s.ex = 0;
             return;
         }
+        const th = theme || map._ltBase || 'hybrid';
+        s.reliefTheme = th;
+        const col = reliefThemeColors(th);
         const p = reliefProfile();
         s.relief = p;
         s.reliefPending = false;
@@ -3700,17 +3810,27 @@
                 attribution: 'Mapzen / AWS Open Terrain'
             });
         }
-        if (!map.getLayer('lt-relief')) {
+        if (map.getLayer('lt-relief')) {
+            // підкладка змінилась (dark ↔ hybrid) — оновлюємо саме кольори тіней,
+            // не перебираючи шар: екстраполяція та армінг рельєфу лишаються як були
+            try {
+                map.setPaintProperty('lt-relief', 'hillshade-accent-color', col.accent);
+                map.setPaintProperty('lt-relief', 'hillshade-shadow-color', col.shadow);
+            } catch (e) { }
+        } else {
+            // рельєф мусить лягти НАД підкладкою (і темна CARTO, і наш hybrid),
+            // але ПІД власними шарами зон/просувань. орієнтир — перший наш
+            // шар-оверлей у стилі; якщо його ще немає, кладемо поверх підкладки
             const layers = (map.getStyle() || {}).layers || [];
             let before = null;
             for (let i = 0; i < layers.length; i++) {
-                if (RELIEF_BASE.indexOf(layers[i].id) < 0) { before = layers[i].id; break; }
+                if (OVERLAY_RE.test(layers[i].id)) { before = layers[i].id; break; }
             }
             map.addLayer({
                 id: 'lt-relief', type: 'hillshade', source: 'lt-dem',
                 paint: {
-                    'hillshade-accent-color': '#e6effb',
-                    'hillshade-shadow-color': '#04070c',
+                    'hillshade-accent-color': col.accent,
+                    'hillshade-shadow-color': col.shadow,
                     'hillshade-illumination-anchor': 'map',
                     'hillshade-illumination-direction': 325,
                     'hillshade-exaggeration': p.hill
@@ -3718,6 +3838,46 @@
             }, before || undefined);
         }
         armTerrain(map);
+    }
+
+    // перемикач «Рельєф» у панелі шарів. працює за режимом: у 3D вимикає
+    // гори обʼємної карти, у площині — вмикає гілшейд. дві незалежні
+    // уподобання тримаємо окремо, бо типові стани різні:
+    // 3D — увімкнено, плоска — вимкнено
+    function setReliefUser(map, on) {
+        const s = z3d(map);
+        on = !!on;
+        if (map._lt3d) s.relief3d = on; else s.reliefFlat = on;
+        if (on) setRelief(map, true, map._ltBase);
+        else setRelief(map, false);
+    }
+
+    // встановити обидва уподобання без візуальної дії (на старті, зі сховища)
+    function setReliefPrefs(map, prefs) {
+        const s = z3d(map);
+        if (prefs && 'relief3d' in prefs) s.relief3d = !!prefs.relief3d;
+        if (prefs && 'reliefFlat' in prefs) s.reliefFlat = !!prefs.reliefFlat;
+    }
+
+    function reliefPrefs(map) {
+        const s = z3d(map);
+        return { relief3d: s.relief3d !== false, reliefFlat: s.reliefFlat === true };
+    }
+
+    // зміна підкладки (map.setStyle) будує новий стиль і забирає DEM разом із
+    // ним. style.load у цій збірці після setStyle не долітає до map, тому
+    // remount кличе цю функцію явно: рельєф повертається за режимом, а
+    // відкладений (під завісою) старт лишаємо reliefArm
+    function syncRelief(map) {
+        const s = z3d(map);
+        if (s.reliefPending) return;
+        const want = map._lt3d ? s.relief3d !== false : s.reliefFlat === true;
+        if (want) {
+            if (!map.getLayer('lt-relief')) setRelief(map, true, map._ltBase);
+            else if (!map.getSource('lt-dem')) setRelief(map, true, map._ltBase);
+        } else if (map.getLayer('lt-relief')) {
+            setRelief(map, false);
+        }
     }
 
     // maplibre 3.6.2 падає, якщо terrain з'являється посеред анімації камери:
@@ -3741,11 +3901,17 @@
         go();
     }
 
-    // перегляд починає кадри без гір: їх просить переглядач, щойно завіса впала
+    // перегляд починає кадри без гір: їх просить переглядач, щойно завіса впала.
+    // у площині — лише якщо користувач увімкнув рельєф плоскої мапи
     function reliefArm(map) {
         const s = z3d(map);
-        if (!s || !map._lt3d || !s.reliefPending) return;
-        setRelief(map, true);
+        if (!s) return;
+        if (map._lt3d) {
+            if (!s.reliefPending) return;
+            setRelief(map, true, map._ltBase);
+        } else if (s.reliefFlat === true) {
+            setRelief(map, true, map._ltBase);
+        }
     }
 
     // MapLibre 3.6.2 дістає точку під курсором з GPU: Terrain.pointCoordinate
@@ -4168,15 +4334,6 @@
             paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.95 }
         });
         map.addLayer({
-            // line-cap і line-join — layout-властивості. у paint вони не ламають
-            // сторінку, а шар мовчки не додається (та сама пастка, що й
-            // fill-extrusion-ambient-occlusion), тому «шар існує» треба перевіряти
-            id: 'cs_' + l.id, type: 'line', source: 'x_' + l.id,
-            layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
-            filter: ['==', ['get', 'role'], 'cast'],
-            paint: { 'line-color': '#02060c', 'line-opacity': 0.45, 'line-width': 34, 'line-blur': 19 }
-        });
-        map.addLayer({
             id: 'sh_' + l.id, type: 'line', source: srcId,
             layout: { visibility: 'none' },
             paint: { 'line-color': '#04060a', 'line-width': 14, 'line-blur': 9, 'line-opacity': 0.4, 'line-offset': 7 }
@@ -4202,30 +4359,13 @@
             layout: { visibility: 'none' },
             paint: {
                 'fill-extrusion-color': s.color,
-                'fill-extrusion-opacity': 0.95,
+                'fill-extrusion-opacity': ZONE_3D_OPACITY,
                 'fill-extrusion-base': 0,
                 // 24 px на екрані: 24 · (156543 · cos 48°) / 2^z метрів
                 'fill-extrusion-height': wallStops(WALL_PX),
                 // у maplibre 3.6 немає ambient-occlusion: шар із невідомою властивістю
                 // стиль не видалює з помилкою, а мовчки не додає взагалі
                 'fill-extrusion-vertical-gradient': true
-            }
-        });
-        map.addLayer({
-            // об'ємний контур: вузька смуга вздовж того ж кільця, але бордюром
-            // на верхній грані, а не другим блоком поруч. смуга від землі мала б
-            // зовнішню стіну в тій самій площині, що й стіна зони, і буфер
-            // глибини щоразу вирішував би навмання, котра видна — «тин» уздовж
-            // усього контуру
-            id: 'fr_' + l.id, type: 'fill-extrusion', source: 'x_' + l.id,
-            layout: { visibility: 'none' },
-            filter: ['==', ['get', 'role'], 'rim'],
-            paint: {
-                'fill-extrusion-color': s.bcol,
-                'fill-extrusion-opacity': 0.98,
-                'fill-extrusion-base': wallStops(WALL_PX),
-                'fill-extrusion-height': wallStops(WALL_PX + RIM_UP_PX),
-                'fill-extrusion-vertical-gradient': false
             }
         });
         map.addLayer({
@@ -4368,8 +4508,10 @@
         const blended = s.blend && s.blend !== 'normal';
         const gradient = s.grad === true;
         const arrow3d = l.kind === 'arrow' && s.d3 === true;
-        // 3D-режим: зона стає екструзією, плоска заливка й візерунок зникають
-        const d3 = map._lt3d === true && l.kind === 'zone';
+        // 3D-режим: зона стає екструзією, плоска заливка й візерунок зникають.
+        // перемикач «обʼємні зони» вимикає саме екструзію — тоді навіть у 3D
+        // лишається плоска заливка
+        const d3 = map._lt3d === true && l.kind === 'zone' && map._ltZones3d !== false;
         // плоский псевдооб'єм стрілки (зміщені копії) — частина 2D-стилю
         ['xb_', 'xs_', 'xh_'].forEach(p => {
             if (map.getLayer(p + l.id)) map.setLayoutProperty(p + l.id, 'visibility', arrow3d ? vis : 'none');
@@ -4379,32 +4521,17 @@
         map.setLayoutProperty('p_' + l.id, 'visibility', d3 ? 'none' : (pattern && !gradient ? vis : 'none'));
         if (map.getLayer('fe_' + l.id)) {
             map.setLayoutProperty('fe_' + l.id, 'visibility', d3 ? vis : 'none');
-            if (d3) map.setPaintProperty('fe_' + l.id, 'fill-extrusion-opacity', 0.95 * k);
+            if (d3) map.setPaintProperty('fe_' + l.id, 'fill-extrusion-opacity', ZONE_3D_OPACITY * k);
         }
-        // об'ємний контур і тінь живуть тільки в 3D: у площині й так видно
-        // плоску лінію, а зміщене кільце там виглядало б як другий контур
-        if (map.getLayer('fr_' + l.id)) {
-            const rimOn = d3 && !noLine;
-            map.setLayoutProperty('fr_' + l.id, 'visibility', rimOn ? vis : 'none');
-            if (rimOn) {
-                map.setPaintProperty('fr_' + l.id, 'fill-extrusion-color', lightHex(s.bcol, 0.3));
-                map.setPaintProperty('fr_' + l.id, 'fill-extrusion-opacity', 0.98 * k);
-            }
-        }
-        if (map.getLayer('cs_' + l.id)) {
-            map.setLayoutProperty('cs_' + l.id, 'visibility', d3 ? vis : 'none');
-            if (d3) {
-                const w = Math.max(24, WALL_PX * 1.1 + s.bw * 2);
-                map.setPaintProperty('cs_' + l.id, 'line-width', w);
-                map.setPaintProperty('cs_' + l.id, 'line-blur', w * 0.55);
-                map.setPaintProperty('cs_' + l.id, 'line-opacity', Math.min(0.6, 0.3 + s.alpha * 0.4) * k);
-            }
-        }
+        // обʼємний контур (fr_) і cast-тінь (cs_) прибрані: вони давали
+        // z-fighting і коштували найдорожчого проходу геометрії на жест
         map.setLayoutProperty('l_' + l.id, 'visibility', noLine ? 'none' : vis);
         map.setLayoutProperty('g_' + l.id, 'visibility', glow ? vis : 'none');
         map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && !noLine ? vis : 'none');
         const zone = l.kind === 'zone';
-        map.setLayoutProperty('sh_' + l.id, 'visibility', zone && !noLine ? vis : 'none');
+        // у 3D зміщена плоска тінь не збігається з нахилом камери — лишаємо її
+        // лише на плоскій мапі, а в обʼємі тінь дає сам рельєф під зоною
+        map.setLayoutProperty('sh_' + l.id, 'visibility', zone && !noLine && !d3 ? vis : 'none');
         map.setLayoutProperty('gw_' + l.id, 'visibility', glow ? vis : 'none');
         map.setLayoutProperty('rh_' + l.id, 'visibility', zone && !noLine ? vis : 'none');
 
@@ -4537,16 +4664,15 @@
             map.setMaxPitch(60);
             if (map.dragRotate) map.dragRotate.enable();
             if (map.touchPitch) map.touchPitch.enable();
-            // рідний wheel-зум тримає якір під курсором і при нахилі; наш
-            // smoothZoom припускає плоску камеру, тому на час 3D відступає
-            if (map.scrollZoom) map.scrollZoom.enable();
+            // колесо й у 3D веде наш smoothZoom: якір він тепер тримає
+            // проєктивно (setLocationAtPoint), тож рідний обробник не потрібен
             // на старті сторінки рельєф не потрібен у першу ж секунду: DEM-тайли
             // з мережі й розбір висот забирають головний потік, і під завісою
             // мапа показує кадр на три секунди пізніше. тому підйом 3D після
             // перезавантаження іде без гір, а вмикає їх виклик reliefArm — коли
             // завіса вже впала
             if (opts.deferRelief) z3d(map).reliefPending = true;
-            else setRelief(map, true);
+            else setRelief(map, z3d(map).relief3d !== false, map._ltBase);
             bind3dZoom(map);
             startZone3d(map);
             try { map.easeTo({ pitch: THREE_D_PITCH, duration: docMobile() ? 800 : 1000 }); } catch (e) { }
@@ -4564,11 +4690,20 @@
                 map.setMaxPitch(0);
                 if (map.dragRotate) map.dragRotate.disable();
                 if (map.touchPitch) map.touchPitch.disable();
-                if (map.scrollZoom) map.scrollZoom.disable();
                 unbind3dZoom(map);
                 const st = z3d(map);
                 st.reliefPending = false;
-                setRelief(map, false);
+                if (st.reliefFlat === true) {
+                    // «Рельєф» увімкнено для плоскої мапи: гори лишаються
+                    // тініюванням (hillshade), без рідного terrain. шари
+                    // lt-relief/lt-dem переконуємо лише за потреби
+                    try { map.setTerrain(null); } catch (e) { }
+                    st.armed = false;
+                    st.ex = 0;
+                    if (!map.getLayer('lt-relief')) setRelief(map, true, map._ltBase);
+                } else {
+                    setRelief(map, false);
+                }
                 clearZone3d(map);
                 repaint();
             };
@@ -6137,6 +6272,7 @@
         store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage, onMirrorUpdate },
         Calendar, BASE, createMap, baseSwitcher, smoothZoom,
         flagSVG: key => FLAG_SVG[key], pixelLabels, applyMapLang, ensurePlaceLabels, setPlaceDpr,
+        setPlacesVisible, setReliefUser, setReliefPrefs, reliefPrefs, syncRelief, setZones3d,
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,
         syncLayerLabel, setLayerLabelDrag, set3D,
