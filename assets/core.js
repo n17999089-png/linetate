@@ -115,8 +115,8 @@
             bytes += v.length + k.length;
             if (k.indexOf(PREFIX) === 0) dates++;
         });
-        // 'idb' — документи дат у розширеному сховищі й квота localStorage більше не заважає
-        return { kb: Math.round(bytes / 1024), dates, tier: db ? 'idb' : 'local' };
+        // 'idb'/'cache' — документи дат у розширеному сховищі, квота localStorage не межа
+        return { kb: Math.round(bytes / 1024), dates, tier: db ? 'idb' : (cacheTier ? 'cache' : 'local') };
     }
 
     // при переповненні переписуємо всі збережені дати компактніше й пробуємо знову
@@ -779,20 +779,85 @@
         try { localStorage.removeItem(k); } catch (e) { }
     }
 
+    /* ------------------------------ третій рівень: Cache API ------------------------------ */
+
+    // Якщо IndexedDB недоступний (заблокований профіль, приватне вікно, стара вкладка),
+    // документи йдуть у Cache API: квота там у гігабайти, а не 5 МБ. Ключ — той самий
+    // шлях сайту, щоб редактор і перегляд бачили одні й ті самі записи.
+    const CACHE_NAME = 'LINETATE:docs:v1';
+    const SITE_BASE = (typeof location !== 'undefined' && location.pathname)
+        ? location.pathname.replace(/admin\/?$/, '') : '/';
+    const cacheUrl = k => SITE_BASE + '__lt-docs/' + k.slice(PREFIX.length);
+    let cacheTier = false;
+
+    const hasCache = () => {
+        try { return typeof caches !== 'undefined' && !!caches; } catch (e) { return false; }
+    };
+
+    function cacheStore() {
+        if (!hasCache()) return Promise.resolve(null);
+        try { return caches.open(CACHE_NAME).catch(() => null); } catch (e) { return Promise.resolve(null); }
+    }
+
+    function cacheWrite(keys, dels) {
+        return cacheStore().then(c => {
+            if (!c) return false;
+            const jobs = [];
+            keys.forEach(k => {
+                const v = docs.get(k);
+                if (typeof v === 'string') {
+                    jobs.push(c.put(cacheUrl(k), new Response(v, { headers: { 'content-type': 'application/json' } })));
+                }
+            });
+            dels.forEach(k => jobs.push(c.delete(cacheUrl(k))));
+            return Promise.all(jobs).then(() => { cacheTier = true; return true; }).catch(() => false);
+        });
+    }
+
+    function cacheReadAll() {
+        return cacheStore().then(c => {
+            if (!c) return null;
+            return c.keys().then(reqs => Promise.all(reqs.map(req => {
+                const m = /\/__lt-docs\/(\d{4}-\d{2}-\d{2})$/.exec(req.url);
+                if (!m || !DATE_RE.test(m[1])) return null;
+                return c.match(req)
+                    .then(res => res ? res.text() : null)
+                    .then(v => {
+                        const k = PREFIX + m[1];
+                        return v && isDateKey(k) ? { k, savedAt: headSavedAt(v), v } : null;
+                    })
+                    .catch(() => null);
+            }))).then(list => {
+                const out = list.filter(Boolean);
+                if (out.length) cacheTier = true;
+                return out;
+            }).catch(() => null);
+        });
+    }
+
     function scheduleFlush() {
-        if (flushTimer || !db) return;
+        if (flushTimer || (!db && !hasCache())) return;
         flushTimer = setTimeout(flushNow, 250);
     }
 
     function flushNow() {
         if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-        if (!db) return Promise.resolve(false);
         const keys = Array.from(dirty).filter(k => docs.has(k));
-        const rows = keys.map(k => ({ k, savedAt: headSavedAt(docs.get(k)), v: docs.get(k) }));
         const dels = Array.from(gone);
+        if (!keys.length && !dels.length) return Promise.resolve(true);
+        if (!db) {
+            if (!hasCache()) return Promise.resolve(false);
+            return cacheWrite(keys, dels).then(ok => {
+                if (ok) {
+                    keys.forEach(k => { dirty.delete(k); dropLocal(k); });
+                    dels.forEach(k => gone.delete(k));
+                }
+                return ok;
+            });
+        }
+        const rows = keys.map(k => ({ k, savedAt: headSavedAt(docs.get(k)), v: docs.get(k) }));
         keys.forEach(k => dirty.delete(k));
         dels.forEach(k => gone.delete(k));
-        if (!keys.length && !dels.length) return Promise.resolve(true);
         return Promise.all([idbWrite(db, 'put', keys, rows), idbWrite(db, 'del', dels)])
             .then(ok => {
                 const good = !!(ok[0] && ok[1]);
@@ -813,8 +878,13 @@
         window.addEventListener('pagehide', flushNow);
     }
 
-    // старі локальні копії не стираємо, доки запис у IndexedDB підтверджено; свіжіша версія завжди перемагає
+    // старі локальні копії не стираємо, доки запис у базу підтверджено; свіжіша версія завжди перемагає
     async function hydrateStorage() {
+        // просимо браузер не витісняти наше сховище, коли місця на диску мало
+        try {
+            if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { });
+        } catch (e) { }
+
         const d = await openIdb();
         const localKeys = [];
         try {
@@ -831,32 +901,46 @@
             if (!docs.has(k)) docs.set(k, raw);
             local.push({ k, savedAt: headSavedAt(raw), v: raw });
         });
-        if (!d) return false;
-        db = d;
-        const rows = await idbReadAll(d);
-        if (!rows) {
-            try { d.close(); } catch (e) { }
-            if (db === d) db = null;
-            dbDownUntil = Date.now() + 5000;
-            return false;
+
+        if (d) {
+            db = d;
+            const rows = await idbReadAll(d);
+            if (!rows) {
+                try { d.close(); } catch (e) { }
+                if (db === d) db = null;
+                dbDownUntil = Date.now() + 5000;
+            } else {
+                const held = new Map();
+                rows.forEach(r => {
+                    if (r && isDateKey(r.k) && typeof r.v === 'string') held.set(r.k, r);
+                });
+                // збережене під час відкриття бази свіжіше за те, що встигло лягти на диск
+                held.forEach((r, k) => { if (!dirty.has(k)) docs.set(k, r.v); });
+                const carry = local.filter(r => {
+                    const prev = held.get(r.k);
+                    if (prev && (Number(prev.savedAt) || 0) >= r.savedAt) { dropLocal(r.k); return false; }
+                    docs.set(r.k, r.v);   // локальна копія свіжіша — дзеркало в пам'яті має тримати саме її
+                    return true;
+                });
+                if (carry.length) {
+                    if (await idbWrite(d, 'put', carry.map(r => r.k), carry)) carry.forEach(r => dropLocal(r.k));
+                    else carry.forEach(r => { dirty.add(r.k); });
+                }
+            }
         }
-        const held = new Map();
-        rows.forEach(r => {
-            if (r && isDateKey(r.k) && typeof r.v === 'string') held.set(r.k, r);
-        });
-        // збережене під час відкриття бази свіжіше за те, що встигло лягти на диск
-        held.forEach((r, k) => { if (!dirty.has(k)) docs.set(k, r.v); });
-        const carry = local.filter(r => {
-            const prev = held.get(r.k);
-            if (prev && (Number(prev.savedAt) || 0) >= r.savedAt) { dropLocal(r.k); return false; }
-            docs.set(r.k, r.v);   // локальна копія свіжіша — дзеркало в пам'яті має тримати саме її
-            return true;
-        });
-        if (!carry.length) return true;
-        if (await idbWrite(d, 'put', carry.map(r => r.k), carry)) carry.forEach(r => dropLocal(r.k));
-        else carry.forEach(r => { dirty.add(r.k); });
-        scheduleFlush();
-        return true;
+
+        // Cache API тримає те, що не влізло в localStorage, коли IndexedDB недоступний
+        const cached = await cacheReadAll();
+        if (cached && cached.length) {
+            cached.forEach(r => {
+                const mine = docs.get(r.k);
+                if (mine && headSavedAt(mine) >= r.savedAt) return;
+                docs.set(r.k, r.v);
+                if (db) dirty.add(r.k);   // копію з кешу переллємо в IndexedDB, коли він є
+            });
+        }
+        if (db && dirty.size) scheduleFlush();
+        return !!db;
     }
 
     function storageInit() {
@@ -928,7 +1012,7 @@
                 dirty.delete(k);
                 gone.add(k);
                 if (db) scheduleFlush();
-                else reviveStorage();
+                else { reviveStorage(); scheduleFlush(); }
             }
             dropLocal(k);
         },
@@ -1091,12 +1175,17 @@
         // сотні надлишкових точок, які не видно на масштабі карти
         const payload = JSON.stringify({ date, savedAt: Date.now(), layers: simplifyLayers(layers, 1e-4) }, round5);
         if (!mem.set(PREFIX + date, payload)) {
-            compactAll(date);
-            for (const tol of [2e-4, 5e-4]) {
-                const retry = JSON.stringify({ date, savedAt: Date.now(), layers: simplifyLayers(layers, tol) }, round5);
-                if (mem.set(PREFIX + date, retry)) {
-                    mem.set(VER_KEY, String(Date.now()));
-                    return retry.length;
+            // спрощувати геометрію під квоту localStorage можна лише тоді, коли
+            // ширшого сховища немає: IndexedDB і Cache API тримають повний документ
+            const extended = !!db || hasCache() || (typeof indexedDB !== 'undefined' && !!indexedDB);
+            if (!extended) {
+                compactAll(date);
+                for (const tol of [2e-4, 5e-4]) {
+                    const retry = JSON.stringify({ date, savedAt: Date.now(), layers: simplifyLayers(layers, tol) }, round5);
+                    if (mem.set(PREFIX + date, retry)) {
+                        mem.set(VER_KEY, String(Date.now()));
+                        return retry.length;
+                    }
                 }
             }
             // localStorage переповнений, але документ уже в пам'яті: IndexedDB
@@ -1104,11 +1193,14 @@
             // ніколи — навіть без IndexedDB дата живе до перезавантаження (з попередженням).
             docs.set(PREFIX + date, payload);
             dirty.add(PREFIX + date);
-            if (typeof indexedDB === 'undefined' || !indexedDB) warnMemoryOnly();
-            else reviveStorage().then(ok => {
-                if (ok) { scheduleFlush(); flushNow(); }
-                else warnMemoryOnly();
-            });
+            if (typeof indexedDB === 'undefined' || !indexedDB) {
+                flushNow().then(ok => { if (!ok) warnMemoryOnly(); });
+            } else {
+                reviveStorage().then(ok => {
+                    if (ok) { scheduleFlush(); flushNow(); }
+                    else flushNow().then(cached => { if (!cached) warnMemoryOnly(); });
+                });
+            }
             mem.set(VER_KEY, String(Date.now()));
             return payload.length;
         }

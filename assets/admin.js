@@ -1437,7 +1437,7 @@
         const el = $('usage-line');
         if (!el || !store.storageUsage) return;
         const u = store.storageUsage();
-        el.textContent = t(u.tier === 'idb' ? 'file.usageIdb' : 'file.usage', { kb: u.kb, dates: u.dates });
+        el.textContent = t(u.tier === 'local' ? 'file.usage' : 'file.usageIdb', { kb: u.kb, dates: u.dates });
     }
 
     function optimizeStorage() {
