@@ -1551,6 +1551,58 @@
             fadeDuration: dev.mobile ? 120 : 300
         }, options || {}));
 
+        // GPU-контекст телефонів губиться під тиском памʼяті (3D-рельєф і
+        // растрова підкладка — головні споживачі). MapLibre піднімає новий
+        // контекст, але текстури растрів у цій версії не перезаливає: гібрид
+        // лишається чорним, а сцена порожньою (перевірено на реальному GPU).
+        // Зсередини це не лікується, тому перезавантажуємо сторінку, зберігши
+        // камеру; часті поспіль втрати не дають піти в петлю перезавантажень.
+        (map => {
+            const CAM_KEY = 'LINETATE:__recover';
+            const LOST_KEY = 'LINETATE:__ctxlost';
+            let dead = false;
+            let timer = 0;
+            const saveCam = () => {
+                try {
+                    const c = map.getCenter();
+                    sessionStorage.setItem(CAM_KEY, JSON.stringify({
+                        c: [c.lng, c.lat], z: map.getZoom(),
+                        b: map.getBearing(), t: Date.now()
+                    }));
+                } catch (e) { }
+            };
+            const recover = () => {
+                if (dead) return;
+                dead = true;
+                saveCam();
+                let loop = false;
+                try {
+                    const now = Date.now();
+                    const list = JSON.parse(sessionStorage.getItem(LOST_KEY) || '[]')
+                        .filter(t => now - t < 60000);
+                    list.push(now);
+                    sessionStorage.setItem(LOST_KEY, JSON.stringify(list));
+                    loop = list.length >= 3;
+                } catch (e) { }
+                if (loop) {
+                    try { toast('Графічне ядро недоступне — перезавантажте сторінку', 'err'); } catch (e) { }
+                    return;
+                }
+                const go = () => { try { location.reload(); } catch (e) { } };
+                // приховану вкладку не перезавантажуємо: чекаємо, поки її відкриють
+                if (document.visibilityState === 'hidden') {
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.visibilityState !== 'hidden') setTimeout(go, 150);
+                    }, { once: true });
+                } else setTimeout(go, 150);
+            };
+            const arm = () => { if (!timer) timer = setTimeout(recover, 1200); };
+            const cv = map.getCanvas();
+            cv.addEventListener('webglcontextlost', e => { e.preventDefault(); arm(); }, false);
+            cv.addEventListener('webglcontextrestored', arm, false);
+            map.on('remove', () => { dead = true; clearTimeout(timer); });
+        })(map);
+
         // MapLibre 3.6 під рельєфом робить unproject через синхронне читання
         // пікселя з GPU-буфера координат (readPixels), і робить це в
         // конструкторі КОЖНОЇ події миші: mousemove/mouseover під жестом — це
@@ -1630,6 +1682,26 @@
         };
         applyFitZoom();
         clampView();
+        // камера попередньої сесії після аварійного перезавантаження: людина
+        // має повернутися туди, звідки її вибило, а не до початкового огляду
+        (() => {
+            let r = null;
+            try {
+                const raw = sessionStorage.getItem('LINETATE:__recover');
+                if (!raw) return;
+                sessionStorage.removeItem('LINETATE:__recover');
+                r = JSON.parse(raw);
+            } catch (e) { return; }
+            if (!r || !(Date.now() - r.t < 120000)) return;
+            if (!Array.isArray(r.c) || !isFinite(r.c[0]) || !isFinite(r.c[1]) || !isFinite(r.z)) return;
+            try {
+                map.jumpTo({
+                    center: r.c, zoom: r.z,
+                    bearing: isFinite(r.b) ? r.b : 0
+                });
+                map._ltRecovered = true;
+            } catch (e) { }
+        })();
         map.on('resize', () => { applyFitZoom(); queueClamp(); });
         map.on('move', queueClamp);
         map.on('moveend', queueClamp);
@@ -5671,7 +5743,14 @@
                 tiltAvg = tiltAvg ? tiltAvg * 0.7 + c * 0.3 : c;
                 return;
             }
-            if (cheapFollow) { followCamera(); return; }
+            if (cheapFollow) {
+                // жест іде — ведемо полотно трансформацією; камера змінилась
+                // без жесту (програмний стрибок, відновлення) — фарбуємо свіжо,
+                // інакше полотно назавжди лишається на старому ракурсі
+                if (moving) { followCamera(); return; }
+                cheapFollow = false;
+                followReset();
+            }
             const t0 = performance.now();
             paint();
             const cost = performance.now() - t0;
@@ -5885,6 +5964,11 @@
             const pad = padPx();
             const tinyPx = isMobile() ? 3.4 : 2.4;
             const rimMinPx = lowEndDevice() ? 13 : 7;
+            // світла кромка — найдорожчий прохід полотна (stroke з 'lighter'
+            // по всьому контуру). Під пальцем на телефоні вона майже не
+            // читається, зате з'їдає ~30 % кадру, тож у русі її пропускаємо:
+            // заливка й контур лишаються, лаг і «пливучі» краї меншають
+            const rimOn = !(isMobile() && moving);
 
             items.forEach(it => {
                 const ctx = it.ctx;
@@ -5943,7 +6027,7 @@
 
                     for (let ri = 0; ri < part.rings.length; ri++) {
                         const pr = part.rings[ri];
-                        let rim = true;
+                        let rim = rimOn;
                         if (pr.box) {
                             const rr = boxRect(map, pr.box, rx, ry, offX, offY, fr);
                             if (rr) {
