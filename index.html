@@ -11,8 +11,8 @@
 <link href="assets/vendor/maplibre-gl.css" rel="stylesheet">
 <script src="assets/vendor/maplibre-gl.js?v=3"></script>
 <script src="assets/vendor/turf.min.js"></script>
-<link rel="stylesheet" href="assets/theme.css?v=29">
-<link rel="stylesheet" href="assets/viewer.css?v=41">
+<link rel="stylesheet" href="assets/theme.css?v=30">
+<link rel="stylesheet" href="assets/viewer.css?v=42">
 </head>
 <body>
 
@@ -38,6 +38,10 @@
 </div>
 
 <div id="top-actions">
+    <button class="hud-btn stats-btn" id="stats-btn" aria-controls="stats" aria-expanded="false" data-i18n-title="viewer.statsHint">
+        <span class="lb-ico" aria-hidden="true">Σ</span>
+        <span class="lb-txt" data-i18n="viewer.stats">Статистика</span>
+    </button>
     <button class="hud-btn lang-btn" id="lang-btn" title="Мова" data-i18n-title="app.langHint">UK</button>
     <button class="hud-btn search-btn" id="search-btn" aria-controls="place-search" aria-expanded="false">
         <svg class="hud-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.6 4.6"/></svg>
@@ -147,6 +151,14 @@
 </div>
 
 <div id="legend-backdrop"></div>
+<aside id="stats" class="panel" aria-hidden="true">
+    <div class="panel-head">
+        <span class="label" data-i18n="stats.title">СТАТИСТИКА ФРОНТУ</span>
+        <button type="button" class="legend-close" id="stats-close" title="Закрити" aria-label="Закрити" data-i18n-title="viewer.close">×</button>
+    </div>
+    <div class="lt-stats-sub" data-i18n="stats.sub">З 4 ЛИСТОПАДА</div>
+    <div id="stats-body"></div>
+</aside>
 <aside id="legend" class="panel">
     <div class="panel-head">
         <span class="label" data-i18n="viewer.layers">ШАРИ</span>
@@ -218,8 +230,8 @@
 </div>
 
 <script src="assets/regions.js?v=23"></script>
-<script src="assets/core.js?v=91"></script>
+<script src="assets/core.js?v=92"></script>
 <script src="assets/map-tools.js?v=40"></script>
-<script src="assets/viewer.js?v=72"></script>
+<script src="assets/viewer.js?v=73"></script>
 </body>
 </html>

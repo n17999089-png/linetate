@@ -70,6 +70,35 @@
 #legend .panel-head { padding: 10px 11px 10px 14px; }
 #legend .panel-head .label { color: var(--text-2); }
 
+/* ---------- СТАТИСТИКА ---------- */
+
+#stats {
+    position: absolute; top: 70px; right: 14px; width: 372px; z-index: 1212;
+    display: flex; flex-direction: column; max-height: calc(100vh - 168px);
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transform: translateY(-6px) scale(.985);
+    transform-origin: top right;
+    transition: opacity .16s ease, transform .18s var(--ease), visibility .18s;
+}
+#stats.open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; }
+#stats .panel-head { padding: 10px 11px 10px 14px; }
+#stats .panel-head .label { color: var(--text-2); }
+#stats .lt-stats-sub { padding: 9px 14px 0; }
+#stats-body {
+    display: flex; flex-direction: column; gap: 11px;
+    padding: 11px 12px 13px;
+    overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: var(--line-3) transparent;
+}
+#stats-body::-webkit-scrollbar { width: 6px; }
+#stats-body::-webkit-scrollbar-thumb { background: var(--line-3); border-radius: 3px; }
+.stats-btn.active {
+    color: #0b0b0c; border-color: #ffffff;
+    background: linear-gradient(180deg, #ffffff, #d2d2d2);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .75), 0 6px 26px rgba(255, 255, 255, .2);
+}
+.stats-btn .lb-ico { font-family: var(--pixel); font-size: 18px; font-weight: 700; }
+
 #legend-list {
     display: flex; flex-direction: column; gap: 3px;
     padding: 7px;
@@ -345,6 +374,21 @@
     transition: transform .28s var(--ease), opacity .18s ease, visibility .28s;
 }
 .dev-mobile #legend.open { transform: none; }
+.dev-mobile #stats {
+    top: auto;
+    left: 8px; right: 8px;
+    bottom: calc(122px + env(safe-area-inset-bottom));
+    width: auto;
+    max-height: min(64vh, 520px);
+    z-index: 1450;
+    transform: translateY(calc(100% + 140px)) scale(.99);
+    transform-origin: bottom center;
+    transition: transform .28s var(--ease), opacity .18s ease, visibility .28s;
+}
+.dev-mobile #stats.open { transform: none; }
+.dev-mobile #stats .panel-head { padding: 9px 10px 9px 12px; }
+.dev-mobile .stats-btn .lb-txt { display: none; }
+.dev-mobile .stats-btn { min-width: 52px; padding: 0 8px; }
 .dev-mobile #legend .panel-head { padding: 9px 10px 9px 12px; }
 .dev-mobile #legend-list { padding: 6px; }
 .dev-mobile #legend .legend-foot { padding: 8px 10px 9px; gap: 7px; }

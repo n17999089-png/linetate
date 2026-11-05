@@ -1454,6 +1454,7 @@
         if (open) {
             setDrawFold(false);
             if (menuOpen && isMobileUI()) setMenu(false);
+            if (statsOpen) setStats(false);
             const sp = $('place-search');
             if (sp && sp.classList.contains('open')) setSearch(false);
         }
@@ -1569,6 +1570,7 @@
         panel.setAttribute('aria-hidden', String(!open));
         if (open && drawPanelOpen) setDrawPanel(false, true);
         if (open && menuOpen) setMenu(false);
+        if (open && statsOpen) setStats(false);
         if (btn) {
             btn.classList.toggle('active', open);
             btn.setAttribute('aria-expanded', String(open));
@@ -1966,6 +1968,54 @@
     }
 
     let menuOpen = false;
+    let statsOpen = false;
+    let statsRes = null;
+    let statsBusy = false;
+
+    function renderStats() {
+        const body = $('stats-body');
+        if (body) body.innerHTML = LT.statsRender(statsRes);
+    }
+
+    function loadStats() {
+        if (statsBusy) return;
+        statsBusy = true;
+        renderStats();
+        LT.statsCompute((i, n) => {
+            if (statsRes) return;
+            const body = $('stats-body');
+            if (body) body.innerHTML = `<div class="lt-stats-loading">${LT.esc(LT.t('stats.loading'))} ${n ? i + '/' + n : ''}</div>`;
+        }).then(res => {
+            statsBusy = false;
+            statsRes = res;
+            renderStats();
+        }).catch(() => {
+            statsBusy = false;
+            renderStats();
+        });
+    }
+
+    function setStats(open) {
+        open = !!open;
+        statsOpen = open;
+        if (open) {
+            if (menuOpen) setMenu(false);
+            const sp = $('place-search');
+            if (sp && sp.classList.contains('open')) setSearch(false);
+            if (drawPanelOpen && isMobileUI()) setDrawPanel(false);
+        }
+        const panel = $('stats');
+        const btn = $('stats-btn');
+        if (panel) {
+            panel.classList.toggle('open', open);
+            panel.setAttribute('aria-hidden', String(!open));
+        }
+        if (btn) {
+            btn.classList.toggle('active', open);
+            btn.setAttribute('aria-expanded', String(open));
+        }
+        if (open) loadStats();
+    }
 
     function setMenu(open) {
         menuOpen = open;
@@ -1974,6 +2024,7 @@
         if (open) {
             const sp = $('place-search');
             if (sp && sp.classList.contains('open')) setSearch(false);
+            if (statsOpen) setStats(false);
             if (drawPanelOpen && isMobileUI()) setDrawPanel(false);
         }
         const legend = $('legend');
@@ -2535,6 +2586,7 @@
         store.onMirrorUpdate(() => {
             lastVer = store.version();
             refresh();
+            if (statsOpen) { statsRes = null; loadStats(); }
         });
     }
 
@@ -2611,6 +2663,7 @@
         if (searchRows.length) renderSearchRows();
         syncSearchHint();
         syncDrawUI();
+        if (statsOpen) renderStats();
     }
 
     document.addEventListener('linetate:lang', syncLangUI);
@@ -2845,6 +2898,10 @@
         const rail3d = $('tool-3d');
         if (rail3d) rail3d.addEventListener('click', toggle3D);
         $('advance-btn').addEventListener('click', () => setAdvance(!state.advance));
+        const statsBtn = $('stats-btn');
+        if (statsBtn) statsBtn.addEventListener('click', () => setStats(!statsOpen));
+        const statsClose = $('stats-close');
+        if (statsClose) statsClose.addEventListener('click', () => setStats(false));
         $('date-trigger').addEventListener('click', () => { setMenu(false); cal.toggle(state.date); });
 
         $('lang-btn').addEventListener('click', () => LT.switchLang());
@@ -2920,6 +2977,7 @@
         document.addEventListener('keydown', e => {
             if (e.key !== 'Escape') return;
             if (menuOpen) setMenu(false);
+            if (statsOpen) setStats(false);
             if (drawPanelOpen) setDrawPanel(false);
             if (tool) setTool('');
             const search = $('place-search');

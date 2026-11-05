@@ -174,6 +174,26 @@
             'viewer.places': 'НП', 'viewer.placesHint': 'Показувати назви населених пунктів',
             'viewer.zones': 'Зони', 'viewer.zonesHint': 'Обʼємні зони контролю на 3D-карті',
             'viewer.advanceNone': 'НЕМАЄ СУСІДНЬОЇ ДАТИ ДЛЯ ПОРІВНЯННЯ', 'viewer.tagline': 'ОПЕРАТИВНА КАРТА', 'dock.point': 'ТОЧКА',
+            'viewer.stats': 'Статистика', 'viewer.statsHint': 'Підсумок змін фронту з 4 листопада',
+            'tab.stats': 'Стат',
+            'stats.title': 'СТАТИСТИКА ФРОНТУ', 'stats.sub': 'З 4 ЛИСТОПАДА',
+            'stats.ukr': 'УКРАЇНА', 'stats.rus': 'РОСІЯ', 'stats.ukrShort': 'УКР', 'stats.rusShort': 'РФ',
+            'stats.plus': 'ЗДОБУТО', 'stats.minus': 'ВТРАЧЕНО', 'stats.day': 'ДЕНЬ', 'stats.km2': 'КМ²',
+            'stats.empty': 'НЕМАЄ ДАНИХ З 4 ЛИСТОПАДА',
+            'stats.emptyHint': 'СТАТИСТИКА РАХУЄТЬСЯ ВІД 04.11. ДОДАЙТЕ ЦЮ ДАТУ В РЕДАКТОРІ Й ПЕРЕРАХУЙТЕ.',
+            'stats.loading': 'РАХУЄМО ПЛОЩІ…', 'stats.baseline': 'БАЗА — {date}',
+            'stats.roles': 'ХТО Є ХТО',
+            'stats.roleHint': 'Вкажіть шари для України, Росії, сірої зони та геоджесону України. Вибір зберігається на цьому пристрої.',
+            'stats.roleUkr': 'Україна (жовта зона)', 'stats.roleRus': 'Росія (червона зона)',
+            'stats.roleGrey': 'Сіра зона', 'stats.roleLand': 'Геоджесон України',
+            'stats.recalc': 'ПЕРЕРАХУВАТИ', 'stats.needLayer': '— НЕ ВИБРАНО —',
+            'stats.auto': 'АВТОВИЗНАЧЕННЯ', 'stats.saved': 'РОЛІ ЗБЕРЕЖЕНО',
+            'stats.adminHint': 'Ролі застосовуються до перегляду на цьому пристрої. Після зміни ролей статистика перераховується.',
+            'stats.rules': 'ПРАВИЛА',
+            'stats.rule1': 'Жовта зона вперед — плюс Україні.',
+            'stats.rule2': 'Сіра зона на жовту або порожню землю — мінус Україні.',
+            'stats.rule3': 'Сіра зона на червону — мінус Росії й плюс Україні.',
+            'stats.rule4': 'Червона зона вперед — плюс Росії й мінус Україні.',
             'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
             'tools.rectHint': 'Прямокутник: протягніть по карті', 'tools.circleHint': 'Коло: протягніть по карті',
@@ -346,6 +366,26 @@
             'viewer.places': 'Places', 'viewer.placesHint': 'Show settlement names',
             'viewer.zones': 'Zones', 'viewer.zonesHint': 'Volume control zones on the 3D map',
             'viewer.advanceNone': 'NO NEIGHBOURING DATE TO COMPARE', 'viewer.tagline': 'OPERATIONAL MAP', 'dock.point': 'POINT',
+            'viewer.stats': 'Statistics', 'viewer.statsHint': 'Front change totals since 4 November',
+            'tab.stats': 'Stats',
+            'stats.title': 'FRONT STATISTICS', 'stats.sub': 'SINCE 4 NOVEMBER',
+            'stats.ukr': 'UKRAINE', 'stats.rus': 'RUSSIA', 'stats.ukrShort': 'UKR', 'stats.rusShort': 'RUS',
+            'stats.plus': 'GAINED', 'stats.minus': 'LOST', 'stats.day': 'DAY', 'stats.km2': 'KM²',
+            'stats.empty': 'NO DATA SINCE 4 NOVEMBER',
+            'stats.emptyHint': 'STATISTICS START ON 04.11. ADD THAT DATE IN THE EDITOR AND RECALCULATE.',
+            'stats.loading': 'MEASURING AREAS…', 'stats.baseline': 'BASE — {date}',
+            'stats.roles': 'WHO IS WHO',
+            'stats.roleHint': 'Pick the layers for Ukraine, Russia, the grey zone and the Ukraine GeoJSON. The choice is stored on this device.',
+            'stats.roleUkr': 'Ukraine (yellow zone)', 'stats.roleRus': 'Russia (red zone)',
+            'stats.roleGrey': 'Grey zone', 'stats.roleLand': 'Ukraine GeoJSON',
+            'stats.recalc': 'RECALCULATE', 'stats.needLayer': '— NOT SELECTED —',
+            'stats.auto': 'AUTO-DETECT', 'stats.saved': 'ROLES SAVED',
+            'stats.adminHint': 'Roles apply to the viewer on this device. Statistics are recalculated after roles change.',
+            'stats.rules': 'RULES',
+            'stats.rule1': 'Yellow zone advances — Ukraine gains.',
+            'stats.rule2': 'Grey zone onto yellow or empty land — Ukraine loses.',
+            'stats.rule3': 'Grey zone onto red — Russia loses and Ukraine gains.',
+            'stats.rule4': 'Red zone advances — Russia gains and Ukraine loses.',
             'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
             'tools.rectHint': 'Rectangle: drag on the map', 'tools.circleHint': 'Circle: drag on the map',
@@ -2028,6 +2068,7 @@
 
     const FLAG_SVG = {
         uk: '<svg viewBox="0 0 90 60" preserveAspectRatio="none"><rect width="90" height="30" fill="#0057b7"/><rect y="30" width="90" height="30" fill="#ffd700"/></svg>',
+        ru: '<svg viewBox="0 0 90 60" preserveAspectRatio="none"><rect width="90" height="20" fill="#ffffff"/><rect y="20" width="90" height="20" fill="#0039a6"/><rect y="40" width="90" height="20" fill="#d52b1e"/></svg>',
         en: '<svg viewBox="0 0 60 30" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><clipPath id="union-clip"><path d="M0 0h60v30H0z"/></clipPath><clipPath id="union-diagonal"><path d="M30 15h30v15zM30 15v15H0zM30 15H0V0zM30 15V0h30z"/></clipPath></defs><g clip-path="url(#union-clip)"><path d="M0 0h60v30H0z" fill="#012169"/><path d="m0 0 60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="m0 0 60 30m0-30L0 30" stroke="#c8102e" stroke-width="4" clip-path="url(#union-diagonal)"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#c8102e" stroke-width="6"/></g></svg>'
     };
 
@@ -3304,6 +3345,305 @@
         if (g >= 1 && l >= 1) toast(t('toast.advance', { gain: g, loss: l }));
         else if (g >= 1) toast(t('toast.advanceGain', { n: g }));
         else toast(t('toast.advanceLoss', { n: l }));
+    }
+
+    /* ------------------------------ статистика ------------------------------ */
+
+    const STATS_START = '2026-11-04';
+    const STATS_ROLES_KEY = 'LINETATE:__roles';
+    const STATS_ROLES = ['ukr', 'rus', 'grey', 'land'];
+
+    function statsRgb(hex) {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+        if (!m) return null;
+        const n = parseInt(m[1], 16);
+        return [n >> 16 & 255, n >> 8 & 255, n & 255];
+    }
+
+    function statsLayerArea(l) {
+        let a = 0;
+        const fs = l && l.data && l.data.features ? l.data.features : [];
+        for (let i = 0; i < fs.length; i++) { try { a += turf.area(fs[i]); } catch (e) { } }
+        return a;
+    }
+
+    // ролі визначаються і за назвою, і за кольором: переназваний шар
+    // не повинен ламати статистику, а зміна кольору в редакторі — теж
+    function statsDetectRoles(layers) {
+        const zones = Object.keys(layers || {}).map(id => layers[id])
+            .filter(l => l && (!l.kind || l.kind === 'zone') && l.data && Array.isArray(l.data.features));
+        const out = { ukr: null, rus: null, grey: null, land: null };
+        const used = {};
+        const take = (role, test) => {
+            for (let i = 0; i < zones.length; i++) {
+                const l = zones[i];
+                if (used[l.id] || !test(l)) continue;
+                out[role] = l.id;
+                used[l.id] = 1;
+                return true;
+            }
+            return false;
+        };
+        const name = l => String(l.name || '');
+        take('land', l => /УКРАЇН|UKRAIN/i.test(name(l)) && !/ЗВІЛЬН|LIBERAT/i.test(name(l)));
+        take('grey', l => /СІРА|СЕРАЯ|GREY|GRAY|НІЧИЯ|NEUTRAL|NO.?MAN/i.test(name(l)));
+        take('rus', l => /РФ|РОСІ|РОСС|RUSS|ORC|ОРК/i.test(name(l)));
+        take('ukr', l => /УКРАЇН|UKRAIN|ЗВІЛЬН|LIBERAT|DEOC/i.test(name(l)));
+        take('grey', l => {
+            const c = statsRgb(l.style && l.style.color);
+            return c && Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) < 28 && Math.max(c[0], c[1], c[2]) < 205;
+        });
+        take('rus', l => {
+            const c = statsRgb(l.style && l.style.color);
+            return c && c[0] > 80 && c[0] > c[1] * 1.4 && c[0] > c[2] * 1.4;
+        });
+        take('ukr', l => {
+            const c = statsRgb(l.style && l.style.color);
+            return c && c[0] > 105 && c[1] > 95 && c[2] < Math.min(c[0], c[1]) * 0.86;
+        });
+        if (!out.land) {
+            const rest = zones.filter(l => !used[l.id])
+                .map(l => ({ id: l.id, a: statsLayerArea(l) }))
+                .sort((a, b) => b.a - a.a);
+            if (rest.length && (rest.length === 1 || rest[0].a > rest[1].a * 2.2)) out.land = rest[0].id;
+        }
+        return out;
+    }
+
+    function statsStoredRoles() {
+        try {
+            const raw = JSON.parse(localStorage.getItem(STATS_ROLES_KEY) || '{}');
+            const out = {};
+            if (raw && typeof raw === 'object') {
+                STATS_ROLES.forEach(r => { if (typeof raw[r] === 'string' && raw[r]) out[r] = raw[r]; });
+            }
+            return out;
+        } catch (e) { return {}; }
+    }
+
+    function statsRoles(layers) {
+        const auto = statsDetectRoles(layers || {});
+        const saved = statsStoredRoles();
+        const out = {};
+        STATS_ROLES.forEach(r => {
+            const pick = saved[r];
+            out[r] = pick && (!layers || layers[pick]) ? pick : auto[r];
+        });
+        return out;
+    }
+
+    function setStatsRoles(roles) {
+        const clean = {};
+        STATS_ROLES.forEach(r => {
+            if (roles && typeof roles[r] === 'string' && roles[r]) clean[r] = roles[r];
+        });
+        try { localStorage.setItem(STATS_ROLES_KEY, JSON.stringify(clean)); } catch (e) { }
+        statsMemo = null;
+        statsUnionCache.clear();
+    }
+
+    function statsGeomOk(g) {
+        return !!(g && g.type && Array.isArray(g.coordinates) && g.coordinates.length);
+    }
+
+    function statsAreaKm2(f) {
+        try { return f && statsGeomOk(f.geometry) ? turf.area(f) / 1e6 : 0; } catch (e) { return 0; }
+    }
+
+    function statsUnion(doc, id) {
+        const l = doc && doc.layers ? doc.layers[id] : null;
+        const fs = l && l.data && l.data.features ? l.data.features : null;
+        if (!fs || !fs.length) return null;
+        let u = fs[0];
+        for (let i = 1; i < fs.length && u; i++) {
+            try { u = turf.union(u, fs[i]); } catch (e) { return null; }
+        }
+        return u && statsGeomOk(u.geometry) ? u : null;
+    }
+
+    const statsUnionCache = new Map();
+
+    function statsZone(doc, id) {
+        if (!doc || !id) return null;
+        const key = String(doc.date || '') + '|' + id + '|' + String(doc.savedAt || 0);
+        if (statsUnionCache.has(key)) return statsUnionCache.get(key);
+        const f = statsUnion(doc, id);
+        if (statsUnionCache.size > 32) statsUnionCache.clear();
+        statsUnionCache.set(key, f);
+        return f;
+    }
+
+    function statsDiff(a, b) {
+        if (!a) return null;
+        if (!b) return a;
+        try {
+            const d = turf.difference(a, b);
+            return d && statsGeomOk(d.geometry) ? d : null;
+        } catch (e) { return null; }
+    }
+
+    function statsCut(a, b) {
+        if (!a || !b) return null;
+        try {
+            const d = turf.intersect(a, b);
+            return d && statsGeomOk(d.geometry) ? d : null;
+        } catch (e) { return null; }
+    }
+
+    // приріст кожного шару ріжемо на джерела: інші шари й «порожня земля»
+    // усередині геоджесону України
+    function statsClassify(gain, prev, target, allowEmpty) {
+        const out = {};
+        let rest = gain;
+        ['ukr', 'rus', 'grey'].forEach(src => {
+            if (!rest || src === target || !prev[src]) return;
+            const part = statsCut(rest, prev[src]);
+            if (!part) return;
+            const a = statsAreaKm2(part);
+            if (a <= 0.005) return;
+            out[src] = (out[src] || 0) + a;
+            rest = statsDiff(rest, part);
+        });
+        if (rest && allowEmpty) {
+            const a = statsAreaKm2(rest);
+            if (a > 0.005) out.empty = (out.empty || 0) + a;
+        }
+        return out;
+    }
+
+    function statsDaily(prev, cur, roles) {
+        const p = {}, c = {};
+        ['ukr', 'rus', 'grey'].forEach(r => {
+            p[r] = statsZone(prev, roles[r]);
+            c[r] = statsZone(cur, roles[r]);
+        });
+        const land = statsZone(cur, roles.land) || statsZone(prev, roles.land);
+        const acc = {};
+        ['ukr', 'rus', 'grey'].forEach(target => {
+            if (!p[target] || !c[target]) return;
+            let gained = statsDiff(c[target], p[target]);
+            if (!gained) return;
+            if (land) {
+                const inside = statsCut(gained, land);
+                if (inside) gained = inside;
+            }
+            if (!gained) return;
+            acc[target] = statsClassify(gained, p, target, !!land);
+        });
+
+        const A = (t, s) => (acc[t] && acc[t][s]) || 0;
+        const ukrPlus = A('ukr', 'rus') + A('ukr', 'grey') + A('ukr', 'empty') + A('grey', 'rus');
+        const ukrMinus = A('grey', 'ukr') + A('grey', 'empty') + A('rus', 'ukr') + A('rus', 'empty');
+        const rusPlus = A('rus', 'ukr') + A('rus', 'grey') + A('rus', 'empty');
+        const rusMinus = A('ukr', 'rus') + A('grey', 'rus');
+        return {
+            ukrPlus, ukrMinus, rusPlus, rusMinus,
+            ukrNet: ukrPlus - ukrMinus,
+            rusNet: rusPlus - rusMinus,
+            detail: acc
+        };
+    }
+
+    function statsTotals(rows) {
+        const t = { ukrPlus: 0, ukrMinus: 0, rusPlus: 0, rusMinus: 0, ukrNet: 0, rusNet: 0 };
+        rows.forEach(r => {
+            Object.keys(t).forEach(k => { t[k] += r[k] || 0; });
+        });
+        return t;
+    }
+
+    let statsMemo = null;
+
+    function statsCompute(progress) {
+        const list = listDates().slice().sort((a, b) => a.date < b.date ? -1 : 1);
+        const sig = list.map(d => d.date + ':' + d.updatedAt).join(',') + '|' + JSON.stringify(statsStoredRoles());
+        if (statsMemo && statsMemo.sig === sig) {
+            if (progress) { try { progress(1, 1); } catch (e) { } }
+            return Promise.resolve(statsMemo.res);
+        }
+        return new Promise(resolve => {
+            const first = list.findIndex(d => d.date >= STATS_START);
+            const latest = list.length ? load(list[list.length - 1].date) : null;
+            const roles = statsRoles(latest && latest.layers);
+            const baseline = first > 0 ? list[first - 1].date : null;
+            if (first < 0) {
+                const res = {
+                    start: STATS_START, baseline: list.length ? list[list.length - 1].date : null,
+                    roles, rows: [], totals: statsTotals([]), empty: true
+                };
+                statsMemo = { sig, res };
+                return resolve(res);
+            }
+            const days = list.slice(first);
+            let prevDate = baseline;
+            const rows = [];
+            let i = 0;
+            const step = () => {
+                if (i >= days.length) {
+                    const res = { start: STATS_START, baseline, roles, rows, totals: statsTotals(rows), empty: false };
+                    statsMemo = { sig, res };
+                    return resolve(res);
+                }
+                const date = days[i].date;
+                const cur = load(date);
+                const prev = prevDate ? load(prevDate) : null;
+                if (cur && cur.layers && prev && prev.layers) {
+                    rows.push(Object.assign({ date, from: prevDate }, statsDaily(prev, cur, roles)));
+                }
+                prevDate = date;
+                i++;
+                if (progress) { try { progress(i, days.length); } catch (e) { } }
+                setTimeout(step, 0);
+            };
+            step();
+        });
+    }
+
+    function statsFmt(v) {
+        const n = Math.abs(v) < 100 ? Math.round(Math.abs(v) * 10) / 10 : Math.round(Math.abs(v));
+        try { return new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(n); }
+        catch (e) { return String(n); }
+    }
+
+    function statsSigned(v) {
+        const txt = v > 0.05 ? '+' + statsFmt(v) : v < -0.05 ? '−' + statsFmt(v) : '0';
+        const cls = v > 0.05 ? 'pos' : v < -0.05 ? 'neg' : 'zero';
+        return `<span class="lt-stat-num ${cls}">${txt}</span>`;
+    }
+
+    function statsSide(side, flag, name, plus, minus, net) {
+        return `<article class="lt-stats-side ${side}">
+            <div class="lt-flag lt-flag-${side}">${FLAG_SVG[flag] || ''}</div>
+            <div class="lt-stats-side-txt">
+                <b>${esc(name)}</b>
+                <small><span>${esc(t('stats.plus'))} +${statsFmt(plus)}</span><span>${esc(t('stats.minus'))} −${statsFmt(minus)}</span></small>
+                <strong class="lt-stats-net">${statsSigned(net)}<i>${esc(t('stats.km2'))}</i></strong>
+            </div>
+        </article>`;
+    }
+
+    function statsRender(res) {
+        if (!res) return `<div class="lt-stats-loading">${esc(t('stats.loading'))}</div>`;
+        if (res.empty || !res.rows.length) {
+            return `<div class="lt-stats-empty"><b>${esc(t('stats.empty'))}</b><span>${esc(t('stats.emptyHint'))}</span></div>`;
+        }
+        const T = res.totals;
+        const rows = res.rows.map(r => `<div class="lt-stats-row">
+            <span class="d">${esc(fmtShort(r.date))}</span>
+            <span class="u">${statsSigned(r.ukrNet)}</span>
+            <span class="r">${statsSigned(r.rusNet)}</span>
+        </div>`).join('');
+        return `<div class="lt-stats-sides">
+            ${statsSide('ukr', 'uk', t('stats.ukr'), T.ukrPlus, T.ukrMinus, T.ukrNet)}
+            ${statsSide('rus', 'ru', t('stats.rus'), T.rusPlus, T.rusMinus, T.rusNet)}
+        </div>
+        <div class="lt-stats-row head">
+            <span class="d">${esc(t('stats.day'))}</span>
+            <span class="u">${esc(t('stats.ukrShort'))}</span>
+            <span class="r">${esc(t('stats.rusShort'))}</span>
+        </div>
+        <div class="lt-stats-days">${rows}</div>
+        <div class="lt-stats-foot">${esc(t('stats.baseline', { date: res.baseline ? fmtShort(res.baseline) : '—' }))}</div>`;
     }
 
     /* ------------------------------ стрелки ------------------------------ */
@@ -6596,6 +6936,7 @@
         blendEngine, featBox, onScreen, bakeParts, warmGeometry, lodTols,
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,
+        statsCompute, statsRender, statsRoles, setStatsRoles, statsDetectRoles, statsDate: STATS_START,
         loadFX, saveFX, applyFX, initFX,
         views: { local: localViews, record: recordView, ask: askRemoteViews, cached: cachedRemoteViews, publicHost },
         parseGeoJSON, boundsOf,

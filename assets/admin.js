@@ -361,29 +361,82 @@
         map.setPaintProperty('temp-draw-line', 'line-color', tempColor());
     }
 
+    let drawingTouch = false;
+
+    function cancelDraw() {
+        if (!drawing) return;
+        drawing = null;
+        drawingTouch = false;
+        document.body.classList.remove('drawing');
+        updateTemp();
+    }
+
     function onDown(e) {
         if (state.mode === 'drag' || state.mode === 'point') return;
-        if (e.originalEvent && e.originalEvent.target.closest('.lt-map-pin, .lt-map-image')) return;
+        if (!e.lngLat) return;
         const oe = e.originalEvent || {};
+        if (oe.target && oe.target.closest && oe.target.closest('.lt-map-pin, .lt-map-image')) return;
         if (typeof oe.button === 'number' && oe.button !== 0) return;
+        if (oe.touches && oe.touches.length > 1) { cancelDraw(); return; }
 
+        drawingTouch = !!(oe.touches && oe.touches.length === 1);
         drawing = [[e.lngLat.lng, e.lngLat.lat]];
         document.body.classList.add('drawing');
         updateTemp();
     }
 
     function onMove(e) {
-        if (!drawing) return;
+        if (!drawing || !e.lngLat) return;
+        const oe = e.originalEvent || {};
+        if (oe.touches && oe.touches.length > 1) { cancelDraw(); return; }
         const p = [e.lngLat.lng, e.lngLat.lat];
         const last = drawing[drawing.length - 1];
-        const step = state.mode === 'arrow' ? 0.0016 : 0.0011;
+        const step = drawingTouch ? 0.00035 : (state.mode === 'arrow' ? 0.0016 : 0.0011);
         if (Math.hypot(p[0] - last[0], p[1] - last[1]) < step) return;
         drawing.push(p);
         updateTemp();
     }
 
     function onUp() {
-        if (drawing) finishDraw();
+        if (!drawing) return;
+        drawingTouch = false;
+        finishDraw();
+    }
+
+    /* малювання пальцем: нативні touch-події контейнера карти */
+    function touchLngLat(ev) {
+        const c = ev.currentTarget;
+        const r = c.getBoundingClientRect();
+        const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]);
+        return map.unproject([t.clientX - r.left, t.clientY - r.top]);
+    }
+
+    function onTouchStart(ev) {
+        if (state.mode === 'drag' || state.mode === 'point') return;
+        if (ev.touches.length > 1) { cancelDraw(); return; }
+        const t = ev.target;
+        if (t && t.closest && t.closest('.lt-map-pin, .lt-map-image')) return;
+        ev.preventDefault();
+        drawingTouch = true;
+        const ll = touchLngLat(ev);
+        drawing = [[ll.lng, ll.lat]];
+        document.body.classList.add('drawing');
+        updateTemp();
+    }
+
+    function onTouchMove(ev) {
+        if (!drawing) return;
+        if (ev.touches.length > 1) { cancelDraw(); return; }
+        ev.preventDefault();
+        const ll = touchLngLat(ev);
+        const last = drawing[drawing.length - 1];
+        if (Math.hypot(ll.lng - last[0], ll.lat - last[1]) < 0.00035) return;
+        drawing.push([ll.lng, ll.lat]);
+        updateTemp();
+    }
+
+    function onTouchEnd() {
+        onUp();
     }
 
     /* ---------------------------- суша ---------------------------- */
@@ -730,6 +783,11 @@
         setStatus(has ? 'saved' : 'newDate');
         uiUsage();
         if (cal) cal.refresh();
+        const activeTab = document.querySelector('.tab.active');
+        if (activeTab && activeTab.dataset.tab === 'stats') {
+            uiStatsRoles();
+            runAdminStats();
+        }
     }
 
     function pulseDate(dir) {
@@ -1134,6 +1192,55 @@
                 p.classList.add('anim');
                 setTimeout(() => p.classList.remove('anim'), 450);
             }
+        });
+        if (name === 'stats') {
+            uiStatsRoles();
+            runAdminStats();
+        }
+    }
+
+    /* ------------------------- статистика ------------------------- */
+
+    let adminStatsRes = null;
+    let adminStatsBusy = false;
+
+    function uiStatsRoles() {
+        const box = $('admin-roles');
+        if (!box || !mapReady) return;
+        const roles = LT.statsRoles(state.layers);
+        const layers = Object.values(state.layers).sort((a, b) => b.z - a.z);
+        box.querySelectorAll('select[data-role]').forEach(sel => {
+            sel.innerHTML = `<option value="">${esc(t('stats.needLayer'))}</option>` +
+                layers.map(l => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+            sel.value = roles[sel.dataset.role] || '';
+        });
+    }
+
+    function readStatsRoles() {
+        const out = {};
+        document.querySelectorAll('#admin-roles select[data-role]').forEach(sel => {
+            if (sel.value) out[sel.dataset.role] = sel.value;
+        });
+        return out;
+    }
+
+    function renderAdminStats() {
+        const out = $('admin-stats-out');
+        if (out) out.innerHTML = LT.statsRender(adminStatsRes);
+    }
+
+    function runAdminStats() {
+        if (adminStatsBusy) return;
+        adminStatsBusy = true;
+        adminStatsRes = null;
+        renderAdminStats();
+        LT.statsCompute().then(res => {
+            adminStatsBusy = false;
+            adminStatsRes = res;
+            renderAdminStats();
+        }).catch(() => {
+            adminStatsBusy = false;
+            renderAdminStats();
         });
     }
 
@@ -1802,6 +1909,22 @@
 
         $('lang-btn').addEventListener('click', () => LT.switchLang());
 
+        $('admin-roles').addEventListener('change', () => {
+            LT.setStatsRoles(readStatsRoles());
+            toast(t('stats.saved'));
+            runAdminStats();
+        });
+        $('btn-stats-auto').addEventListener('click', () => {
+            LT.setStatsRoles({});
+            uiStatsRoles();
+            toast(t('stats.saved'));
+            runAdminStats();
+        });
+        $('btn-stats-calc').addEventListener('click', () => {
+            LT.setStatsRoles(readStatsRoles());
+            runAdminStats();
+        });
+
         $('layer-list').addEventListener('click', e => {
             const row = e.target.closest('.layer');
             if (!row) return;
@@ -2265,6 +2388,8 @@
         if (cal) cal.refresh();
         $('btn-ghost').textContent = t(state.ghost ? 'fx.ghostOn' : 'fx.ghostOff');
         $('play-btn').textContent = playTimer ? t('viewer.stop') : t('viewer.play');
+        uiStatsRoles();
+        if (adminStatsRes) renderAdminStats();
     }
 
     document.addEventListener('linetate:lang', syncLangUI);
@@ -2287,6 +2412,7 @@
         searchDashLoop();
 
         bindUI();
+        setMode(LT.device().mobile ? 'drag' : 'draw');
         uiGh();
         uiUsage();
         uiViews();
@@ -2307,6 +2433,12 @@
         map.on('mousemove', onMove);
         map.on('mouseup', onUp);
 
+        const touchBox = map.getCanvasContainer();
+        touchBox.addEventListener('touchstart', onTouchStart, { passive: false });
+        touchBox.addEventListener('touchmove', onTouchMove, { passive: false });
+        touchBox.addEventListener('touchend', onTouchEnd, { passive: true });
+        touchBox.addEventListener('touchcancel', cancelDraw, { passive: true });
+
         remoteReady.then(startUp);
     }
 
@@ -2315,7 +2447,8 @@
         const start = initialDate();
         loadDate(start < LT.MIN_DATE ? LT.MIN_DATE : start);
         uiUsage();
-        setMode('draw');
+        // на телефоні першим інструментом відкривається панорама
+        setMode(LT.device().mobile ? 'drag' : 'draw');
         $('play-btn').textContent = t('viewer.play');
         $('btn-ghost').textContent = t(state.ghost ? 'fx.ghostOn' : 'fx.ghostOff');
         loadLand();

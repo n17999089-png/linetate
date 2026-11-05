@@ -12,8 +12,8 @@
 <script src="../assets/vendor/maplibre-gl.js?v=3"></script>
 <script src="../assets/vendor/turf.min.js"></script>
 <script src="../assets/vendor/topojson-client.min.js"></script>
-<link rel="stylesheet" href="../assets/theme.css?v=29">
-<link rel="stylesheet" href="../assets/admin.css?v=33">
+<link rel="stylesheet" href="../assets/theme.css?v=30">
+<link rel="stylesheet" href="../assets/admin.css?v=34">
 </head>
 <body>
 
@@ -34,6 +34,7 @@
         <div class="tab active" data-tab="layers" data-i18n="tab.layers">Слои</div>
         <div class="tab" data-tab="style" data-i18n="tab.style">Слой</div>
         <div class="tab" data-tab="mapfx" data-i18n="tab.map">Карта</div>
+        <div class="tab" data-tab="stats" data-i18n="tab.stats">Стат</div>
         <div class="tab" data-tab="sys" data-i18n="tab.file">Файл</div>
     </div>
 
@@ -222,6 +223,30 @@
             <div class="hint" data-i18n="fx.hint">Эффекты карты сохраняются и повторяются в просмотре. Контур прошлого дня рисуется пунктиром и только для просмотра — в данные не попадает.</div>
         </div>
 
+        <div class="pane" data-pane="stats">
+            <div class="label" data-i18n="stats.roles">ХТО Є ХТО</div>
+            <div class="hint" data-i18n="stats.roleHint">Вкажіть шари для України, Росії, сірої зони та геоджесону України. Вибір зберігається на цьому пристрої.</div>
+            <div class="lt-roles" id="admin-roles">
+                <label class="lt-role"><span data-i18n="stats.roleUkr">Україна (жовта зона)</span><select class="input" data-role="ukr"></select></label>
+                <label class="lt-role"><span data-i18n="stats.roleRus">Росія (червона зона)</span><select class="input" data-role="rus"></select></label>
+                <label class="lt-role"><span data-i18n="stats.roleGrey">Сіра зона</span><select class="input" data-role="grey"></select></label>
+                <label class="lt-role"><span data-i18n="stats.roleLand">Геоджесон України</span><select class="input" data-role="land"></select></label>
+            </div>
+            <div class="row">
+                <button class="btn" id="btn-stats-auto" data-i18n="stats.auto">АВТОВИЗНАЧЕННЯ</button>
+                <button class="btn primary" id="btn-stats-calc" data-i18n="stats.recalc">ПЕРЕРАХУВАТИ</button>
+            </div>
+            <div class="hint" data-i18n="stats.adminHint">Ролі застосовуються до перегляду на цьому пристрої. Після зміни ролей статистика перераховується.</div>
+            <div id="admin-stats-out"></div>
+            <div class="lt-rules">
+                <div class="label" data-i18n="stats.rules">ПРАВИЛА</div>
+                <div data-i18n="stats.rule1">Жовта зона вперед — плюс Україні.</div>
+                <div data-i18n="stats.rule2">Сіра зона на жовту або порожню землю — мінус Україні.</div>
+                <div data-i18n="stats.rule3">Сіра зона на червону — мінус Росії й плюс Україні.</div>
+                <div data-i18n="stats.rule4">Червона зона вперед — плюс Росії й мінус Україні.</div>
+            </div>
+        </div>
+
         <div class="pane" data-pane="sys">
             <button class="btn wide" id="btn-import-geo" data-i18n="file.importGeo">Импорт GeoJSON</button>
             <input type="file" id="geojson-file" accept=".geojson,.json,application/geo+json,application/json" hidden>
@@ -336,6 +361,6 @@
     </form>
 </div>
 
-<script src="../assets/gate.js?v=16"></script>
+<script src="../assets/gate.js?v=17"></script>
 </body>
 </html>
