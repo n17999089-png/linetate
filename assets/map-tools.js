@@ -14,8 +14,19 @@
             ['get', (window.LT && LT.lang()) === 'en' ? 'name:en' : 'name:uk'],
             ['get', 'name:uk'], ['get', 'name:en']];
 
+        // у наборі є й сусідні області (Білорусь, Польща, Росія) з іншого джерела:
+        // їхній контур іде поруч із українським і дає подвійну пунктирну лінію
+        // вздовж державного кордону, тому малюємо тільки українські регіони
+        const uaOnly = fc => ({
+            type: 'FeatureCollection',
+            features: fc.features.filter(f => f.properties && f.properties.c === 'UKR')
+        });
+
         function mount() {
-            const regionData = window.__ltRegionData || (window.__ltRegionData = LT.geoRegions(window.LT_REGIONS_RAW));
+            const regionData = window.__ltRegionData || (window.__ltRegionData = (() => {
+                const all = LT.geoRegions(window.LT_REGIONS_RAW);
+                return { lines: uaOnly(all.lines), labels: uaOnly(all.labels) };
+            })());
 
             if (!map.getSource('lt-regions')) {
                 map.addSource('lt-regions', { type: 'geojson', data: regionData.lines, tolerance: 0.5 });

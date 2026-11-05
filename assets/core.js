@@ -182,6 +182,8 @@
             'stats.empty': 'НЕМАЄ ДАНИХ З 4 ЛИСТОПАДА',
             'stats.emptyHint': 'СТАТИСТИКА РАХУЄТЬСЯ ВІД 04.11. ДОДАЙТЕ ЦЮ ДАТУ В РЕДАКТОРІ Й ПЕРЕРАХУЙТЕ.',
             'stats.loading': 'РАХУЄМО ПЛОЩІ…', 'stats.baseline': 'БАЗА — {date}',
+            'stats.period': 'ФРОНТ ЗА ПЕРІОД', 'stats.toUkr': 'на користь України',
+            'stats.toRus': 'на користь Росії', 'stats.flat': 'без змін', 'stats.daysN': '{n} дн.',
             'stats.roles': 'ХТО Є ХТО',
             'stats.roleHint': 'Вкажіть шари для України, Росії, сірої зони та геоджесону України. Вибір зберігається на цьому пристрої.',
             'stats.roleUkr': 'Україна (жовта зона)', 'stats.roleRus': 'Росія (червона зона)',
@@ -375,6 +377,8 @@
             'stats.empty': 'NO DATA SINCE 4 NOVEMBER',
             'stats.emptyHint': 'STATISTICS START ON 04.11. ADD THAT DATE IN THE EDITOR AND RECALCULATE.',
             'stats.loading': 'MEASURING AREAS…', 'stats.baseline': 'BASE — {date}',
+            'stats.period': 'FRONT FOR THE PERIOD', 'stats.toUkr': 'in Ukraine’s favour',
+            'stats.toRus': 'in Russia’s favour', 'stats.flat': 'no change', 'stats.daysN': '{n} days',
             'stats.roles': 'WHO IS WHO',
             'stats.roleHint': 'Pick the layers for Ukraine, Russia, the grey zone and the Ukraine GeoJSON. The choice is stored on this device.',
             'stats.roleUkr': 'Ukraine (yellow zone)', 'stats.roleRus': 'Russia (red zone)',
@@ -2068,9 +2072,62 @@
 
     /* ------------------------------ язык ------------------------------ */
 
+    // прапор малюємо як тканину: смуги + статичні складки й затінення країв;
+    // рухоме світло додає CSS, щоб анімація йшла на GPU
     const FLAG_SVG = {
-        uk: '<svg viewBox="0 0 90 60" preserveAspectRatio="none"><rect width="90" height="30" fill="#0057b7"/><rect y="30" width="90" height="30" fill="#ffd700"/></svg>',
-        ru: '<svg viewBox="0 0 90 60" preserveAspectRatio="none"><rect width="90" height="20" fill="#ffffff"/><rect y="20" width="90" height="20" fill="#0039a6"/><rect y="40" width="90" height="20" fill="#d52b1e"/></svg>',
+        uk: `<svg viewBox="0 0 60 40" preserveAspectRatio="none">
+            <defs>
+                <linearGradient id="ltfUkFold" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="#000" stop-opacity=".34"/>
+                    <stop offset=".09" stop-color="#000" stop-opacity=".08"/>
+                    <stop offset=".23" stop-color="#fff" stop-opacity=".17"/>
+                    <stop offset=".4" stop-color="#000" stop-opacity=".13"/>
+                    <stop offset=".57" stop-color="#fff" stop-opacity=".13"/>
+                    <stop offset=".73" stop-color="#000" stop-opacity=".15"/>
+                    <stop offset=".89" stop-color="#fff" stop-opacity=".1"/>
+                    <stop offset="1" stop-color="#000" stop-opacity=".3"/>
+                </linearGradient>
+                <linearGradient id="ltfUkEdge" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#fff" stop-opacity=".16"/>
+                    <stop offset=".14" stop-color="#fff" stop-opacity="0"/>
+                    <stop offset=".86" stop-color="#000" stop-opacity="0"/>
+                    <stop offset="1" stop-color="#000" stop-opacity=".24"/>
+                </linearGradient>
+            </defs>
+            <rect width="60" height="20" fill="#0057b7"/>
+            <rect y="20" width="60" height="20" fill="#ffd700"/>
+            <path d="M20 0h.5v40H20z" fill="#000" opacity=".12"/>
+            <path d="M41 0H40v40h1z" fill="#000" opacity=".1"/>
+            <rect width="60" height="40" fill="url(#ltfUkFold)"/>
+            <rect width="60" height="40" fill="url(#ltfUkEdge)"/>
+        </svg>`,
+        ru: `<svg viewBox="0 0 60 40" preserveAspectRatio="none">
+            <defs>
+                <linearGradient id="ltfRuFold" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="#000" stop-opacity=".28"/>
+                    <stop offset=".1" stop-color="#000" stop-opacity=".06"/>
+                    <stop offset=".24" stop-color="#fff" stop-opacity=".2"/>
+                    <stop offset=".41" stop-color="#000" stop-opacity=".12"/>
+                    <stop offset=".58" stop-color="#fff" stop-opacity=".16"/>
+                    <stop offset=".74" stop-color="#000" stop-opacity=".14"/>
+                    <stop offset=".9" stop-color="#fff" stop-opacity=".12"/>
+                    <stop offset="1" stop-color="#000" stop-opacity=".26"/>
+                </linearGradient>
+                <linearGradient id="ltfRuEdge" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#fff" stop-opacity=".18"/>
+                    <stop offset=".14" stop-color="#fff" stop-opacity="0"/>
+                    <stop offset=".86" stop-color="#000" stop-opacity="0"/>
+                    <stop offset="1" stop-color="#000" stop-opacity=".22"/>
+                </linearGradient>
+            </defs>
+            <rect width="60" height="13.34" fill="#ffffff"/>
+            <rect y="13.34" width="60" height="13.33" fill="#0039a6"/>
+            <rect y="26.67" width="60" height="13.33" fill="#d52b1e"/>
+            <path d="M19 0h.5v40H19z" fill="#000" opacity=".1"/>
+            <path d="M43 0H42v40h1z" fill="#000" opacity=".08"/>
+            <rect width="60" height="40" fill="url(#ltfRuFold)"/>
+            <rect width="60" height="40" fill="url(#ltfRuEdge)"/>
+        </svg>`,
         en: '<svg viewBox="0 0 60 30" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><clipPath id="union-clip"><path d="M0 0h60v30H0z"/></clipPath><clipPath id="union-diagonal"><path d="M30 15h30v15zM30 15v15H0zM30 15H0V0zM30 15V0h30z"/></clipPath></defs><g clip-path="url(#union-clip)"><path d="M0 0h60v30H0z" fill="#012169"/><path d="m0 0 60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="m0 0 60 30m0-30L0 30" stroke="#c8102e" stroke-width="4" clip-path="url(#union-diagonal)"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#c8102e" stroke-width="6"/></g></svg>'
     };
 
@@ -3614,14 +3671,27 @@
     }
 
     function statsSide(side, flag, name, plus, minus, net) {
+        const share = plus + minus > 0 ? Math.round(plus / (plus + minus) * 100) : 50;
         return `<article class="lt-stats-side ${side}">
-            <div class="lt-flag lt-flag-${side}">${FLAG_SVG[flag] || ''}</div>
+            <div class="lt-flag lt-flag-${side}">
+                <span class="lt-flag-pole"></span>
+                <span class="lt-flag-cloth">${FLAG_SVG[flag] || ''}</span>
+            </div>
             <div class="lt-stats-side-txt">
                 <b>${esc(name)}</b>
-                <small><span>${esc(t('stats.plus'))} +${statsFmt(plus)}</span><span>${esc(t('stats.minus'))} −${statsFmt(minus)}</span></small>
+                <small>
+                    <span>${esc(t('stats.plus'))} <em>+${statsFmt(plus)}</em></span>
+                    <span>${esc(t('stats.minus'))} <em>−${statsFmt(minus)}</em></span>
+                </small>
                 <strong class="lt-stats-net">${statsSigned(net)}<i>${esc(t('stats.km2'))}</i></strong>
+                <div class="lt-stats-meter" style="--p:${share}%" aria-hidden="true"><i></i></div>
             </div>
         </article>`;
+    }
+
+    function statsBar(v, max) {
+        if (!(Math.abs(v) >= 0.05)) return '';
+        return `<i class="lt-stats-bar ${v > 0 ? 'pos' : 'neg'}" style="--w:${Math.max(4, Math.round(Math.abs(v) / max * 100))}%"></i>`;
     }
 
     function statsRender(res) {
@@ -3630,12 +3700,21 @@
             return `<div class="lt-stats-empty"><b>${esc(t('stats.empty'))}</b><span>${esc(t('stats.emptyHint'))}</span></div>`;
         }
         const T = res.totals;
+        const max = res.rows.reduce((m, r) => Math.max(m, Math.abs(r.ukrNet) || 0, Math.abs(r.rusNet) || 0), 1);
         const rows = res.rows.map(r => `<div class="lt-stats-row">
             <span class="d">${esc(fmtShort(r.date))}</span>
-            <span class="u">${statsSigned(r.ukrNet)}</span>
-            <span class="r">${statsSigned(r.rusNet)}</span>
+            <span class="u">${statsSigned(r.ukrNet)}${statsBar(r.ukrNet, max)}</span>
+            <span class="r">${statsSigned(r.rusNet)}${statsBar(r.rusNet, max)}</span>
         </div>`).join('');
-        return `<div class="lt-stats-sides">
+        const net = T.ukrNet;
+        const hero = net > 0.05 ? 'pos' : net < -0.05 ? 'neg' : 'zero';
+        const side = net > 0.05 ? t('stats.toUkr') : net < -0.05 ? t('stats.toRus') : t('stats.flat');
+        return `<div class="lt-stats-hero ${hero}">
+            <span class="k">${esc(t('stats.period'))}</span>
+            <b>${statsSigned(net)}<i>${esc(t('stats.km2'))}</i></b>
+            <span class="s">${esc(side)}<em>${esc(t('stats.daysN', { n: res.rows.length }))}</em></span>
+        </div>
+        <div class="lt-stats-sides">
             ${statsSide('ukr', 'uk', t('stats.ukr'), T.ukrPlus, T.ukrMinus, T.ukrNet)}
             ${statsSide('rus', 'ru', t('stats.rus'), T.rusPlus, T.rusMinus, T.rusNet)}
         </div>
@@ -6916,6 +6995,13 @@
     }
 
     initDevice();
+
+    // у фоновій вкладці CSS-анімації (прапори, пульсація) не мають крутитися
+    const syncBgClass = () => {
+        document.documentElement.classList.toggle('lt-bg', !!document.hidden);
+    };
+    document.addEventListener('visibilitychange', syncBgClass);
+    syncBgClass();
 
     /* ------------------------------ экспорт ------------------------------ */
 
