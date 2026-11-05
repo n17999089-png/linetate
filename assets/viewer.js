@@ -1999,14 +1999,20 @@
     let statsLossErr = false;
     let lossBusy = false;
 
+    function statsTabIndex(tab) {
+        const i = ['front', 'ua', 'losses'].indexOf(tab);
+        return i < 0 ? 0 : i;
+    }
+
     function syncStatsTabs() {
         document.querySelectorAll('.lt-stats-tab').forEach(btn => {
             const on = btn.dataset.tab === statsTab;
             btn.classList.toggle('active', on);
             btn.setAttribute('aria-selected', String(on));
         });
+        const wrap = document.querySelector('.lt-stats-tabs');
+        if (wrap) wrap.style.setProperty('--tab-i', statsTabIndex(statsTab));
     }
-
     function ensureLosses(force) {
         if (lossBusy) return;
         lossBusy = true;
@@ -2028,17 +2034,15 @@
         tab = tab === 'ua' ? 'ua' : tab === 'losses' ? 'losses' : 'front';
         if (statsTab === tab) return;
         statsTab = tab;
-        syncStatsTabs();
         if (tab === 'losses') ensureLosses(false);
-        const body = $('stats-body');
         // переписуємо вміст, щоб ріст стовпчиків діаграми стартував заново
-        if (body) body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
+        renderStats();
     }
 
     function renderStats() {
         const body = $('stats-body');
-        syncStatsTabs();
         if (body) body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
+        syncStatsTabs();
     }
 
     function loadStats() {
@@ -2074,6 +2078,7 @@
             panel.classList.toggle('open', open);
             panel.setAttribute('aria-hidden', String(!open));
         }
+        syncBackdrop();
         if (btn) {
             btn.classList.toggle('active', open);
             btn.setAttribute('aria-expanded', String(open));
@@ -2083,6 +2088,13 @@
             // тягнемо заздалегідь, щоб вкладка «Втрати» відкривалась уже з даними
             ensureLosses(false);
         }
+    }
+
+    // на телефоні «Шари» й статистика — однакові аркуші над мапою: підкладка
+    // приглушує карту й закриває аркуш тапом
+    function syncBackdrop() {
+        const b = $('legend-backdrop');
+        if (b) b.classList.toggle('show', isMobileUI() && (menuOpen || statsOpen));
     }
 
     function setMenu(open) {
@@ -2096,10 +2108,9 @@
             if (drawPanelOpen && isMobileUI()) setDrawPanel(false);
         }
         const legend = $('legend');
-        const backdrop = $('legend-backdrop');
         const toggle = $('viewer-menu-toggle');
         if (legend) legend.classList.toggle('open', open);
-        if (backdrop) backdrop.classList.toggle('show', open);
+        syncBackdrop();
         if (toggle) {
             toggle.classList.toggle('active', open);
             toggle.setAttribute('aria-expanded', String(open));
@@ -3080,7 +3091,7 @@
 
         $('viewer-menu-toggle').addEventListener('click', () => setMenu(!menuOpen));
         const backdrop = $('legend-backdrop');
-        if (backdrop) backdrop.addEventListener('click', () => setMenu(false));
+        if (backdrop) backdrop.addEventListener('click', () => { setMenu(false); setStats(false); });
         const legendClose = $('legend-close');
         if (legendClose) legendClose.addEventListener('click', () => setMenu(false));
         document.addEventListener('keydown', e => {

@@ -30,6 +30,16 @@
     --glow-white: rgba(255, 255, 255, .12);
     --ease: cubic-bezier(.2, .75, .25, 1);
     --ease-pop: cubic-bezier(.2, 1.12, .32, 1);
+    /* одна шкала шарів: усе, що над мапою, підкоряється їй, а не випадковим числам */
+    --z-hud: 1200;
+    --z-panel: 1210;
+    --z-search: 1230;
+    --z-cal: 1260;
+    --z-backdrop: 1400;
+    --z-sheet: 1450;
+    --z-empty: 1500;
+    --z-toast: 4000;
+    --z-boot: 5000;
 }
 
 * { box-sizing: border-box; }
@@ -85,7 +95,9 @@ input, textarea { user-select: text; }
 .scroll::-webkit-scrollbar { width: 5px; }
 .scroll::-webkit-scrollbar-thumb { background: var(--line-3); border-radius: 5px; }
 
-/* Floating surfaces have a lit upper edge and a darker lower edge. */
+/* Floating surfaces have a lit upper edge and a darker lower edge.
+   Поверхні майже непрозорі, тому backdrop-filter тут нічого не показував,
+   лише коштував окремого проходу композитора на кожному кадрі анімації. */
 .panel {
     background: linear-gradient(155deg, rgba(38, 38, 40, .96), rgba(16, 16, 17, .96) 46%, rgba(5, 5, 6, .98));
     border: 1px solid rgba(255, 255, 255, .14);
@@ -93,9 +105,11 @@ input, textarea { user-select: text; }
     border-bottom-color: rgba(255, 255, 255, .06);
     border-radius: var(--r);
     box-shadow: var(--shadow-white), var(--shadow-deep), inset 0 1px 0 rgba(255, 255, 255, .1), inset 0 -1px 0 rgba(0, 0, 0, .5);
-    -webkit-backdrop-filter: blur(22px) saturate(105%);
-    backdrop-filter: blur(22px) saturate(105%);
+    isolation: isolate;
 }
+/* переглядач малює панелі поверх важкої мапи: вміст не має впливати на
+   розкладку решти сторінки (в адмінці лишаємо як було) */
+#legend, #stats, #draw-panel, #tools, #bottombar, #empty { contain: layout style; }
 .panel-head {
     display: flex;
     align-items: center;
@@ -103,21 +117,45 @@ input, textarea { user-select: text; }
     gap: 12px;
     flex: 0 0 auto;
     padding: 16px 18px;
-    border-bottom: 1px solid rgba(255, 255, 255, .08);
-    background: linear-gradient(180deg, rgba(255, 255, 255, .045), transparent);
+    border-bottom: 1px solid rgba(255, 255, 255, .07);
+    background: linear-gradient(180deg, rgba(255, 255, 255, .04), transparent);
     border-radius: var(--r) var(--r) 0 0;
 }
-.brand { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+/* золота риска замість окремої «шапки-оболонки»: заголовок читається як
+   частина тієї самої поверхні, а не як врізана смуга */
+.panel-head .label::before {
+    content: ''; display: inline-block;
+    width: 13px; height: 2px; margin-right: 9px; vertical-align: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--gold), rgba(232, 191, 120, .22));
+}
+/* Плашки навколо назви немає: слово читається просто з мапи, тож тінь
+   тримає контраст, а не рамка. LINE — біле, STATE — золоте. */
+.brand { position: relative; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .brand b {
     font-family: var(--title);
     font-size: 21px;
     font-weight: 700;
-    line-height: 1.05;
-    letter-spacing: 2.6px;
-    color: var(--text);
-    text-shadow: 0 2px 0 #000, 0 0 26px rgba(255, 255, 255, .14);
+    line-height: 1;
+    letter-spacing: 3px;
+    padding-right: 3px;
+    background: linear-gradient(90deg, #ffffff 0 46%, var(--gold) 46% 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .95)) drop-shadow(0 4px 14px rgba(0, 0, 0, .8));
 }
-.brand small { font-size: 9px; font-weight: 600; letter-spacing: 1.65px; color: var(--dim); text-transform: uppercase; }
+.brand small {
+    display: flex; align-items: center; gap: 7px;
+    font-family: var(--pixel); font-size: 9px; font-weight: 700; letter-spacing: 1.65px;
+    color: var(--dim); text-transform: uppercase;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .95);
+}
+.brand small::before {
+    content: ''; flex: 0 0 auto; width: 15px; height: 1px;
+    background: linear-gradient(90deg, var(--gold), rgba(232, 191, 120, .1));
+}
 .build-tag { font-family: var(--title); font-size: 9px; font-style: normal; letter-spacing: 1.3px; color: var(--dim-2); }
 .label { font-size: 10px; font-weight: 700; line-height: 1.4; letter-spacing: 1.8px; text-transform: uppercase; color: var(--dim); }
 
@@ -141,8 +179,11 @@ input, textarea { user-select: text; }
 .pane { display: none; flex-direction: column; gap: 14px; padding: 18px; }
 .pane.active { display: flex; animation: pane-in .22s var(--ease); }
 
-/* Tactile controls */
+/* Tactile controls. Hover підсвічує готовий шар, а не перемальовує тінь:
+   box-shadow у transition змушував браузер перераховувати тінь кожного кадру. */
 .btn {
+    position: relative;
+    overflow: hidden;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -163,17 +204,25 @@ input, textarea { user-select: text; }
     text-decoration: none;
     cursor: pointer;
     white-space: nowrap;
-    transition: background .18s ease, color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .12s ease;
+    transition: color .18s ease, border-color .18s ease, transform .12s ease;
 }
-.btn:hover { color: var(--text); border-color: var(--line-3); background: linear-gradient(180deg, #363638, #1e1e20); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 6px 14px rgba(0, 0, 0, .38); transform: translateY(-1px); }
+.btn::before {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .13), rgba(255, 255, 255, .02) 55%, transparent);
+    opacity: 0; pointer-events: none;
+    transition: opacity .16s ease;
+}
+.btn:hover { color: var(--text); border-color: var(--line-3); transform: translateY(-1px); }
+.btn:hover::before { opacity: 1; }
 .btn:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .22); }
 .btn.wide { width: 100%; }
 .btn.active, .btn.primary { color: #0b0b0c; border-color: #ffffff; background: linear-gradient(180deg, #ffffff, #cfcfcf); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 0 3px 16px rgba(255, 255, 255, .12); }
+.btn.active::before, .btn.primary::before { display: none; }
 .btn.active:hover, .btn.primary:hover { background: linear-gradient(180deg, #ffffff, #e2e2e2); color: #0b0b0c; border-color: #ffffff; }
 .btn.danger { color: #ffacb4; background: linear-gradient(180deg, #35242f, #261b25); border-color: rgba(255, 129, 140, .28); }
-.btn.danger:hover { color: #ffe8eb; background: #432735; border-color: rgba(255, 129, 140, .6); }
+.btn.danger:hover { color: #ffe8eb; border-color: rgba(255, 129, 140, .6); }
 .btn.ghost { background: rgba(255, 255, 255, .02); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03); }
-.btn.ghost:hover { background: rgba(255, 255, 255, .07); }
+.btn.ghost:hover { border-color: var(--line-3); }
 .btn:disabled, button:disabled { opacity: .4; cursor: not-allowed; }
 .btn .ico { font-size: 16px; line-height: 1; }
 
@@ -273,7 +322,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .status.off::before { background: var(--danger); }
 
 /* Date picker */
-.cal { position: absolute; z-index: 1400; display: none; width: 340px; max-width: calc(100vw - 24px); padding: 15px; background: linear-gradient(155deg, #262628, #101011 62%, #050506); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow-white), var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .1); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.cal { position: absolute; z-index: var(--z-cal); display: none; width: 340px; max-width: calc(100vw - 24px); padding: 15px; background: linear-gradient(155deg, #262628, #101011 62%, #050506); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow-white), var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .1); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; isolation: isolate; }
 .cal.show { display: block; animation: cal-in .18s var(--ease); }
 .cal.closing { display: block; animation: cal-out .15s ease forwards; pointer-events: none; }
 .cal-top { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; }
@@ -301,7 +350,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .cal-note { display: flex; align-items: center; gap: 7px; margin-top: 11px; font-size: 10px; color: var(--dim); }
 .cal-note i { width: 5px; height: 5px; border-radius: 50%; background: var(--live); }
 
-#toast { position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 5000; max-width: min(360px, calc(100vw - 32px)); padding: 14px 18px; background: var(--panel-solid); border: 1px solid var(--line-2); border-left: 3px solid #ffffff; border-radius: 11px; font-size: 12px; font-weight: 550; color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(8px); pointer-events: none; overflow: hidden; transition: opacity .2s ease, transform .2s ease; }
+#toast { position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: calc(20px + env(safe-area-inset-bottom)); z-index: var(--z-toast); max-width: min(360px, calc(100vw - 32px)); padding: 14px 18px; background: var(--panel-solid); border: 1px solid var(--line-2); border-left: 3px solid #ffffff; border-radius: 11px; font-size: 12px; font-weight: 550; color: var(--text); box-shadow: var(--shadow); opacity: 0; transform: translateY(8px); pointer-events: none; overflow: hidden; transition: opacity .2s ease, transform .2s ease; }
 #toast.show { opacity: 1; transform: none; }
 #toast.err { border-left-color: var(--danger); color: #ffe0e5; }
 #toast::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: linear-gradient(90deg, #5a5a5e, #ffffff); transform-origin: left center; }
@@ -428,8 +477,21 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
     font-family: var(--pixel); font-size: 11px; font-weight: 700;
     letter-spacing: 2px; text-transform: uppercase; color: var(--dim-2);
 }
-.lt-stats-tabs { display: flex; gap: 4px; padding: 9px 14px 0; }
+/* Вкладки — одна доріжка з бігунком: перемикання водить готовий шар
+   transform'ом, замість того щоб перефарбовувати три кнопки. */
+.lt-stats-tabs { position: relative; display: flex; gap: 4px; padding: 9px 14px 0; isolation: isolate; }
+.lt-stats-tabs::before {
+    content: ''; position: absolute; z-index: 0;
+    left: 14px; top: 9px; bottom: 0;
+    width: calc((100% - 36px) / 3);
+    border-radius: 8px;
+    background: linear-gradient(180deg, #ffffff, #d4d4d8);
+    box-shadow: inset 0 1px 0 #ffffff, 0 4px 14px rgba(0, 0, 0, .4);
+    transform: translateX(calc(var(--tab-i, 0) * (100% + 4px)));
+    transition: transform .34s var(--ease-pop);
+}
 .lt-stats-tab {
+    position: relative; z-index: 1;
     flex: 1 1 0; min-width: 0;
     padding: 7px 8px; border-radius: 8px;
     border: 1px solid var(--line-2);
@@ -438,13 +500,10 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
     font-family: var(--pixel); font-size: 10px; font-weight: 700;
     letter-spacing: 1.6px;
     cursor: pointer;
-    transition: color .15s, background .15s, border-color .15s;
+    transition: color .18s ease, background .18s ease, border-color .18s ease;
 }
 .lt-stats-tab:hover { color: var(--text-2); border-color: var(--line-3); }
-.lt-stats-tab.active {
-    color: #0b0b0c; border-color: #ffffff;
-    background: linear-gradient(180deg, #ffffff, #d2d2d2);
-}
+.lt-stats-tab.active { color: #0b0b0c; border-color: transparent; background: transparent; }
 .lt-stats-hero {
     position: relative; overflow: hidden;
     display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;

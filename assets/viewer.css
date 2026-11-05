@@ -1,25 +1,35 @@
 /* LINESTATE — просмотр карты */
 
-/* ---------- ВЕРХНЯЯ ПАНЕЛЬ ---------- */
+/* ---------- ВЕРХНЯ ПАНЕЛЬ ---------- */
+/* Назва стоїть без плашки: жодної рамки, лише мʼяка тінь-підкладка під
+   словом, щоб воно читалося на світлих ділянках карти. */
 
 #topbar {
-    position: absolute; top: 14px; left: 14px; z-index: 1200;
-    display: flex; align-items: center; padding: 10px 16px;
-    border-radius: 14px;
+    position: absolute; top: 14px; left: 14px; z-index: var(--z-hud);
+    display: flex; align-items: center; padding: 0;
+    isolation: isolate;
 }
-#topbar .brand { display: flex; flex-direction: column; gap: 2px; }
-#topbar .brand b { font-size: 19px; letter-spacing: 3.4px; }
+#topbar::before {
+    content: ''; position: absolute; z-index: -1;
+    inset: -24px -40px -22px -22px;
+    background: radial-gradient(120% 135% at 18% 32%, rgba(0, 0, 0, .62), rgba(0, 0, 0, .22) 52%, transparent 74%);
+    filter: blur(9px);
+    pointer-events: none;
+}
+#topbar .brand { display: flex; flex-direction: column; gap: 3px; }
+#topbar .brand b { font-size: 20px; letter-spacing: 3.2px; }
 #topbar .brand small {
     font-family: var(--pixel); font-size: 10px; font-weight: 700;
     letter-spacing: 2.4px; color: var(--dim-2); text-transform: uppercase;
 }
 
 #top-actions {
-    position: absolute; top: 14px; right: 14px; z-index: 1210;
+    position: absolute; top: 14px; right: 14px; z-index: var(--z-hud);
     display: flex; align-items: center; gap: 8px;
 }
 
 .hud-btn {
+    position: relative; overflow: hidden;
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     height: 44px; padding: 0 13px;
     background: linear-gradient(155deg, rgba(42, 42, 45, .96), rgba(12, 12, 13, .98));
@@ -31,10 +41,18 @@
     font-family: var(--pixel); font-size: 14px; font-weight: 700;
     letter-spacing: 1.6px; text-transform: uppercase;
     cursor: pointer;
-    transition: background .16s ease, border-color .16s ease, color .16s ease, transform .12s ease;
+    transition: border-color .16s ease, color .16s ease, transform .12s ease;
 }
-.hud-btn:hover { color: var(--text); border-color: rgba(255, 255, 255, .44); background: linear-gradient(155deg, #3a3a3d, #161617); transform: translateY(-1px); box-shadow: var(--shadow-white), 0 16px 36px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .12); }
+/* підсвітка — окремий шар, тож hover не перемальовує тінь і градієнт */
+.hud-btn::before {
+    content: ''; position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .03) 60%, transparent);
+    opacity: 0; pointer-events: none; transition: opacity .16s ease;
+}
+.hud-btn:hover { color: var(--text); border-color: rgba(255, 255, 255, .44); transform: translateY(-1px); }
+.hud-btn:hover::before { opacity: 1; }
 .hud-btn:active { transform: translateY(1px); }
+.hud-btn.active::before, .layers-btn.active::before, .stats-btn.active::before, .search-btn.active::before { display: none; }
 .hud-btn .lang-flag { display: inline-flex; }
 .lang-btn { min-width: 62px; padding: 0 10px; font-size: 13px; letter-spacing: 1.4px; }
 
@@ -59,7 +77,7 @@
 /* ---------- ПАНЕЛЬ СЛОЁВ ---------- */
 
 #legend {
-    position: absolute; top: 70px; right: 14px; width: 334px; z-index: 1210;
+    position: absolute; top: 70px; right: 14px; width: 334px; z-index: var(--z-panel);
     display: flex; flex-direction: column; max-height: calc(100vh - 168px);
     opacity: 0; visibility: hidden; pointer-events: none;
     transform: translateY(-10px) scale(.96);
@@ -76,7 +94,7 @@
 /* ---------- СТАТИСТИКА ---------- */
 
 #stats {
-    position: absolute; top: 70px; right: 14px; width: 372px; z-index: 1212;
+    position: absolute; top: 70px; right: 14px; width: 372px; z-index: var(--z-panel);
     display: flex; flex-direction: column; max-height: calc(100vh - 168px);
     opacity: 0; visibility: hidden; pointer-events: none;
     transform: translateY(-10px) scale(.96);
@@ -126,9 +144,11 @@
 .lg-row:hover { background: rgba(255, 255, 255, .05); border-color: var(--line); transform: translateX(2px); }
 .lg-row.off { opacity: .4; }
 .lg-row.sel {
-    border-color: rgba(255, 255, 255, .5);
-    background: linear-gradient(90deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, 0) 72%);
+    border-color: rgba(232, 191, 120, .42);
+    background: linear-gradient(90deg, rgba(232, 191, 120, .13), rgba(232, 191, 120, .03) 62%, transparent);
+    box-shadow: inset 2px 0 0 var(--gold);
 }
+.lg-row.sel .lg-txt b { color: #fff6e6; }
 .lg-row .sw {
     width: 10px; height: 10px; flex: 0 0 auto;
     border: 1px solid rgba(0, 0, 0, .7);
@@ -185,7 +205,7 @@
     font-family: var(--pixel); font-size: 13px; font-weight: 700;
     letter-spacing: 1.3px; text-transform: uppercase;
     cursor: pointer;
-    transition: color .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease;
+    transition: color .14s ease, background .14s ease, border-color .14s ease;
 }
 .mode-btn:hover { color: var(--text); background: rgba(255, 255, 255, .07); border-color: var(--line-3); }
 .mode-btn.active {
@@ -232,7 +252,7 @@
 
 #bottombar {
     position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
-    z-index: 1300; display: flex; align-items: center; gap: 7px; padding: 6px;
+    z-index: var(--z-hud); display: flex; align-items: center; gap: 7px; padding: 6px;
 }
 #bottombar .btn { min-height: 38px; height: 38px; padding: 0 12px; font-size: 13px; }
 #bottombar .btn.nav { width: 36px; padding: 0; font-size: 17px; }
@@ -265,7 +285,7 @@
 
 #empty {
     position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    z-index: 1250; width: 380px; padding: 26px 24px; text-align: center;
+    z-index: var(--z-empty); width: 380px; padding: 26px 24px; text-align: center;
     display: flex; flex-direction: column; gap: 12px; align-items: center;
 }
 #empty.hidden { display: none; }
@@ -275,7 +295,7 @@
 /* ---------- TELEGRAM ---------- */
 
 .tg-fab {
-    position: absolute; left: 14px; bottom: 14px; z-index: 1140;
+    position: absolute; left: 14px; bottom: 14px; z-index: var(--z-hud);
     display: inline-flex; align-items: center; gap: 9px;
     height: 46px; padding: 0 16px 0 13px;
     background: linear-gradient(155deg, rgba(44, 44, 47, .98), rgba(14, 14, 15, .99));
@@ -339,15 +359,15 @@
 
 #legend-backdrop {
     display: none;
-    position: fixed; inset: 0; z-index: 1150;
+    position: fixed; inset: 0; z-index: var(--z-backdrop);
     background: rgba(0, 0, 0, .62);
     -webkit-backdrop-filter: blur(2px);
     backdrop-filter: blur(2px);
-    opacity: 0; visibility: hidden;
+    opacity: 0; visibility: hidden; pointer-events: none;
     transition: opacity .2s ease, visibility .2s;
 }
-.dev-mobile #legend-backdrop { z-index: 1400; }
-#legend-backdrop.show { opacity: 1; visibility: visible; }
+.dev-mobile #legend-backdrop { z-index: var(--z-backdrop); }
+#legend-backdrop.show { opacity: 1; visibility: visible; pointer-events: auto; }
 
 /* ---------- УЗКИЕ ЭКРАНЫ ---------- */
 
@@ -362,12 +382,13 @@
 
 .dev-mobile #topbar {
     top: calc(8px + env(safe-area-inset-top));
-    left: 8px;
-    padding: 8px 12px;
+    left: 12px;
+    padding: 0;
     height: 52px;
 }
 .dev-mobile #topbar .brand b { font-size: 16px; letter-spacing: 2.2px; }
 .dev-mobile #topbar .brand small { font-size: 8px; letter-spacing: 1.6px; }
+.dev-mobile #topbar .brand small::before { width: 9px; }
 .dev-mobile #top-actions { top: calc(8px + env(safe-area-inset-top)); right: 8px; gap: 6px; }
 .dev-mobile .hud-btn { height: 52px; border-radius: 13px; }
 .dev-mobile .lang-btn { min-width: 52px; padding: 0 8px; }
@@ -381,7 +402,7 @@
     bottom: calc(122px + env(safe-area-inset-bottom));
     width: auto;
     max-height: min(60vh, 470px);
-    z-index: 1450;
+    z-index: var(--z-sheet);
     transform: translateY(calc(100% + 140px)) scale(.99);
     transform-origin: bottom center;
     transition: transform .2s ease, opacity .16s ease, visibility .2s;
@@ -396,7 +417,7 @@
     bottom: calc(122px + env(safe-area-inset-bottom));
     width: auto;
     max-height: min(64vh, 520px);
-    z-index: 1450;
+    z-index: var(--z-sheet);
     transform: translateY(calc(100% + 140px)) scale(.99);
     transform-origin: bottom center;
     transition: transform .2s ease, opacity .16s ease, visibility .2s;
@@ -425,7 +446,7 @@
         "prev date next"
         "play advance photo";
     grid-auto-rows: 38px;
-    gap: 6px; padding: 7px; z-index: 1300;
+    gap: 6px; padding: 7px; z-index: var(--z-hud);
 }
 .dev-mobile #bottombar > * { min-width: 0; width: auto; height: 38px; min-height: 38px; padding: 0 6px; }
 .dev-mobile #bottombar #play-btn,
@@ -448,7 +469,7 @@
     bottom: calc(112px + env(safe-area-inset-bottom));
     width: 46px; height: 46px; padding: 0;
     justify-content: center; border-radius: 50%;
-    z-index: 1140;
+    z-index: var(--z-hud);
 }
 .dev-mobile .tg-fab span { display: none; }
 .dev-mobile .tg-fab { transition: opacity .2s ease, visibility .2s, transform .16s var(--ease), border-color .16s ease, box-shadow .16s ease, background .16s ease; }
@@ -485,7 +506,7 @@
 .search-btn.active .hud-ico { opacity: 1; }
 
 #tools {
-    position: absolute; left: 14px; top: 80px; z-index: 1210;
+    position: absolute; left: 14px; top: 80px; z-index: var(--z-hud);
     display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px;
     border-radius: 16px;
     background: linear-gradient(165deg, #3b3b41 0%, #232327 34%, #131315 100%);
@@ -580,7 +601,7 @@
 /* ---------- ПАНЕЛЬ МАЛЮВАННЯ ---------- */
 
 #draw-panel {
-    position: absolute; left: 72px; top: 80px; z-index: 1211;
+    position: absolute; left: 72px; top: 80px; z-index: var(--z-panel);
     width: 252px; padding: 0 11px 11px;
     display: flex; flex-direction: column; gap: 11px;
     border-radius: 14px;
@@ -845,8 +866,9 @@
    результати — самостійний аркуш, що виїжджає під ним */
 
 #place-search {
-    position: absolute; top: 70px; right: 14px; z-index: 1220;
+    position: absolute; top: 70px; right: 14px; z-index: var(--z-search);
     width: 372px; display: flex; flex-direction: column; gap: 9px;
+    contain: layout style; isolation: isolate;
     opacity: 0; visibility: hidden; pointer-events: none;
     transform: translateY(-10px) scale(.97); transform-origin: top right;
     transition: opacity .14s ease, transform .18s ease, visibility .18s;
@@ -1099,7 +1121,12 @@
 /* меньше 16px iOS зумит страницу при фокусе и ломает поиск */
 .dev-mobile #ps-q { font-size: 16px; height: 48px; }
 .dev-mobile .ps-pop { max-height: min(56vh, 430px); }
-.dev-mobile #ps-results .sr { padding: 10px 11px; min-height: 56px; }
+.dev-mobile #ps-results .sr {
+    padding: 10px 11px; min-height: 56px;
+    /* мапа на телефоні тримає головний потік: відкладена анімація рядків
+       може застигнути на нулі й лишити список порожнім — показуємо одразу */
+    animation: none;
+}
 .dev-mobile .sr-txt b { font-size: 14px; }
 .dev-mobile .sr-txt small { font-size: 11px; }
 .dev-mobile .sr-ico { width: 36px; height: 36px; }
@@ -1108,7 +1135,7 @@
 /* чорна завіса: під нею мапа розмита і в чорно-білому, тому перші кадри
    не показують «порожню» карту з сирими тайлами */
 #boot {
-    position: fixed; inset: 0; z-index: 3000;
+    position: fixed; inset: 0; z-index: var(--z-boot);
     display: flex; align-items: center; justify-content: center;
     background: rgba(3, 4, 6, .58);
     -webkit-backdrop-filter: blur(22px) grayscale(1) brightness(.9) contrast(1.12);
