@@ -2146,9 +2146,44 @@
         renderStats();
     }
 
+    let countFrame = 0;
+    // цифри втрат докручуються від нуля: у розмітці вже стоїть фінальне
+    // число, тому без кадру (reduced motion) екран одразу показує підсумок
+    function animateCounts(root) {
+        if (countFrame) { cancelAnimationFrame(countFrame); countFrame = 0; }
+        if (!root) return;
+        const els = Array.from(root.querySelectorAll('.lt-count[data-count]'));
+        if (!els.length) return;
+        const fmt = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        let reduce = false;
+        try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { }
+        if (reduce) {
+            for (const el of els) el.textContent = fmt(el.dataset.count);
+            return;
+        }
+        // у розмітці вже стоїть підсумок — обнуляємо в тому ж кадрі, інакше
+        // перший кадр показує фінальне число, а далі воно стрибає в нуль
+        for (const el of els) el.textContent = '0';
+        const dur = 900, t0 = performance.now();
+        const ease = p => 1 - Math.pow(1 - p, 3);
+        const tick = now => {
+            // мітка кадру може бути раніше за performance.now() — без нижньої
+            // межі перший кадр дає відʼємні числа
+            const p = Math.max(0, Math.min(1, (now - t0) / dur));
+            const k = ease(p);
+            for (const el of els) el.textContent = fmt(p >= 1 ? el.dataset.count : (+el.dataset.count || 0) * k);
+            countFrame = p < 1 ? requestAnimationFrame(tick) : 0;
+        };
+        countFrame = requestAnimationFrame(tick);
+    }
+
     function renderStats() {
         const body = $('stats-body');
-        if (body) body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
+        if (body) {
+            body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
+            // на інших вкладках елементів немає — виклик лише скасовує старий кадр
+            animateCounts(body);
+        }
         // підзаголовок читається як «скільки триває війна», а не як дата
         // початку даних: цифра однакова для всіх вкладок і рахується від 24.02
         const sub = $('stats-sub');
@@ -2882,15 +2917,27 @@
     // перші кадри не показують сирі тайли. знімаємо коли є кадр полів
     let veilLifted = false;
     const veilStart = Date.now();
+    // етапи завантаження й скільки відсотків смуги їм відповідає: прогрес
+    // показує реальний шлях (база → дані → кадр), а не вигаданий таймер
+    const BOOT_PCT = { 'boot.data': 46, 'boot.warm': 78, 'boot.render': 92 };
+    function bootPct(p) {
+        const veil = $('boot');
+        if (!veil) return;
+        veil.style.setProperty('--p', p + '%');
+        const el = $('boot-pct');
+        if (el) el.textContent = Math.round(p) + '%';
+    }
     function bootStage(key) {
         const el = $('boot-state');
         if (el && !veilLifted) el.textContent = LT.t(key);
+        if (BOOT_PCT[key] != null) bootPct(BOOT_PCT[key]);
     }
     function liftVeil() {
         if (veilLifted) return;
         const veil = $('boot');
         if (!veil) return;
         veilLifted = true;
+        bootPct(100);
         // карта показали — це і є один перегляд; адмінка сама не рахується
         try { LT.views.record(); } catch (e) { }
         // решта дат додрукована в фоні: жоден перебір календаря не має туманити

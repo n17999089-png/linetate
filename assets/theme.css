@@ -487,8 +487,12 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
     left: 14px; top: 9px; bottom: 0;
     width: calc((100% - 36px) / 3);
     border-radius: 8px;
-    background: linear-gradient(180deg, #ffffff, #d4d4d8);
-    box-shadow: inset 0 1px 0 #ffffff, 0 4px 14px rgba(0, 0, 0, .4);
+    background: linear-gradient(180deg, rgba(255, 212, 94, .24), rgba(255, 212, 94, .1));
+    border: 1px solid rgba(255, 212, 94, .45);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .14),
+        inset 2px 0 0 #ffd45e,
+        0 6px 18px -8px rgba(255, 212, 94, .55);
     transform: translateX(calc(var(--tab-i, 0) * (100% + 4px)));
     transition: transform .34s var(--ease-pop);
 }
@@ -505,7 +509,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
     transition: color .18s ease, background .18s ease, border-color .18s ease;
 }
 .lt-stats-tab:hover { color: var(--text-2); border-color: var(--line-3); }
-.lt-stats-tab.active { color: #0b0b0c; border-color: transparent; background: transparent; }
+.lt-stats-tab.active { color: #fff3cf; border-color: transparent; background: transparent; }
 .lt-stats-hero {
     position: relative; overflow: hidden;
     display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
@@ -593,6 +597,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .lt-stat-num.pos { color: #8dffc0; }
 .lt-stat-num.neg { color: #ff7a86; }
 .lt-stat-num.zero { color: var(--dim-2); }
+/* цифри, що докручуються, не мають смикати ширину рядка */
+.lt-count { font-variant-numeric: tabular-nums; }
 .lt-stats-side.rus .lt-stat-num.pos { color: #ff9a76; }
 .lt-stats-side.rus .lt-stat-num.neg { color: #9fd8ff; }
 

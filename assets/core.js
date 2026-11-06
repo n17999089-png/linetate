@@ -4239,6 +4239,13 @@
         try { return nb(new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(Math.round(v || 0))); }
         catch (e) { return String(Math.round(v || 0)); }
     };
+    // число, яке переглядач докручує від нуля: у розмітці одразу стоїть
+    // фінальна цифра, тож без rAF (reduced motion, старий браузер) на екрані
+    // не буде нуля — анімація лише підміняє текст, поки триває
+    const lossCount = v => {
+        const n = Math.round(v || 0);
+        return `<span class="lt-count" data-count="${n}">${lossNum(n)}</span>`;
+    };
     const lossShort = v => {
         const n = (v || 0) / 1000;
         try { return nb(new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(n)); }
@@ -4321,8 +4328,8 @@
             const dest = E.destroyed && E.destroyed[k] != null ? E.destroyed[k] : null;
             return `<article class="lt-eq-tile" title="${esc(t(key))} · ${lossNum(E.totals[k])}">
                 <span class="lt-eq-top">${eqIcon(icon)}<span class="lt-eq-k">${esc(t(key))}</span></span>
-                <b class="lt-eq-n">${lossNum(E.totals[k])}</b>
-                ${dest != null ? `<span class="lt-eq-d">${esc(t('stats.eqDestroyed'))} ${lossNum(dest)}</span>` : ''}
+                <b class="lt-eq-n">${lossCount(E.totals[k])}</b>
+                ${dest != null ? `<span class="lt-eq-d">${esc(t('stats.eqDestroyed'))} ${lossCount(dest)}</span>` : ''}
             </article>`;
         }).join('')}</div>`;
     }
@@ -4341,7 +4348,7 @@
             return `<div class="lt-eqb-row" title="${esc(t(key))} · ${lossNum(v)} · ${pc}%">
                 <span class="lt-eqb-k">${eqIcon(icon)}<i>${esc(t(key))}</i></span>
                 <span class="lt-eqb-track"><b style="--w:${w.toFixed(1)}%"></b></span>
-                <span class="lt-eqb-v">${lossNum(v)}</span>
+                <span class="lt-eqb-v">${lossCount(v)}</span>
             </div>`;
         }).join('')}</div>`;
     }
@@ -4417,12 +4424,12 @@
                 <div class="lt-eq-cap">${esc(t('stats.eqSrc'))}${E.asOf ? ' · ' + esc(lossDate(E.asOf)) : ''}</div>
             </div>
             <div class="lt-eq-sum">
-                <div class="lt-eq-sum-main"><span>${esc(t('stats.eqTotal'))}</span><b>${lossNum(total)}</b><i>${esc(t('stats.eqUnits'))}</i></div>
+                <div class="lt-eq-sum-main"><span>${esc(t('stats.eqTotal'))}</span><b>${lossCount(total)}</b><i>${esc(t('stats.eqUnits'))}</i></div>
                 ${sm ? `<div class="lt-eq-sum-brk">
-                    <span>${esc(t('stats.eqDestroyed'))} <b>${lossNum(sm.destroyed)}</b></span>
-                    <span>${esc(t('stats.eqDamaged'))} <b>${lossNum(sm.damaged)}</b></span>
-                    <span>${esc(t('stats.eqAbandoned'))} <b>${lossNum(sm.abandoned)}</b></span>
-                    <span>${esc(t('stats.eqCaptured'))} <b>${lossNum(sm.captured)}</b></span>
+                    <span>${esc(t('stats.eqDestroyed'))} <b>${lossCount(sm.destroyed)}</b></span>
+                    <span>${esc(t('stats.eqDamaged'))} <b>${lossCount(sm.damaged)}</b></span>
+                    <span>${esc(t('stats.eqAbandoned'))} <b>${lossCount(sm.abandoned)}</b></span>
+                    <span>${esc(t('stats.eqCaptured'))} <b>${lossCount(sm.captured)}</b></span>
                 </div>` : ''}
             </div>
             ${eqGrid(E)}
@@ -4564,8 +4571,8 @@
                 ${statsFlag('ru')}
                 <div class="lt-loss-hero-txt">
                     <span class="k">${esc(t('stats.lossRuCap'))}</span>
-                    <b>${lossNum(ru.named)}<i>${esc(t('stats.lossPeople'))}</i></b>
-                    <span class="s">${esc(t('stats.lossExcess'))} <em>${lossNum(ru.excess)}</em>${ru.excessAsOf ? ' · ' + esc(t('stats.lossAsOf')) + ' ' + esc(lossDate(ru.excessAsOf)) : ''}</span>
+                    <b>${lossCount(ru.named)}<i>${esc(t('stats.lossPeople'))}</i></b>
+                    <span class="s">${esc(t('stats.lossExcess'))} <em>${lossCount(ru.excess)}</em>${ru.excessAsOf ? ' · ' + esc(t('stats.lossAsOf')) + ' ' + esc(lossDate(ru.excessAsOf)) : ''}</span>
                     <span class="d">${esc(t('stats.lossAsOf'))} ${esc(lossDate(ru.asOf))}</span>
                 </div>
             </article>
@@ -4573,8 +4580,8 @@
                 ${statsFlag('uk')}
                 <div class="lt-loss-hero-txt">
                     <span class="k">${esc(t('stats.lossUaCap'))}</span>
-                    <b>${lossNum(ua.killed)}<i>${esc(t('stats.lossPeople'))}</i></b>
-                    <span class="s">${esc(t('stats.lossMissing'))} <em>${lossNum(ua.missing)}</em> · ${esc(t('stats.lossPow'))} <em>${lossNum(ua.pow)}</em></span>
+                    <b>${lossCount(ua.killed)}<i>${esc(t('stats.lossPeople'))}</i></b>
+                    <span class="s">${esc(t('stats.lossMissing'))} <em>${lossCount(ua.missing)}</em> · ${esc(t('stats.lossPow'))} <em>${lossCount(ua.pow)}</em></span>
                     <span class="d">${esc(t('stats.lossAsOf'))} ${esc(lossDate(ua.asOf))}</span>
                 </div>
             </article>

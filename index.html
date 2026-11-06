@@ -11,18 +11,25 @@
 <link href="assets/vendor/maplibre-gl.css" rel="stylesheet">
 <script src="assets/vendor/maplibre-gl.js?v=3"></script>
 <script src="assets/vendor/turf.min.js"></script>
-<link rel="stylesheet" href="assets/theme.css?v=38">
-<link rel="stylesheet" href="assets/viewer.css?v=49">
+<link rel="stylesheet" href="assets/theme.css?v=39">
+<link rel="stylesheet" href="assets/viewer.css?v=50">
 </head>
 <body>
 
 <div id="map"></div>
 
-<div id="boot" role="status" aria-live="polite">
+<div id="boot" role="status" aria-live="polite" style="--p:12%">
     <div class="boot-frame">
+        <div class="boot-radar" aria-hidden="true"><i></i><i></i><b></b></div>
+        <div class="boot-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 14h17v3.2a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M6.8 14v-2.6h5.8l2.6 2.6"/><path d="M13.4 11.8 21 9.8"/><circle cx="7.4" cy="19.8" r="1.4"/><circle cx="16.6" cy="19.8" r="1.4"/></svg>
+        </div>
         <div class="boot-brand">LINESTATE</div>
         <div class="boot-sub" data-i18n="viewer.tagline">ОПЕРАТИВНА КАРТА</div>
-        <div class="boot-bar"><i></i></div>
+        <div class="boot-meter">
+            <div class="boot-bar"><i></i></div>
+            <span class="boot-pct" id="boot-pct">12%</span>
+        </div>
         <div class="boot-line">
             <span id="boot-state" data-i18n="boot.map">БАЗА КАРТИ</span>
             <span id="boot-date">—</span>
@@ -235,8 +242,8 @@
 
 <script src="assets/regions.js?v=23"></script>
 <script src="assets/places-ru.js?v=1"></script>
-<script src="assets/core.js?v=99"></script>
+<script src="assets/core.js?v=100"></script>
 <script src="assets/map-tools.js?v=41"></script>
-<script src="assets/viewer.js?v=81"></script>
+<script src="assets/viewer.js?v=83"></script>
 </body>
 </html>

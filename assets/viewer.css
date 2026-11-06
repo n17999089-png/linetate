@@ -1053,6 +1053,64 @@
 .search-marker b { color: var(--dim); font-size: 15px; cursor: pointer; line-height: 1; padding: 2px; }
 .search-marker b:hover { color: var(--text); }
 
+/* ---------- ЄДИНИЙ СТИЛЬ МЕНЮ ---------- */
+/* статистика, шари, малювання, рейка інструментів, нижня панель, календар
+   і порожній стан — той самий аркуш, що й пошук: темний градієнт зі світлим
+   верхнім краєм, радіус 14 і глибока тінь. Жовтий акцент вибору теж
+   успадкований від пошуку, щоб «активне» скрізь читалось однаково */
+#legend, #stats, #draw-panel, #tools, #bottombar, #empty, #cal {
+    border-radius: 14px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, .05), transparent 55%),
+        linear-gradient(160deg, rgba(34, 34, 38, .98), rgba(8, 8, 9, .99) 70%);
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-top-color: rgba(255, 255, 255, .3);
+    border-bottom-color: rgba(0, 0, 0, .8);
+    box-shadow:
+        0 24px 60px -18px rgba(0, 0, 0, .95),
+        0 60px 110px -40px rgba(0, 0, 0, .85),
+        inset 0 1px 0 rgba(255, 255, 255, .12),
+        inset 0 -2px 0 rgba(0, 0, 0, .55);
+}
+#legend .panel-head .label, #stats .panel-head .label { color: #ffd45e; }
+#legend .legend-close, #stats .legend-close, #draw-panel .legend-close {
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .05);
+    border-color: transparent;
+}
+#legend .legend-close:hover, #stats .legend-close:hover, #draw-panel .legend-close:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, .12);
+    border-color: rgba(255, 255, 255, .2);
+}
+.lg-row:hover, .mode-btn:hover, .cal-day:hover, .cal-nav:hover, .cal-today:hover {
+    background: rgba(255, 212, 94, .07);
+    border-color: rgba(255, 212, 94, .24);
+}
+.dp-tool:hover {
+    background: linear-gradient(180deg, #3f3b34 0%, #2a2721 52%, #1e1c18 100%);
+    border-color: rgba(255, 212, 94, .3);
+}
+/* вибір — не біла «пілюля», а жовте скло з тонким боковим ребром, як рядок
+   результатів пошуку; білий заливав собою іконки й губив контраст на телефоні */
+.mode-btn.active, .dp-tool.active, .cal-day.active {
+    color: #fff3cf;
+    border-color: rgba(255, 212, 94, .5);
+    background: linear-gradient(180deg, rgba(255, 212, 94, .22), rgba(255, 212, 94, .08));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .14),
+        inset 2px 0 0 #ffd45e,
+        0 6px 18px -8px rgba(255, 212, 94, .5);
+    transform: none;
+}
+.dp-tool.active svg { filter: drop-shadow(0 0 6px rgba(255, 212, 94, .35)); }
+.dp-tool.active span { color: #ffe9a8; opacity: 1; }
+.legend-note::before {
+    content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 7px;
+    border-radius: 50%; background: #ffd45e; box-shadow: 0 0 8px rgba(255, 212, 94, .6);
+    vertical-align: middle;
+}
+
 .adv-ico { display: inline-flex; align-items: center; }
 .adv-ico svg { width: 14px; height: 14px; display: block; }
 
@@ -1134,11 +1192,12 @@
 
 /* ---------- ЗАВАНТАЖУВАЧ ---------- */
 /* чорна завіса: під нею мапа розмита і в чорно-білому, тому перші кадри
-   не показують «порожню» карту з сирими тайлами */
+   не показують «порожню» карту з сирими тайлами. Сам екран — той самий
+   аркуш, що й меню/пошук: темний градієнт, світлий верхній край, глибока тінь */
 #boot {
     position: fixed; inset: 0; z-index: var(--z-boot);
     display: flex; align-items: center; justify-content: center;
-    background: rgba(3, 4, 6, .58);
+    background: radial-gradient(120% 90% at 50% 42%, rgba(26, 28, 33, .62), rgba(3, 4, 6, .82) 62%);
     -webkit-backdrop-filter: blur(22px) grayscale(1) brightness(.9) contrast(1.12);
     backdrop-filter: blur(22px) grayscale(1) brightness(.9) contrast(1.12);
     transition: opacity .55s var(--ease);
@@ -1147,36 +1206,134 @@
 @supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
     #boot { background: #040507; }
 }
-.boot-frame { position: relative; width: min(330px, 80vw); padding: 30px 26px 26px; text-align: center; }
-.boot-frame::before, .boot-frame::after {
-    content: ''; position: absolute; width: 26px; height: 26px;
-    border: 1px solid rgba(255, 255, 255, .34);
+.boot-frame {
+    position: relative; width: min(372px, calc(100vw - 32px));
+    padding: 32px 28px 23px; overflow: hidden;
+    border-radius: 16px; text-align: center;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, .05), transparent 55%),
+        linear-gradient(160deg, rgba(34, 34, 38, .97), rgba(8, 8, 9, .99) 70%);
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-top-color: rgba(255, 255, 255, .3);
+    border-bottom-color: rgba(0, 0, 0, .8);
+    box-shadow:
+        0 24px 60px -18px rgba(0, 0, 0, .95),
+        0 60px 110px -40px rgba(0, 0, 0, .85),
+        inset 0 1px 0 rgba(255, 255, 255, .12),
+        inset 0 -2px 0 rgba(0, 0, 0, .55);
+    animation: boot-in .5s var(--ease-pop) both;
 }
-.boot-frame::before { top: 0; left: 0; border-right: 0; border-bottom: 0; }
-.boot-frame::after { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+@keyframes boot-in {
+    from { opacity: 0; transform: translateY(12px) scale(.97); }
+    to { opacity: 1; transform: none; }
+}
+/* радар за логотипом: концентричні кільця, сектор, що обертається, і дві
+   позначки. Малюється лише градієнтами, без картинок і без важких фільтрів */
+.boot-radar {
+    position: absolute; left: 50%; top: -104px;
+    width: 296px; height: 296px; margin-left: -148px;
+    border-radius: 50%; pointer-events: none;
+    background: repeating-radial-gradient(circle, rgba(255, 212, 94, .15) 0 1px, transparent 1px 37px);
+    -webkit-mask-image: radial-gradient(circle, #000 8%, rgba(0, 0, 0, .55) 46%, transparent 72%);
+    mask-image: radial-gradient(circle, #000 8%, rgba(0, 0, 0, .55) 46%, transparent 72%);
+}
+.boot-radar b {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(from 0deg, rgba(255, 212, 94, 0) 0 76%, rgba(255, 212, 94, .26) 93%, rgba(255, 212, 94, 0));
+    animation: boot-rotate 3.2s linear infinite;
+}
+.boot-radar i {
+    position: absolute; width: 6px; height: 6px; margin: -3px; border-radius: 50%;
+    background: #ffd45e; box-shadow: 0 0 12px rgba(255, 212, 94, .85);
+    animation: boot-blip 3.2s ease-in-out infinite;
+}
+.boot-radar i:nth-child(1) { left: 63%; top: 39%; }
+.boot-radar i:nth-child(2) { left: 38%; top: 58%; animation-delay: 1.5s; }
+@keyframes boot-rotate { to { transform: rotate(360deg); } }
+@keyframes boot-blip {
+    0%, 100% { opacity: .12; transform: scale(.7); }
+    16%, 48% { opacity: 1; transform: none; }
+    64% { opacity: .1; transform: scale(.6); }
+}
+.boot-mark {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 42px; height: 42px; border-radius: 12px; color: #ffd45e;
+    background: linear-gradient(180deg, rgba(255, 212, 94, .16), rgba(255, 212, 94, .04));
+    border: 1px solid rgba(255, 212, 94, .34);
+    box-shadow: 0 6px 18px -6px rgba(255, 212, 94, .45), inset 0 1px 0 rgba(255, 255, 255, .14);
+}
+.boot-mark svg { width: 25px; height: 25px; filter: drop-shadow(0 0 9px rgba(255, 212, 94, .45)); }
 .boot-brand {
+    position: relative; margin-top: 13px;
     font-family: var(--title); font-weight: 900;
-    font-size: clamp(20px, 7.2vw, 30px);
-    letter-spacing: clamp(5px, 1.8vw, 9px);
-    text-indent: clamp(5px, 1.8vw, 9px);
-    color: var(--text);
-    text-shadow: 0 0 30px rgba(255, 255, 255, .25);
+    font-size: clamp(22px, 6.6vw, 31px);
+    letter-spacing: clamp(5px, 1.7vw, 9px);
+    text-indent: clamp(5px, 1.7vw, 9px);
+    background: linear-gradient(90deg, #ffffff 0 44%, #ffd45e 44% 100%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 12px rgba(0, 0, 0, .85));
 }
 .boot-sub {
-    margin-top: 5px; font-family: var(--pixel); font-weight: 700;
-    font-size: clamp(12px, 3.6vw, 14px); letter-spacing: 5px;
+    position: relative; display: flex; align-items: center; justify-content: center;
+    gap: 10px; margin-top: 7px;
+    font-family: var(--pixel); font-weight: 700;
+    font-size: clamp(11px, 3.4vw, 13px); letter-spacing: 4.5px;
     color: var(--dim); text-transform: uppercase;
 }
-.boot-bar { position: relative; height: 2px; margin: 26px 0 11px; overflow: hidden; background: rgba(255, 255, 255, .13); }
+.boot-sub::before, .boot-sub::after {
+    content: ''; height: 1px; width: 24px; flex: 0 0 auto;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .3));
+}
+.boot-sub::after { transform: scaleX(-1); }
+.boot-meter { display: flex; align-items: center; gap: 11px; margin-top: 24px; }
+.boot-bar {
+    position: relative; flex: 1; height: 3px; border-radius: 3px; overflow: hidden;
+    background: rgba(255, 255, 255, .1);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, .8);
+}
 .boot-bar i {
-    position: absolute; top: 0; bottom: 0; left: -18%; width: 18%;
-    background: linear-gradient(90deg, transparent, var(--text), transparent);
-    animation: boot-sweep 1.15s linear infinite;
+    position: absolute; top: 0; bottom: 0; left: 0; width: var(--p, 0%);
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(255, 212, 94, .35), #ffd45e 62%, #fff3c8);
+    box-shadow: 0 0 14px rgba(255, 212, 94, .55);
+    transition: width .6s var(--ease-pop);
 }
-@keyframes boot-sweep { to { left: 100%; } }
+.boot-bar i::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, .75) 50%, transparent 80%);
+    animation: boot-shine 1.6s ease-in-out infinite;
+}
+@keyframes boot-shine {
+    from { transform: translateX(-110%); }
+    to { transform: translateX(160%); }
+}
+.boot-pct {
+    min-width: 36px; text-align: right;
+    font-family: var(--pixel); font-size: 12px; font-weight: 700;
+    letter-spacing: 1.4px; color: #ffe9a8; font-variant-numeric: tabular-nums;
+}
 .boot-line {
-    display: flex; justify-content: space-between; gap: 10px;
-    font-family: var(--pixel); font-weight: 700; font-size: 13px;
-    letter-spacing: 2.6px; color: var(--dim-2); text-transform: uppercase;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: 12px;
+    font-family: var(--pixel); font-weight: 700; font-size: 12px;
+    letter-spacing: 2.2px; color: var(--dim-2); text-transform: uppercase;
 }
-.boot-line #boot-state { color: var(--gold); }
+.boot-line #boot-state { display: inline-flex; align-items: center; gap: 8px; color: #ffd45e; }
+.boot-line #boot-state::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto;
+    background: #8dffc0; box-shadow: 0 0 8px rgba(141, 255, 192, .7);
+    animation: boot-pulse 1.15s ease-in-out infinite;
+}
+@keyframes boot-pulse { 50% { opacity: .25; transform: scale(.8); } }
+#boot-date { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 700px) {
+    .boot-frame { width: calc(100vw - 28px); padding: 29px 20px 21px; }
+    .boot-radar { width: 262px; height: 262px; margin-left: -131px; top: -92px; }
+    .boot-line { font-size: 11px; letter-spacing: 1.8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .boot-frame, .boot-radar b, .boot-radar i, .boot-bar i::after,
+    .boot-line #boot-state::before { animation: none; }
+}
