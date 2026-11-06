@@ -2380,7 +2380,7 @@
     pxLabels.setOn(state.base === 'hybrid');
 
     function syncLangUI() {
-        $('lang-btn').innerHTML = LT.flagSVG(LT.lang()).replace('<svg ', '<svg width="22" height="15" ') + '<span>' + LT.lang().toUpperCase() + '</span>';
+        $('lang-btn').innerHTML = LT.flagHtml(LT.lang(), 'lt-flag-mini') + '<span>' + LT.lang().toUpperCase() + '</span>';
         uiUsage();
         uiViews();
         if (!mapReady) return;

@@ -10,9 +10,11 @@
         // за цим зумом показуємо грубшу геометрію: на дрібному масштабі деталі все одно не видно
         const LOD_Z = 7;
         const regionVis = () => (regions ? 'visible' : 'none');
-        const regionField = () => ['coalesce',
-            ['get', (window.LT && LT.lang()) === 'en' ? 'name:en' : 'name:uk'],
-            ['get', 'name:uk'], ['get', 'name:en']];
+        const regionField = () => {
+            const lang = (window.LT && LT.lang()) || 'uk';
+            const key = lang === 'en' ? 'name:en' : (lang === 'ru' ? 'name:ru' : 'name:uk');
+            return ['coalesce', ['get', key], ['get', 'name:uk'], ['get', 'name:en']];
+        };
 
         // у наборі є й сусідні області (Білорусь, Польща, Росія) з іншого джерела:
         // їхній контур іде поруч із українським і дає подвійну пунктирну лінію

@@ -1710,12 +1710,13 @@
         const needle = norm(q);
         if (!needle) return [];
         const hits = [];
+        const ruOf = e => (LT.placeRu ? LT.placeRu(e[0], e[2], e[3]) : e[0]);
         for (let i = 0; i < data.length; i++) {
             const e = data[i];
-            const uk = norm(e[0]), en = norm(e[1] || '');
-            const iu = uk.indexOf(needle), ie = en.indexOf(needle);
-            if (iu < 0 && ie < 0) continue;
-            const starts = (iu === 0 || ie === 0) ? 1 : 0;
+            const uk = norm(e[0]), en = norm(e[1] || ''), ru = norm(ruOf(e));
+            const iu = uk.indexOf(needle), ie = en.indexOf(needle), ir = ru.indexOf(needle);
+            if (iu < 0 && ie < 0 && ir < 0) continue;
+            const starts = (iu === 0 || ie === 0 || ir === 0) ? 1 : 0;
             const rank = e[4] || 4;
             hits.push({ e, score: (starts ? -1000 : 0) + rank * 10 - Math.min(9, (+e[6] || 0) / 1e6) });
         }
@@ -1726,7 +1727,7 @@
         const rows = [];
         for (let i = 0; i < hits.length && rows.length < 6; i++) {
             const e = hits[i].e;
-            const name = String((lang === 'en' ? (e[1] || e[0]) : e[0]) || '').trim();
+            const name = String((lang === 'en' ? (e[1] || e[0]) : lang === 'ru' ? ruOf(e) : e[0]) || '').trim();
             const key = name.toLowerCase() + '@' + e[2] + ',' + e[3];
             if (!name || seen.has(key)) continue;
             seen.add(key);
@@ -2853,7 +2854,7 @@
 
     function syncLangUI() {
         const langBtn = $('lang-btn');
-        if (langBtn) langBtn.innerHTML = LT.flagSVG(LT.lang()).replace('<svg ', '<svg width="22" height="15" ') + '<span>' + LT.lang().toUpperCase() + '</span>';
+        if (langBtn) langBtn.innerHTML = LT.flagHtml(LT.lang(), 'lt-flag-mini') + '<span>' + LT.lang().toUpperCase() + '</span>';
         if (!mapReady) return;
         LT.applyMapLang(map);
         LT.ensurePlaceLabels(map, state.base);

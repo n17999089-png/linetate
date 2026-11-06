@@ -221,17 +221,20 @@
             'stats.lossSrcUa': 'Джерело: UALosses — відкриті повідомлення про загибель',
             'stats.lossErr': 'НЕ ВДАЛОСЯ ЗАВАНТАЖИТИ ДАНІ', 'stats.lossRetry': 'СПРОБУВАТИ ЩЕ РАЗ',
             'stats.lossThousand': 'тис. осіб',
-            'stats.eqTitle': 'ВТРАТИ ТЕХНІКИ РФ', 'stats.eqSrc': 'за зведеннями Генштабу ЗСУ',
-            'stats.eqTotal': 'усього', 'stats.eqToday': 'за добу',
+            'stats.eqTitle': 'ВТРАТИ ТЕХНІКИ РФ', 'stats.eqSrc': 'візуально підтверджено · Oryx',
+            'stats.eqTotal': 'усього', 'stats.eqToday': 'за добу', 'stats.eqOwn': 'власний підрахунок',
+            'stats.eqUnits': 'одиниць', 'stats.eqDestroyed': 'знищено', 'stats.eqDamaged': 'пошкоджено',
+            'stats.eqAbandoned': 'покинуто', 'stats.eqCaptured': 'захоплено',
             'stats.eqTanks': 'ТАНКИ', 'stats.eqAfv': 'ББМ', 'stats.eqArty': 'АРТИЛЕРІЯ',
             'stats.eqMlrs': 'РСЗВ', 'stats.eqAa': 'ППО', 'stats.eqPlanes': 'ЛІТАКИ',
-            'stats.eqHelis': 'ГЕЛІКОПТЕРИ', 'stats.eqVehicles': 'АВТО Й ЦИСТЕРНИ',
+            'stats.eqHelis': 'ГЕЛІКОПТЕРИ', 'stats.eqVehicles': 'АВТО Й ПІКАПИ',
             'stats.eqShips': 'КОРАБЛІ Й КАТЕРИ', 'stats.eqMissiles': 'КРИЛАТІ РАКЕТИ',
-            'stats.eqUav': 'БПЛА', 'stats.eqSpecial': 'СПЕЦТЕХНІКА',
+            'stats.eqUav': 'УДАРНІ БПЛА', 'stats.eqSpecial': 'СПЕЦТЕХНІКА',
             'stats.eqAtgm': 'ПТРК / ОТРК', 'stats.eqSubs': 'ПІДВОДНІ ЧОВНИ',
-            'stats.eqArtyChart': 'БРОНЯ Й АРТИЛЕРІЯ · 30 ДНІВ', 'stats.eqUavChart': 'БПЛА · 30 ДНІВ',
-            'stats.eqDaily': 'добові втрати', 'stats.eqNote': 'заявлені втрати за зведеннями Генштабу ЗСУ; підтверджені імена — вище',
-            'stats.eqSrcLink': 'Джерело: Генштаб ЗСУ · russianwarship.rip',
+            'stats.eqTypes': 'ВТРАТИ ЗА ТИПАМИ', 'stats.eqTypesSub': 'підтверджені одиниці',
+            'stats.eqArtyChart': 'БРОНЯ Й АРТИЛЕРІЯ · 30 ДНІВ', 'stats.eqUavChart': 'УДАРНІ БПЛА · 30 ДНІВ',
+            'stats.eqDaily': 'добові втрати', 'stats.eqNote': 'рахуємо лише техніку, підтверджену фото чи відео, тому цифри нижчі за зведення Генштабу; підтверджені імена — вище',
+            'stats.eqSrcLink': 'Джерело: Oryx · Attack On Europe',
             'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
             'tools.rectHint': 'Прямокутник: протягніть по карті', 'tools.circleHint': 'Коло: протягніть по карті',
@@ -444,17 +447,20 @@
             'stats.lossSrcUa': 'Source: UALosses — open reports of deaths',
             'stats.lossErr': 'COULD NOT LOAD THE DATA', 'stats.lossRetry': 'TRY AGAIN',
             'stats.lossThousand': 'thousand people',
-            'stats.eqTitle': 'RUSSIAN EQUIPMENT LOSSES', 'stats.eqSrc': 'per Ukraine’s General Staff reports',
-            'stats.eqTotal': 'total', 'stats.eqToday': 'last day',
+            'stats.eqTitle': 'RUSSIAN EQUIPMENT LOSSES', 'stats.eqSrc': 'visually confirmed · Oryx',
+            'stats.eqTotal': 'total', 'stats.eqToday': 'last day', 'stats.eqOwn': 'own count',
+            'stats.eqUnits': 'units', 'stats.eqDestroyed': 'destroyed', 'stats.eqDamaged': 'damaged',
+            'stats.eqAbandoned': 'abandoned', 'stats.eqCaptured': 'captured',
             'stats.eqTanks': 'TANKS', 'stats.eqAfv': 'AFV', 'stats.eqArty': 'ARTILLERY',
             'stats.eqMlrs': 'MLRS', 'stats.eqAa': 'AIR DEFENCE', 'stats.eqPlanes': 'AIRCRAFT',
-            'stats.eqHelis': 'HELICOPTERS', 'stats.eqVehicles': 'VEHICLES & TANKERS',
+            'stats.eqHelis': 'HELICOPTERS', 'stats.eqVehicles': 'VEHICLES & PICKUPS',
             'stats.eqShips': 'SHIPS & BOATS', 'stats.eqMissiles': 'CRUISE MISSILES',
-            'stats.eqUav': 'UAVs', 'stats.eqSpecial': 'SPECIAL EQUIPMENT',
+            'stats.eqUav': 'COMBAT UAVs', 'stats.eqSpecial': 'SPECIAL EQUIPMENT',
             'stats.eqAtgm': 'ATGM / SRBM', 'stats.eqSubs': 'SUBMARINES',
-            'stats.eqArtyChart': 'ARMOUR & ARTILLERY · 30 DAYS', 'stats.eqUavChart': 'UAVs · 30 DAYS',
-            'stats.eqDaily': 'daily losses', 'stats.eqNote': 'claimed losses per Ukraine’s General Staff reports; named confirmed deaths are above',
-            'stats.eqSrcLink': 'Source: Ukraine’s General Staff · russianwarship.rip',
+            'stats.eqTypes': 'LOSSES BY TYPE', 'stats.eqTypesSub': 'confirmed units',
+            'stats.eqArtyChart': 'ARMOUR & ARTILLERY · 30 DAYS', 'stats.eqUavChart': 'COMBAT UAVs · 30 DAYS',
+            'stats.eqDaily': 'daily losses', 'stats.eqNote': 'only photo- or video-confirmed equipment is counted, so the numbers stay below General Staff claims; named confirmed deaths are above',
+            'stats.eqSrcLink': 'Source: Oryx · Attack On Europe',
             'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
             'tools.rectHint': 'Rectangle: drag on the map', 'tools.circleHint': 'Circle: drag on the map',
@@ -667,17 +673,20 @@
             'stats.lossSrcUa': 'Источник: UALosses — открытые сообщения о гибели',
             'stats.lossErr': 'НЕ УДАЛОСЬ ЗАГРУЗИТЬ ДАННЫЕ', 'stats.lossRetry': 'ПОПРОБОВАТЬ ЕЩЁ РАЗ',
             'stats.lossThousand': 'тыс. человек',
-            'stats.eqTitle': 'ПОТЕРИ ТЕХНИКИ РФ', 'stats.eqSrc': 'по сводкам Генштаба ВСУ',
-            'stats.eqTotal': 'всего', 'stats.eqToday': 'за сутки',
+            'stats.eqTitle': 'ПОТЕРИ ТЕХНИКИ РФ', 'stats.eqSrc': 'визуально подтверждено · Oryx',
+            'stats.eqTotal': 'всего', 'stats.eqToday': 'за сутки', 'stats.eqOwn': 'собственный подсчёт',
+            'stats.eqUnits': 'единиц', 'stats.eqDestroyed': 'уничтожено', 'stats.eqDamaged': 'повреждено',
+            'stats.eqAbandoned': 'оставлено', 'stats.eqCaptured': 'захвачено',
             'stats.eqTanks': 'ТАНКИ', 'stats.eqAfv': 'ББМ', 'stats.eqArty': 'АРТИЛЛЕРИЯ',
             'stats.eqMlrs': 'РСЗО', 'stats.eqAa': 'ПВО', 'stats.eqPlanes': 'САМОЛЁТЫ',
-            'stats.eqHelis': 'ВЕРТОЛЁТЫ', 'stats.eqVehicles': 'АВТО И ЦИСТЕРНЫ',
+            'stats.eqHelis': 'ВЕРТОЛЁТЫ', 'stats.eqVehicles': 'АВТО И ПИКАПЫ',
             'stats.eqShips': 'КОРАБЛИ И КАТЕРА', 'stats.eqMissiles': 'КРЫЛАТЫЕ РАКЕТЫ',
-            'stats.eqUav': 'БПЛА', 'stats.eqSpecial': 'СПЕЦТЕХНИКА',
+            'stats.eqUav': 'УДАРНЫЕ БПЛА', 'stats.eqSpecial': 'СПЕЦТЕХНИКА',
             'stats.eqAtgm': 'ПТРК / ОТРК', 'stats.eqSubs': 'ПОДВОДНЫЕ ЛОДКИ',
-            'stats.eqArtyChart': 'БРОНЯ И АРТИЛЛЕРИЯ · 30 ДНЕЙ', 'stats.eqUavChart': 'БПЛА · 30 ДНЕЙ',
-            'stats.eqDaily': 'суточные потери', 'stats.eqNote': 'заявленные потери по сводкам Генштаба ВСУ; подтверждённые имена — выше',
-            'stats.eqSrcLink': 'Источник: Генштаб ВСУ · russianwarship.rip',
+            'stats.eqTypes': 'ПОТЕРИ ПО ТИПАМ', 'stats.eqTypesSub': 'подтверждённые единицы',
+            'stats.eqArtyChart': 'БРОНЯ И АРТИЛЛЕРИЯ · 30 ДНЕЙ', 'stats.eqUavChart': 'УДАРНЫЕ БПЛА · 30 ДНЕЙ',
+            'stats.eqDaily': 'суточные потери', 'stats.eqNote': 'считаем только технику, подтверждённую фото или видео, поэтому цифры ниже сводок Генштаба; подтверждённые имена — выше',
+            'stats.eqSrcLink': 'Источник: Oryx · Attack On Europe',
             'boot.map': 'БАЗА КАРТЫ', 'boot.data': 'ДАННЫЕ ФРОНТА', 'boot.warm': 'ПОДГОТОВКА ГЕОМЕТРИИ', 'boot.render': 'ЗОНЫ И ЛИНИИ',
             'tools.rulerHint': 'Линейка: клики по точкам, клик по первой точке или двойной клик — завершить', 'tools.penHint': 'Карандаш: рисовать линию от руки',
             'tools.rectHint': 'Прямоугольник: протяните по карте', 'tools.circleHint': 'Круг: протяните по карте',
@@ -2474,8 +2483,8 @@
     /* ------------------------------ пиксельные подписи ------------------------------ */
 
     const PIXEL_SEAS = [
-        ['BLACK SEA', 'ЧОРНЕ МОРЕ', 34.2000, 43.3500, 1, 4.0],
-        ['SEA OF AZOV', 'АЗОВСЬКЕ МОРЕ', 37.2000, 46.1500, 1, 5.8]
+        ['BLACK SEA', 'ЧОРНЕ МОРЕ', 'ЧЁРНОЕ МОРЕ', 34.2000, 43.3500, 1, 4.0],
+        ['SEA OF AZOV', 'АЗОВСЬКЕ МОРЕ', 'АЗОВСКОЕ МОРЕ', 37.2000, 46.1500, 1, 5.8]
     ];
 
     function pixelLabels(map) {
@@ -2483,21 +2492,21 @@
         let on = false;
         let shown = '';
 
-        const add = (en, uk, lon, lat, rank, minZ, sea) => {
+        const add = (en, uk, ru, lon, lat, rank, minZ, sea) => {
             const el = document.createElement('div');
             el.className = 'px-label' + (sea ? ' sea' : '');
             el.dataset.rank = String(rank);
             const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
                 .setLngLat([lon, lat])
                 .addTo(map);
-            items.push({ el, marker, minZ, en, uk });
+            items.push({ el, marker, minZ, en, uk, ru });
         };
 
-        PIXEL_SEAS.forEach(p => add(p[0], p[1], p[2], p[3], p[4], p[5], true));
+        PIXEL_SEAS.forEach(p => add(p[0], p[1], p[2], p[3], p[4], p[5], p[6], true));
 
         const relabel = () => {
             shown = currentLang;
-            items.forEach(it => { it.el.textContent = currentLang === 'uk' ? it.uk : it.en; });
+            items.forEach(it => { it.el.textContent = currentLang === 'uk' ? it.uk : (currentLang === 'ru' ? it.ru : it.en); });
         };
 
         const update = () => {
@@ -2550,6 +2559,25 @@
     const PLACE_DOT_LIMIT = 240;
     const PLACE_SCALE = 1e5;
     const placeEngines = new WeakMap();
+
+    // русские названия НП лежат отдельным файлом assets/places-ru.js:
+    // 13 тысяч пар «укр→рус» не нужны тем, кто смотрит карту по-украински
+    // или по-английски, и не должны раздувать основной бандл
+    let ruPlaceMap = null;
+    // точечные правки для городов, где OSM отдаёт не тот экзоним
+    // (например, Рівне → «Ровное» из-за одноимённых сёл): ключ — имя и
+    // координаты записи LT_PLACES, поэтому соседние сёла не задеваются
+    function placeRu(uk, lon, lat) {
+        if (lon != null && lat != null) {
+            const fix = window.LT_PLACES_RU_FIX;
+            const hit = fix && fix[uk + '@' + lon + ',' + lat];
+            if (typeof hit === 'string') return hit;
+        }
+        if (!ruPlaceMap) ruPlaceMap = window.LT_PLACES_RU || null;
+        if (!ruPlaceMap) return uk;
+        const v = ruPlaceMap[uk];
+        return typeof v === 'string' ? v : uk;
+    }
     // подписи рисуются в devicePixelRatio, но для скриншота нужен повышенный
     let placeDprOverride = 0;
 
@@ -2807,7 +2835,7 @@
                         if (e[3] > northMs) break;
                         let p = e._p;
                         if (!p || p.lang !== lang) {
-                            const nm = lang === 'en' ? (e[1] || e[0]) : e[0];
+                            const nm = lang === 'en' ? (e[1] || e[0]) : lang === 'ru' ? placeRu(e[0], e[2], e[3]) : e[0];
                             if (!nm) continue;
                             const rank = grp.mz <= 3 ? 0 : grp.mz <= 5 ? 1 : grp.mz <= 7 ? 2 : grp.mz <= 9 ? 3 : 4;
                             const cap = e[5] === 1;
@@ -4102,14 +4130,19 @@
     // самої картинки й коливається зі зсувом фази, тому складки біжать
     // по тканині. Картинка йде data-URI, тож браузер малює її один раз
     const statsFlagUri = {};
-    function statsFlag(flag) {
+    // той самий папір, що й у великих прапорах статистики: три смуги однієї
+    // картинки з різними фазами хвилі. extra-клас задає розмір (наприклад,
+    // lt-flag-mini у кнопці мови), щоб і британський прапор був полотном,
+    // а не пласким прямокутником
+    function flagHtml(flag, extra) {
         if (!statsFlagUri[flag]) {
             statsFlagUri[flag] = "url('data:image/svg+xml," + encodeURIComponent(FLAG_SVG[flag] || FLAG_SVG.en) + "')";
         }
-        return `<div class="lt-flag lt-flag-${flag}" style="--flag:${statsFlagUri[flag]}" aria-hidden="true">
+        return `<span class="lt-flag lt-flag-${flag}${extra ? ' ' + extra : ''}" style="--flag:${statsFlagUri[flag]}" aria-hidden="true">
             <span class="lt-flag-strip"></span><span class="lt-flag-strip"></span><span class="lt-flag-strip"></span>
-        </div>`;
+        </span>`;
     }
+    function statsFlag(flag) { return flagHtml(flag); }
 
     function statsSide(side, flag, name, plus, minus, net) {
         const share = plus + minus > 0 ? Math.round(plus / (plus + minus) * 100) : 50;
@@ -4198,13 +4231,17 @@
         const p = String(key).split('-');
         return Number(p[0]) * 12 + (Number(p[1]) - 1) - LOSS_EPOCH;
     };
+    // Handjet не має гліфа для тонкого нерозривного пробілу, яким Intl
+    // розділяє тисячі: у графіках цифри злипались у «9743», тому міняємо
+    // будь-який пробіл-розділювач на звичайний
+    const nb = s => String(s).replace(/[\u00a0\u202f]/g, ' ');
     const lossNum = v => {
-        try { return new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(Math.round(v || 0)); }
+        try { return nb(new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(Math.round(v || 0))); }
         catch (e) { return String(Math.round(v || 0)); }
     };
     const lossShort = v => {
         const n = (v || 0) / 1000;
-        try { return new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(n); }
+        try { return nb(new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(n)); }
         catch (e) { return String(Math.round(n * 10) / 10); }
     };
     const lossDate = iso => {
@@ -4218,7 +4255,7 @@
         return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`;
     };
 
-    /* ---------------------- втрати техніки (Генштаб) ---------------------- */
+    /* ------------------ втрати техніки (власний підрахунок) ------------------ */
 
     const EQ_FIELDS = [
         'tanks', 'armoured_fighting_vehicles', 'artillery_systems', 'mlrs',
@@ -4274,16 +4311,38 @@
         return p.length === 3 ? `${p[2]}.${p[1]}` : '';
     };
 
+    // у власному підрахунку частини категорій немає (ракети, підводні човни):
+    // такі плитки не малюємо взагалі, щоб «0» не читалось як «нічого не втрачено»
+    const eqKeys = E => EQ_FIELDS.filter(k => E.totals && E.totals[k] != null && E.totals[k] > 0);
+
     function eqGrid(E) {
-        const inc = E.increase || {};
-        return `<div class="lt-eq-grid">${EQ_FIELDS.map(k => {
+        return `<div class="lt-eq-grid">${eqKeys(E).map(k => {
             const [key, icon] = EQ_META[k];
-            const d = inc[k] || 0;
-            return `<article class="lt-eq-tile" title="${esc(t(key))}">
+            const dest = E.destroyed && E.destroyed[k] != null ? E.destroyed[k] : null;
+            return `<article class="lt-eq-tile" title="${esc(t(key))} · ${lossNum(E.totals[k])}">
                 <span class="lt-eq-top">${eqIcon(icon)}<span class="lt-eq-k">${esc(t(key))}</span></span>
                 <b class="lt-eq-n">${lossNum(E.totals[k])}</b>
-                <span class="lt-eq-d${d ? ' up' : ''}">${d ? '+' + lossNum(d) : '—'}</span>
+                ${dest != null ? `<span class="lt-eq-d">${esc(t('stats.eqDestroyed'))} ${lossNum(dest)}</span>` : ''}
             </article>`;
+        }).join('')}</div>`;
+    }
+
+    function eqTypes(E) {
+        const keys = eqKeys(E).slice().sort((a, b) => E.totals[b] - E.totals[a]);
+        const max = Math.max(1, ...keys.map(k => E.totals[k]));
+        const sum = keys.reduce((s, k) => s + E.totals[k], 0);
+        return `<div class="lt-eqb">${keys.map(k => {
+            const [key, icon] = EQ_META[k];
+            const v = E.totals[k];
+            // корінь, а не лінійна шкала: інакше 40 кораблів на тлі 9 700 ББМ
+            // перетворюються на невидиму риску
+            const w = Math.max(4, Math.sqrt(v / max) * 100);
+            const pc = sum ? Math.round(v / sum * 1000) / 10 : 0;
+            return `<div class="lt-eqb-row" title="${esc(t(key))} · ${lossNum(v)} · ${pc}%">
+                <span class="lt-eqb-k">${eqIcon(icon)}<i>${esc(t(key))}</i></span>
+                <span class="lt-eqb-track"><b style="--w:${w.toFixed(1)}%"></b></span>
+                <span class="lt-eqb-v">${lossNum(v)}</span>
+            </div>`;
         }).join('')}</div>`;
     }
 
@@ -4344,16 +4403,33 @@
 
     function statsEquip(E) {
         if (!E || !E.totals) return '';
+        const keys = eqKeys(E);
+        const sum = keys.reduce((s, k) => s + E.totals[k], 0);
+        const sm = E.summary || null;
+        const total = sm && sm.total ? sm.total : sum;
         const days = (E.days || []).filter(r => Array.isArray(r) && r.length > 1);
         const keysA = ['tanks', 'armoured_fighting_vehicles', 'artillery_systems', 'mlrs', 'aa_warfare_systems'];
         const legendA = keysA.map(k => `<span class="eq-${({ tanks: 't', armoured_fighting_vehicles: 'a', artillery_systems: 'r', mlrs: 'm', aa_warfare_systems: 'd' })[k]}">${esc(t(EQ_META[k][0]))}</span>`).join('');
         const lastUav = days.length ? eqDay(E, days[days.length - 1], 'uav_systems') : 0;
         return `<section class="lt-eq">
             <div class="lt-eq-head">
-                <div class="lt-loss-head"><span>${esc(t('stats.eqTitle'))}</span><em>${E.asOf ? esc(lossDate(E.asOf)) : ''}</em></div>
-                <div class="lt-eq-cap">${esc(t('stats.eqSrc'))}</div>
+                <div class="lt-loss-head"><span>${esc(t('stats.eqTitle'))}</span><em>${esc(t('stats.eqOwn'))}</em></div>
+                <div class="lt-eq-cap">${esc(t('stats.eqSrc'))}${E.asOf ? ' · ' + esc(lossDate(E.asOf)) : ''}</div>
+            </div>
+            <div class="lt-eq-sum">
+                <div class="lt-eq-sum-main"><span>${esc(t('stats.eqTotal'))}</span><b>${lossNum(total)}</b><i>${esc(t('stats.eqUnits'))}</i></div>
+                ${sm ? `<div class="lt-eq-sum-brk">
+                    <span>${esc(t('stats.eqDestroyed'))} <b>${lossNum(sm.destroyed)}</b></span>
+                    <span>${esc(t('stats.eqDamaged'))} <b>${lossNum(sm.damaged)}</b></span>
+                    <span>${esc(t('stats.eqAbandoned'))} <b>${lossNum(sm.abandoned)}</b></span>
+                    <span>${esc(t('stats.eqCaptured'))} <b>${lossNum(sm.captured)}</b></span>
+                </div>` : ''}
             </div>
             ${eqGrid(E)}
+            <div class="lt-loss-chart lt-eq-chart">
+                <div class="lt-loss-head"><span>${esc(t('stats.eqTypes'))}</span><em>${esc(t('stats.eqTypesSub'))}</em></div>
+                ${eqTypes(E)}
+            </div>
             ${days.length > 1 ? `<div class="lt-loss-chart lt-eq-chart">
                 <div class="lt-loss-head"><span>${esc(t('stats.eqArtyChart'))}</span><em>${esc(t('stats.eqDaily'))}</em></div>
                 <div class="lt-loss-leg">${legendA}</div>
@@ -4364,7 +4440,7 @@
                 ${eqBarSVG(E, days, 'uav_systems')}
             </div>` : ''}
             <div class="lt-loss-foot"><span>${esc(t('stats.eqNote'))}</span></div>
-            <div class="lt-loss-src"><a href="${esc(E.url || 'https://russianwarship.rip/')}" target="_blank" rel="noopener">${esc(t('stats.eqSrcLink'))}</a></div>
+            <div class="lt-loss-src"><a href="${esc(E.url || 'https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-equipment.html')}" target="_blank" rel="noopener">${esc(t('stats.eqSrcLink'))}</a></div>
         </section>`;
     }
 
@@ -4478,8 +4554,9 @@
             </div>`;
         }).join('');
 
+        // день війни вже стоїть підзаголовком панелі: другий такий самий
+        // чип усередині вкладки дублював рядок і з'їдав висоту
         return `<div class="lt-loss-status">
-            <span class="lt-loss-war">${esc(t('stats.warDay', { n: lossNum(warDays()) }))}</span>
             <em>${esc(t('stats.lossUpd'))} ${esc(lossWhen(L.updatedAt))}</em>
         </div>
         <div class="lt-loss-heroes">
@@ -7920,13 +7997,27 @@
         return out;
     }
 
+    // назви областей російською: у наборі регіонів є лише uk/en, а підписи
+    // на карті мають перемикатися разом з мовою інтерфейсу
+    const REGION_RU = {
+        'UA-65': 'Херсонская', 'UA-07': 'Волынская', 'UA-56': 'Ровненская',
+        'UA-18': 'Житомирская', 'UA-32': 'Киевская', 'UA-74': 'Черниговская',
+        'UA-59': 'Сумская', 'UA-63': 'Харьковская', 'UA-09': 'Луганская',
+        'UA-14': 'Донецкая', 'UA-23': 'Запорожская', 'UA-46': 'Львовская',
+        'UA-26': 'Ивано-Франковская', 'UA-21': 'Закарпатская', 'UA-61': 'Тернопольская',
+        'UA-77': 'Черновицкая', 'UA-51': 'Одесская', 'UA-48': 'Николаевская',
+        'UA-43': 'Республика Крым', 'UA-05': 'Винницкая', 'UA-68': 'Хмельницкая',
+        'UA-71': 'Черкасская', 'UA-53': 'Полтавская', 'UA-12': 'Днепропетровская',
+        'UA-35': 'Кировоградская', 'UA-30': 'Киев', 'UA-40': 'Севастополь'
+    };
+
     function geoRegions(raw) {
         if (!raw) return { lines: { type: 'FeatureCollection', features: [] }, labels: { type: 'FeatureCollection', features: [] } };
         const names = {};
-        (raw.p || []).forEach(p => { names[p[0]] = { 'name:uk': p[2], 'name:en': p[3] }; });
+        (raw.p || []).forEach(p => { names[p[0]] = { 'name:uk': p[2], 'name:en': p[3], 'name:ru': REGION_RU[p[0]] || p[2] }; });
         const lines = (raw.l || []).map((str, i) => ({
             type: 'Feature',
-            properties: { iso: raw.p[i][0], c: raw.p[i][1], 'name:uk': raw.p[i][2], 'name:en': raw.p[i][3] },
+            properties: { iso: raw.p[i][0], c: raw.p[i][1], 'name:uk': raw.p[i][2], 'name:en': raw.p[i][3], 'name:ru': REGION_RU[raw.p[i][0]] || raw.p[i][2] },
             geometry: { type: 'LineString', coordinates: decodePolyline(str) }
         }));
         const labels = (raw.t || []).map(t => ({
@@ -7957,7 +8048,7 @@
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,
         store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage, onMirrorUpdate },
         Calendar, BASE, createMap, baseSwitcher, smoothZoom,
-        flagSVG: key => FLAG_SVG[key], pixelLabels, applyMapLang, ensurePlaceLabels, setPlaceDpr,
+        flagSVG: key => FLAG_SVG[key], flagHtml: (key, cls) => flagHtml(key, cls), pixelLabels, placeRu, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         setPlacesVisible, setReliefUser, setReliefPrefs, reliefPrefs, syncRelief, setZones3d,
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,

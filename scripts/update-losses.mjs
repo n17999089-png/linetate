@@ -24,10 +24,11 @@ let uaSlow = !!UA_PROXY;
 const ZONA_PAGE = 'https://zona.media/casualties';
 const ZONA_BUNDLE = 'https://s3.zona.media/infographics/bodycount/main.075985bf49bbe5ddf8ec.js.br';
 
-// втрати техніки РФ за зведеннями Генштабу ЗСУ: відкритий API з добовою
-// історією. Це заявлені втрати, а не підтверджені імена, тому в інтерфейсі
-// вони живуть окремим блоком зі своїм джерелом.
-const EQ_API = 'https://russianwarship.rip/api/v2';
+// Втрати техніки РФ — власний підрахунок, а не зведення Генштабу: беремо
+// список Oryx, де кожна одиниця підтверджена фото чи відео. Категорії сайту
+// згортаємо у свої групи; добової історії джерело не віддає, тому приріст
+// рахуємо між власними знімками (history), які накопичуються з кожним прогоном.
+const ORYX_URL = 'https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-equipment.html';
 const EQ_FIELDS = [
     'tanks', 'armoured_fighting_vehicles', 'artillery_systems', 'mlrs',
     'aa_warfare_systems', 'planes', 'helicopters', 'vehicles_fuel_tanks',
@@ -35,6 +36,36 @@ const EQ_FIELDS = [
     'special_military_equip', 'atgm_srbm_systems', 'submarines'
 ];
 const EQ_DAYS = 30;
+const EQ_HISTORY = 180;
+
+// ключ групи → назви категорій Oryx у нижньому регістрі
+const ORYX_GROUPS = {
+    tanks: ['tanks'],
+    armoured_fighting_vehicles: [
+        'armoured fighting vehicles', 'infantry fighting vehicles',
+        'armoured personnel carriers', 'mine-resistant ambush protected (mrap) vehicles'
+    ],
+    artillery_systems: [
+        'towed artillery', 'self-propelled artillery',
+        'artillery and missile support vehicles and equipment'
+    ],
+    mlrs: ['rocket and missile artillery'],
+    aa_warfare_systems: [
+        'anti-aircraft guns', 'self-propelled anti-aircraft guns',
+        'surface-to-air missile systems'
+    ],
+    planes: ['aircraft'],
+    helicopters: ['helicopters'],
+    vehicles_fuel_tanks: ['trucks and similar vehicles', 'infantry mobility vehicles'],
+    warships_cutters: ['naval ships and submarines'],
+    uav_systems: ['unmanned combat aerial vehicles'],
+    special_military_equip: [
+        'command posts and communications stations',
+        'engineering vehicles and equipment',
+        'radars', 'jammers and deception systems'
+    ],
+    atgm_srbm_systems: ['self-propelled anti-tank missile systems']
+};
 
 const MONTHS_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
@@ -274,29 +305,98 @@ async function collectRU() {
 
 const isoDay = d => d.toISOString().slice(0, 10);
 
+// Oryx пише кожну категорію як <h3>Назва (1234, of which destroyed: …)</h3>
+function oryxRows(html) {
+    const rows = new Map();
+    const re = /<h3[^>]*>([\s\S]*?)<\/h3>/gi;
+    let m;
+    while ((m = re.exec(html))) {
+        const text = m[1].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+        const hit = text.match(/^(.+?)\s*\(([\d,]+),\s*of which\s+([^)]*)\)/);
+        if (!hit) continue;
+        const parts = {};
+        for (const p of hit[3].split(',')) {
+            const pm = p.trim().match(/^([a-z ]+):\s*([\d,]+)/i);
+            if (pm) parts[pm[1].trim().toLowerCase()] = num(pm[2]);
+        }
+        rows.set(hit[1].trim().toLowerCase(), {
+            name: hit[1].trim(),
+            total: num(hit[2]),
+            destroyed: parts.destroyed || 0
+        });
+    }
+    return rows;
+}
+
+// знімок стану: якщо цифри не змінились, новий рядок не плодимо
+function eqHistory(prev, asOf, totals) {
+    const rows = ((prev && prev.history) || []).filter(r => Array.isArray(r) && r.length === EQ_FIELDS.length + 1 && r[0]);
+    const row = [asOf, ...EQ_FIELDS.map(f => (totals[f] == null ? null : totals[f]))];
+    const i = rows.findIndex(r => r[0] === asOf);
+    if (i >= 0) rows[i] = row;
+    else {
+        const last = rows[rows.length - 1];
+        const same = last && EQ_FIELDS.every((f, j) => last[j + 1] === row[j + 1]);
+        if (same) last[0] = asOf; else rows.push(row);
+    }
+    rows.sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    return rows.slice(-EQ_HISTORY);
+}
+
+// приріст між сусідніми знімками; розрив понад 45 днів не рахуємо,
+// інакше один стрибок розмазується на «добові» втрати
+function eqDays(rows) {
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+        const a = rows[i - 1], b = rows[i];
+        const gap = (Date.parse(b[0]) - Date.parse(a[0])) / 864e5;
+        if (!(gap > 0 && gap <= 45)) continue;
+        out.push([b[0], ...EQ_FIELDS.map((f, j) => {
+            const av = a[j + 1], bv = b[j + 1];
+            return av == null || bv == null ? 0 : Math.max(0, bv - av);
+        })]);
+    }
+    return out.slice(-EQ_DAYS);
+}
+
 async function collectEquip(prev) {
-    const latest = JSON.parse(await get(`${EQ_API}/statistics/latest`));
-    const d = latest && latest.data;
-    if (!d || !d.stats || !d.date) throw new Error('Генштаб не віддав поточний запис');
-    const end = new Date(d.date + 'T00:00:00Z');
-    const from = new Date(end.getTime() - (EQ_DAYS - 1) * 864e5);
-    const period = JSON.parse(await get(`${EQ_API}/statistics?date_from=${isoDay(from)}&date_to=${d.date}&limit=50`));
-    const recs = (period && period.data && period.data.records) || [];
-    // [дата, ...добові прирости в порядку EQ_FIELDS] — компактно для клієнта
-    const days = recs.map(r => {
-        const inc = r.increase || {};
-        return [r.date, ...EQ_FIELDS.map(f => Math.max(0, Number(inc[f]) || 0))];
-    });
-    console.log(`  Генштаб: ${days.length} днів, станом на ${d.date}`);
+    const html = await get(ORYX_URL);
+    const rows = oryxRows(html);
+    if (!rows.size) throw new Error('Oryx: не знайдено жодної категорії');
+
+    const totals = {}, destroyed = {};
+    for (const f of EQ_FIELDS) {
+        const names = ORYX_GROUPS[f] || [];
+        const found = names.map(n => rows.get(n)).filter(Boolean);
+        if (!found.length) { totals[f] = null; destroyed[f] = null; continue; }
+        totals[f] = found.reduce((s, r) => s + r.total, 0);
+        destroyed[f] = found.reduce((s, r) => s + r.destroyed, 0);
+    }
+    const overall = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+        .match(/Russia\s*-\s*([\d,]+),\s*of which:\s*destroyed:\s*([\d,]+),\s*damaged:\s*([\d,]+),\s*abandoned:\s*([\d,]+),\s*captured:\s*([\d,]+)/);
+    const summary = overall ? {
+        total: num(overall[1]), destroyed: num(overall[2]),
+        damaged: num(overall[3]), abandoned: num(overall[4]), captured: num(overall[5])
+    } : null;
+
+    const asOf = isoDay(new Date());
+    const history = eqHistory(prev, asOf, totals);
+    const days = eqDays(history);
+    const increase = Object.fromEntries(EQ_FIELDS.map((f, i) => [f, days.length ? days[days.length - 1][i + 1] : 0]));
+    console.log(`  Oryx: ${rows.size} категорій, знімок ${asOf}, історія ${history.length}, приріст ${days.length ? 'є' : 'немає'}`);
     return {
-        asOf: d.date,
-        day: d.day,
-        url: 'https://russianwarship.rip/',
-        sourceUrl: d.resource || '',
+        asOf,
+        day: Math.floor((Date.parse(asOf + 'T00:00:00Z') - Date.parse('2022-02-24T00:00:00Z')) / 864e5),
+        source: 'Oryx',
+        url: ORYX_URL,
+        summary,
         fields: EQ_FIELDS,
-        totals: Object.fromEntries(EQ_FIELDS.map(f => [f, Math.max(0, Number((d.stats || {})[f]) || 0)])),
-        increase: Object.fromEntries(EQ_FIELDS.map(f => [f, Math.max(0, Number((d.increase || {})[f]) || 0)])),
-        days: days.length ? days : (prev && prev.days) || []
+        totals,
+        destroyed,
+        increase,
+        days,
+        history
     };
 }
 
@@ -322,10 +422,10 @@ async function main() {
         ru = await collectRU();
     }
     if (only !== 'ru' && only !== 'ua') {
-        console.log('Втрати: тягну техніку зі зведень Генштабу…');
-        // якщо API недоступне, лишаємо попередній блок, а не ламаємо весь прогін
+        console.log('Втрати: рахую техніку за списком Oryx…');
+        // якщо сайт недоступний, лишаємо попередній блок, а не ламаємо весь прогін
         try { equip = await collectEquip(prev.equip); }
-        catch (e) { console.log(`  Генштаб: ${e.message} — лишаю попередні дані`); }
+        catch (e) { console.log(`  Oryx: ${e.message} — лишаю попередні дані`); }
     }
     if (!ua.killed || !ru.named) throw new Error('немає даних однієї зі сторін — файл не перезаписую');
 
