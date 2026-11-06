@@ -2122,6 +2122,9 @@
     }
     function ensureLosses(force) {
         if (lossBusy) return;
+        // дані втрат не залежать від дати: повторний похід у вкладку не має
+        // перезавантажувати їх і перемальовувати вже показані графіки
+        if (!force && statsLoss) return;
         lossBusy = true;
         statsLossErr = false;
         if (statsTab === 'losses') renderStats();
@@ -2146,19 +2149,32 @@
         renderStats();
     }
 
-    let countFrame = 0;
+    let countRuns = new Set();
+    // групування тисяч як у розмітці: у EN кома, в uk/ru — пробіл
+    const countFmts = {};
+    function fmtCount(n) {
+        const loc = LT.locale();
+        let f = countFmts[loc];
+        if (f === undefined) {
+            try { f = new Intl.NumberFormat(loc, { maximumFractionDigits: 0 }); } catch (e) { f = null; }
+            countFmts[loc] = f;
+        }
+        return f ? String(f.format(Math.round(n || 0))).replace(/[\u00a0\u202f]/g, ' ') : String(Math.round(n || 0));
+    }
+    function stopCounts() {
+        countRuns.forEach(r => cancelAnimationFrame(r.f));
+        countRuns.clear();
+    }
     // цифри втрат докручуються від нуля: у розмітці вже стоїть фінальне
     // число, тому без кадру (reduced motion) екран одразу показує підсумок
     function animateCounts(root) {
-        if (countFrame) { cancelAnimationFrame(countFrame); countFrame = 0; }
         if (!root) return;
         const els = Array.from(root.querySelectorAll('.lt-count[data-count]'));
         if (!els.length) return;
-        const fmt = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
         let reduce = false;
         try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { }
         if (reduce) {
-            for (const el of els) el.textContent = fmt(el.dataset.count);
+            for (const el of els) el.textContent = fmtCount(el.dataset.count);
             return;
         }
         // у розмітці вже стоїть підсумок — обнуляємо в тому ж кадрі, інакше
@@ -2166,23 +2182,85 @@
         for (const el of els) el.textContent = '0';
         const dur = 900, t0 = performance.now();
         const ease = p => 1 - Math.pow(1 - p, 3);
+        const run = { f: 0 };
         const tick = now => {
             // мітка кадру може бути раніше за performance.now() — без нижньої
             // межі перший кадр дає відʼємні числа
             const p = Math.max(0, Math.min(1, (now - t0) / dur));
             const k = ease(p);
-            for (const el of els) el.textContent = fmt(p >= 1 ? el.dataset.count : (+el.dataset.count || 0) * k);
-            countFrame = p < 1 ? requestAnimationFrame(tick) : 0;
+            for (const el of els) el.textContent = fmtCount(p >= 1 ? el.dataset.count : (+el.dataset.count || 0) * k);
+            if (p < 1) run.f = requestAnimationFrame(tick);
+            else countRuns.delete(run);
         };
-        countFrame = requestAnimationFrame(tick);
+        run.f = requestAnimationFrame(tick);
+        countRuns.add(run);
+    }
+
+    // анімації діаграм стартують не при відкритті вкладки, а коли блок
+    // справді потрапляє в кадр під час скролу. Кожен блок анімується рівно
+    // один раз за сеанс: повторний показ уже не перезапускає рух
+    const animSeen = new Set();
+    let animIO = null;
+
+    function animVisible(el, viewport) {
+        const a = el.getBoundingClientRect(), b = viewport.getBoundingClientRect();
+        const overlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        return overlap > Math.min(a.height, b.height) * 0.25;
+    }
+
+    function runAnim(el, viewport) {
+        const key = el.dataset.anim || '';
+        if (key) animSeen.add(key);
+        el.classList.add('lt-anim');
+        animateCounts(el);
+        if (animIO) animIO.unobserve(el);
+    }
+
+    function setupAnims(body) {
+        if (animIO) animIO.disconnect();
+        animIO = null;
+        stopCounts();
+        if (!body) return;
+        // закрита панель не має «програвати» анімації: геометрія в неї є,
+        // тому без цієї перевірки все відпрацювало б у невидимому стані
+        if (!statsOpen) return;
+        const pending = [];
+        for (const el of body.querySelectorAll('[data-anim]')) {
+            if (animSeen.has(el.dataset.anim)) continue;
+            // видимі вже зараз запускаємо в тому ж кадрі — без блимання
+            // готового стану перед початком анімації
+            if (animVisible(el, body)) runAnim(el, body);
+            else pending.push(el);
+        }
+        if (!pending.length) return;
+        if (typeof IntersectionObserver !== 'function') {
+            pending.forEach(el => runAnim(el, body));
+            return;
+        }
+        animIO = new IntersectionObserver(entries => {
+            for (const en of entries) if (en.isIntersecting) runAnim(en.target, body);
+        }, { root: body, threshold: 0.25 });
+        pending.forEach(el => animIO.observe(el));
+    }
+
+    // панель закрили посеред анімації: зупиняємо кадри й повертаємо
+    // підсумкові числа, інакше на екрані лишилися б нулі
+    function teardownAnims() {
+        if (animIO) {
+            animIO.disconnect();
+            animIO = null;
+        }
+        stopCounts();
+        const body = $('stats-body');
+        if (!body) return;
+        for (const el of body.querySelectorAll('.lt-count[data-count]')) el.textContent = fmtCount(el.dataset.count);
     }
 
     function renderStats() {
         const body = $('stats-body');
         if (body) {
             body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
-            // на інших вкладках елементів немає — виклик лише скасовує старий кадр
-            animateCounts(body);
+            setupAnims(body);
         }
         // підзаголовок читається як «скільки триває війна», а не як дата
         // початку даних: цифра однакова для всіх вкладок і рахується від 24.02
@@ -2205,10 +2283,12 @@
         }).then(res => {
             statsBusy = false;
             statsRes = res;
-            renderStats();
+            // перемальовуємо лише ту вкладку, якій потрібні ці дані: інакше
+            // пізня відповідь знищує вже показані «Втрати» й гасить анімації
+            if (statsTab === 'front') renderStats();
         }).catch(() => {
             statsBusy = false;
-            renderStats();
+            if (statsTab === 'front') renderStats();
         });
     }
 
@@ -2236,6 +2316,8 @@
             loadStats();
             // тягнемо заздалегідь, щоб вкладка «Втрати» відкривалась уже з даними
             ensureLosses(false);
+        } else {
+            teardownAnims();
         }
     }
 

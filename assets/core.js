@@ -2419,11 +2419,12 @@
              <stop offset=".91" stop-color="#fff" stop-opacity=".12"/>
              <stop offset="1" stop-color="#000" stop-opacity=".24"/>`),
         en: flagSvg('En',
-            `<rect width="60" height="40" fill="#012169"/>
-             <path d="M0 0l60 40M60 0L0 40" stroke="#fff" stroke-width="8"/>
-             <path d="M0 0l60 40M60 0L0 40" stroke="#c8102e" stroke-width="4.4"/>
-             <rect x="24" width="12" height="40" fill="#fff"/><rect y="14" width="60" height="12" fill="#fff"/>
-             <rect x="26" width="8" height="40" fill="#c8102e"/><rect y="16" width="60" height="8" fill="#c8102e"/>
+            `<defs><clipPath id="ltfEnPin"><path d="M30 20h30v20zv20h-30zh-30v-20zv-20h30z"/></clipPath></defs>
+             <rect width="60" height="40" fill="#012169"/>
+             <path d="M0 0l60 40M60 0L0 40" stroke="#ffffff" stroke-width="8"/>
+             <path d="M0 0l60 40M60 0L0 40" clip-path="url(#ltfEnPin)" stroke="#c8102e" stroke-width="5.33"/>
+             <path d="M30 0v40M0 20h60" stroke="#ffffff" stroke-width="13.33"/>
+             <path d="M30 0v40M0 20h60" stroke="#c8102e" stroke-width="8"/>
              <path d="M21 0h.5v40H21z" fill="#000" opacity=".13"/><path d="M42 0h-1v40h1z" fill="#000" opacity=".1"/>`,
             `<stop offset="0" stop-color="#000" stop-opacity=".3"/>
              <stop offset=".1" stop-color="#000" stop-opacity=".06"/>
@@ -4221,14 +4222,18 @@
     const statsFlagUri = {};
     // той самий папір, що й у великих прапорах статистики: три смуги однієї
     // картинки з різними фазами хвилі. extra-клас задає розмір (наприклад,
-    // lt-flag-mini у кнопці мови), щоб і британський прапор був полотном,
-    // а не пласким прямокутником
+    // lt-flag-mini у кнопці мови). Union Jack не ріжемо на смуги: діагоналі
+    // на стиках розходяться й прапор виглядає розірваним, тому він хитається
+    // одним полотном
     function flagHtml(flag, extra) {
         if (!statsFlagUri[flag]) {
             statsFlagUri[flag] = "url('data:image/svg+xml," + encodeURIComponent(FLAG_SVG[flag] || FLAG_SVG.en) + "')";
         }
+        const cloth = flag === 'en'
+            ? '<span class="lt-flag-cloth"></span>'
+            : '<span class="lt-flag-strip"></span><span class="lt-flag-strip"></span><span class="lt-flag-strip"></span>';
         return `<span class="lt-flag lt-flag-${flag}${extra ? ' ' + extra : ''}" style="--flag:${statsFlagUri[flag]}" aria-hidden="true">
-            <span class="lt-flag-strip"></span><span class="lt-flag-strip"></span><span class="lt-flag-strip"></span>
+            ${cloth}
         </span>`;
     }
     function statsFlag(flag) { return flagHtml(flag); }
@@ -4290,7 +4295,7 @@
             ${card('rus', 'ru', t('stats.uaCaptured'), T.rusPlus || 0, statsPct(T.rusPlus, land))}
             ${card('ukr', 'uk', t('stats.uaLiberated'), T.ukrPlus || 0, statsPct(T.ukrPlus, land))}
         </div>
-        <div class="lt-ua-chart">
+        <div class="lt-ua-chart" data-anim="ua-chart">
             <div class="lt-ua-chart-head"><span>${esc(t('stats.uaChart'))}</span><em>${esc(t('stats.uaSince'))}</em></div>
             <div class="lt-ua-bars">
                 <div class="lt-ua-col">
@@ -4375,31 +4380,9 @@
         atgm_srbm_systems: ['stats.eqAtgm', 'atgm'],
         submarines: ['stats.eqSubs', 'sub']
     };
-    // колесо як кільце: два кола в одному контурі, внутрішнє йде назустріч,
-    // тому отвір вирізається без маски й без заливки кольором тла
-    const eqWheel = (x, y, r, ri) =>
-        `M${x - r} ${y}a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 ${-r * 2} 0` +
-        `M${x - ri} ${y}a${ri} ${ri} 0 1 1 ${ri * 2} 0a${ri} ${ri} 0 1 1 ${-ri * 2} 0`;
-
-    // іконки техніки: суцільні силуети на сітці 32×20, прозорий фон,
-    // колір успадковується від тексту (currentColor)
-    const EQ_ICONS = {
-        tank: '<path fill-rule="evenodd" d="M2 13.6h21.2l2.4 2.2v2.2H2zM5.8 15.3h2.2v1.3H5.8zM10.3 15.3h2.2v1.3h-2.2zM14.8 15.3h2.2v1.3h-2.2z"/><path d="M2 9.6h18.6l2.6 2.4v1.6H2zM7 5.8h6.2l2.2 2.2v1.6H7zM14.2 6.2h13.8v1.9H14.2zM27.4 5.5h2.6v3.3h-2.6z"/>',
-        afv: `<path d="M2.6 10.6h17.8l4.4 3.2v1.6H2.6zM10.4 7h5.4l1.8 2.4v1.2h-7.2zM15.8 8.1h6.6v.9h-6.6z${eqWheel(6.6, 16.8, 2.3, 1)}${eqWheel(14, 16.8, 2.3, 1)}${eqWheel(21.4, 16.8, 2.3, 1)}"/>`,
-        arty: `<path d="M13.2 11.4 29 2.4 30.4 4.6 14.6 13.6zM9.8 9.4h5.8l1.8 2.4v2.6H9.8zM8.8 14.4h11.8l2.2 2.2H10zM9.8 16.4 3.6 19.4 2.6 18.2 8.8 15.4zM19.6 16.4 25.8 19.4 26.8 18.2 20.6 15.4z${eqWheel(13, 16.8, 2.4, 1)}${eqWheel(19.8, 16.8, 2.4, 1)}"/>`,
-        mlrs: `<path d="M2.6 12h20.4v3.2H2.6zM16.8 9.4h6.6l2.4 2.4v3.4h-9zM9 11.6h4.6V12.8H9zM2.6 9.2 11.6 1.4 12.52 2.46 3.52 10.26zM3.84 10.64 12.84 2.84 13.76 3.9 4.76 11.7zM5.09 12.07 14.09 4.27 15.01 5.33 6.01 13.13z${eqWheel(7, 16.4, 2.4, 1)}${eqWheel(22, 16.4, 2.4, 1)}"/>`,
-        aa: `<path d="M3 12h19.6v3.2H3zM17.4 9.4h6.4l2.4 2.4v3.4h-8.8zM8.8 11.4h5v1.2h-5zM10 11.4 3.4 4 5.22 2.44 11.82 10.24zM12.13 9.58 5.53 2.18 7.35 0.62 13.95 8.02z${eqWheel(7.8, 16.4, 2.4, 1)}${eqWheel(22, 16.4, 2.4, 1)}"/>`,
-        plane: '<path d="M15.2 1.6H16.8L17.4 8 29.4 14.5V16L17.5 12.6V15.8L20.1 18.2V19.5L16 18.4 11.9 19.5V18.2L14.5 15.8V12.6L2.6 16V14.5L14.6 8z"/>',
-        heli: '<path d="M2 3.2h28v1.4H2zM15.3 4.6h1.8v3h-1.8zM12 7.4h7.6l4.6 3.4v2.4H12zM3.6 10.4h8.4v2.2H3.6zM2 5.6h1.9v5L2 9.4zM.4 7h1.8v1.4H.4zM8.6 16.4h12v1.5h-12zM10.4 13.2h1.4v3.2h-1.4zM18.4 13.2h1.4v3.2h-1.4z"/>',
-        uav: '<path d="M2 9.2 2.9 8.5h26.2l.9.7v.8l-.9.8H2.9L2 10zM14.7 3h2.6l.9 1.8v11.8h-4.4V4.8zM12.2 2.2h7.6v1.2h-7.6zM15.3 15.2h1.4l-3.4 3.6H11.2zM16.7 15.2h1.4l3.4 3.6H19.4z"/>',
-        missile: '<path d="M4.4 9.2h20.2l6.2 1.4-6.2 1.4H4.4zM2.6 9.6h2v2.4h-2zM6.2 9.2 4 6.6h2.4L7.8 9.2zM6.2 12 4 14.6h2.4L7.8 12zM18.4 9.2 16.6 7h2.2L19.8 9.2zM18.4 12 16.6 14.2h2.2L19.8 12z"/>',
-        truck: `<path d="M2.6 14.8v-3.4c0-1.8 1.3-2.9 3-2.9h10.8v6.3zM6 8.2h2.6v1.4H6zM16.6 10.4h5l2.6 2.8v1.6h-7.6z${eqWheel(7.2, 16.4, 2.4, 1)}${eqWheel(22.4, 16.4, 2.4, 1)}"/>`,
-        ship: '<path d="M2 13h27.6l1.6 2.2-3.8 2.8H6L2.8 15.4zM17.4 10.2h7.2v2.8h-7.2zM18.6 7.4h4.6v2.8h-4.6zM20.4 3.6h1.4v3.8h-1.4zM18.2 5h5.8v1.1h-5.8zM15.4 9.4h2.2v3.6h-2.2zM8.2 11.4h4.6v1.5H8.2zM12.8 11.8h4.6v.9h-4.6z"/>',
-        radar: `<path d="M2 12.6h15.4v2.8H2zM2 9.8h6l1.4 2.8H2zM16.4 8h1.6v4.6h-1.6zM19.6 2.8 25.8 5.4 24.2 11.2 18.2 11.6 16.6 7zM18.6 7 22.8 5.8 23.3 6.9 19.2 8.2z"/><path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M26 4.6a5.2 5.2 0 0 1 0 8.8M28.8 2.4a8 8 0 0 1 0 13.2"/>${eqWheel(6.4, 16.8, 2.2, 0.9)}${eqWheel(13.6, 16.8, 2.2, 0.9)}`,
-        atgm: '<path d="M4.8 10.6 23 2.8 25 5.2 6.8 13zM9.6 6.2h3.2v2.6H9.6zM16.8 9.6h2.4v2.4h-2.4zM17 11.6h1.4v7.2H17zM16.2 11.6 18.6 11.6 13.2 18.8 11.6 18.8zM17.4 11.6 19.8 11.6 25.2 18.8 23.6 18.8z"/>',
-        sub: '<path d="M2.6 12.2h24.6l3.2 1.5-3.2 2.3H5.4L2.6 13.9zM13.4 12.2V6h5v6.2zM15.4 3.2h1.2v2.8h-1.2zM14.6 3.2h3v1h-3zM21 12.2 23 10h2.2l-1.2 2.2zM2.6 12.2 1.4 9.6h2.4l1.6 2.6zM2.6 16 1.4 18.4h2.4L5.4 16zM.6 13.8h1.6v2.2H.6z"/>'
-    };
-    const eqIcon = k => `<svg class="lt-eq-ic" viewBox="0 0 32 20" fill="currentColor" aria-hidden="true">${EQ_ICONS[k] || ''}</svg>`;
+    // іконки техніки — точні копії пака користувача: PNG лежать в
+    // assets/icons, а CSS-маска фарбує їх у колір тексту
+    const eqIcon = k => `<i class="lt-eq-ic eq-i-${k}" aria-hidden="true"></i>`;
 
     // добові ряди лежать як [дата, ...прирости в порядку полів], тому
     // індекс шукаємо за списком полів, а не за жорстким номером
@@ -4418,7 +4401,7 @@
     const eqKeys = E => EQ_FIELDS.filter(k => E.totals && E.totals[k] != null && E.totals[k] > 0);
 
     function eqGrid(E) {
-        return `<div class="lt-eq-grid">${eqKeys(E).map(k => {
+        return `<div class="lt-eq-grid" data-anim="eq-grid">${eqKeys(E).map(k => {
             const [key, icon] = EQ_META[k];
             const dest = E.destroyed && E.destroyed[k] != null ? E.destroyed[k] : null;
             return `<article class="lt-eq-tile" title="${esc(t(key))} · ${lossNum(E.totals[k])}">
@@ -4433,7 +4416,7 @@
         const keys = eqKeys(E).slice().sort((a, b) => E.totals[b] - E.totals[a]);
         const max = Math.max(1, ...keys.map(k => E.totals[k]));
         const sum = keys.reduce((s, k) => s + E.totals[k], 0);
-        return `<div class="lt-eqb">${keys.map(k => {
+        return `<div class="lt-eqb" data-anim="eq-types">${keys.map(k => {
             const [key, icon] = EQ_META[k];
             const v = E.totals[k];
             // корінь, а не лінійна шкала: інакше 40 кораблів на тлі 9 700 ББМ
@@ -4518,7 +4501,7 @@
                 <div class="lt-loss-head"><span>${esc(t('stats.eqTitle'))}</span><em>${esc(t('stats.eqOwn'))}</em></div>
                 <div class="lt-eq-cap">${esc(t('stats.eqSrc'))}${E.asOf ? ' · ' + esc(lossDate(E.asOf)) : ''}</div>
             </div>
-            <div class="lt-eq-sum">
+            <div class="lt-eq-sum" data-anim="eq-sum">
                 <div class="lt-eq-sum-main"><span>${esc(t('stats.eqTotal'))}</span><b>${lossCount(total)}</b><i>${esc(t('stats.eqUnits'))}</i></div>
                 ${sm ? `<div class="lt-eq-sum-brk">
                     <span>${esc(t('stats.eqDestroyed'))} <b>${lossCount(sm.destroyed)}</b></span>
@@ -4532,12 +4515,12 @@
                 <div class="lt-loss-head"><span>${esc(t('stats.eqTypes'))}</span><em>${esc(t('stats.eqTypesSub'))}</em></div>
                 ${eqTypes(E)}
             </div>
-            ${days.length > 1 ? `<div class="lt-loss-chart lt-eq-chart">
+            ${days.length > 1 ? `<div class="lt-loss-chart lt-eq-chart" data-anim="eq-arty">
                 <div class="lt-loss-head"><span>${esc(t('stats.eqArtyChart'))}</span><em>${esc(t('stats.eqDaily'))}</em></div>
                 <div class="lt-loss-leg">${legendA}</div>
                 ${eqLineSVG(E, days, keysA)}
             </div>` : ''}
-            ${days.length > 1 ? `<div class="lt-loss-chart lt-eq-chart">
+            ${days.length > 1 ? `<div class="lt-loss-chart lt-eq-chart" data-anim="eq-uav">
                 <div class="lt-loss-head"><span>${esc(t('stats.eqUavChart'))}</span><em>${esc(t('stats.eqDaily'))} · ${lossNum(lastUav)}</em></div>
                 ${eqBarSVG(E, days, 'uav_systems')}
             </div>` : ''}
@@ -4661,7 +4644,7 @@
         return `<div class="lt-loss-status">
             <em>${esc(t('stats.lossUpd'))} ${esc(lossWhen(L.updatedAt))}</em>
         </div>
-        <div class="lt-loss-heroes">
+        <div class="lt-loss-heroes" data-anim="loss-heroes">
             <article class="lt-loss-hero rus">
                 ${statsFlag('ru')}
                 <div class="lt-loss-hero-txt">
@@ -4681,7 +4664,7 @@
                 </div>
             </article>
         </div>
-        <div class="lt-loss-chart lt-loss-years">
+        <div class="lt-loss-chart lt-loss-years" data-anim="loss-years">
             <div class="lt-loss-head"><span>${esc(t('stats.lossYears'))}</span><em>${esc(t('stats.lossThousand'))}</em></div>
             <div class="lt-loss-leg">
                 <span class="ru">${esc(t('stats.lossRu'))}</span>
@@ -4691,7 +4674,7 @@
             <div class="lt-loss-bars">${cols}</div>
             <div class="lt-loss-foot"><span>* ${esc(t('stats.lossPartial'))}</span></div>
         </div>
-        <div class="lt-loss-chart lt-loss-cum">
+        <div class="lt-loss-chart lt-loss-cum" data-anim="loss-cum">
             <div class="lt-loss-head"><span>${esc(t('stats.lossCum'))}</span><em>${esc(t('stats.lossThousand'))}</em></div>
             ${lossCumSVG(ru, ua)}
             <div class="lt-loss-foot"><span>${esc(t('stats.lossCumNote', { n: lossNum(ua.killed) }))}</span></div>

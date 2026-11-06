@@ -748,9 +748,9 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .lt-ua-bar {
     position: relative; width: 54px; height: var(--h);
     transform-origin: 50% 100%;
-    animation: lt-ua-grow 1.1s cubic-bezier(.2, .9, .25, 1) both;
 }
-.lt-ua-col + .lt-ua-col .lt-ua-bar { animation-delay: .14s; }
+.lt-anim .lt-ua-bar { animation: lt-ua-grow 1.1s cubic-bezier(.2, .9, .25, 1) both; }
+.lt-anim .lt-ua-col + .lt-ua-col .lt-ua-bar { animation-delay: .14s; }
 .lt-ua-bar.rus { --c0: #6c2114; --c1: #b23a1e; --c2: #ff8a5c; --c3: #ffc9a8; }
 .lt-ua-bar.ukr { --c0: #14603a; --c1: #238c55; --c2: #7df5b4; --c3: #c9ffe1; }
 .lt-ua-bar::before {
@@ -828,8 +828,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .lt-loss-hero-txt b {
     font-family: var(--pixel); font-size: 27px; font-weight: 700; line-height: 1.02;
     letter-spacing: .5px; color: var(--text);
-    animation: lt-loss-count .7s cubic-bezier(.2, .9, .25, 1) both;
 }
+.lt-anim .lt-loss-hero-txt b { animation: lt-loss-count .7s cubic-bezier(.2, .9, .25, 1) both; }
 .lt-loss-hero.rus b { color: #ffb59a; }
 .lt-loss-hero.ukr b { color: #a8ffd2; }
 .lt-loss-hero-txt b i {
@@ -898,13 +898,13 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .lt-loss-bar {
     background: linear-gradient(180deg, #ffb59a, #ff7f56 55%, #a63f1d);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), inset -3px 0 6px rgba(0, 0, 0, .18);
-    animation: lt-loss-grow .95s cubic-bezier(.2, .9, .25, 1) both;
 }
+.lt-anim .lt-loss-bar { animation: lt-loss-grow .95s cubic-bezier(.2, .9, .25, 1) both; }
 .lt-loss-bar.ua {
     background: linear-gradient(180deg, #b6ffd8, #59d995 52%, #14724a);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), inset -3px 0 6px rgba(0, 0, 0, .18);
-    animation-delay: .1s;
 }
+.lt-anim .lt-loss-bar.ua { animation-delay: .1s; }
 /* частковий рік: неповні дані, тому штрихуємо й приглушуємо */
 .lt-loss-bar.partial {
     opacity: .78;
@@ -923,11 +923,11 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
     color: var(--text-2); white-space: nowrap;
     text-shadow: 0 1px 4px rgba(0, 0, 0, .8);
 }
-.lt-loss-col:nth-child(2) .lt-loss-bar { animation-delay: .06s; }
-.lt-loss-col:nth-child(3) .lt-loss-bar { animation-delay: .12s; }
-.lt-loss-col:nth-child(4) .lt-loss-bar { animation-delay: .18s; }
-.lt-loss-col:nth-child(5) .lt-loss-bar { animation-delay: .24s; }
-.lt-loss-col:nth-child(6) .lt-loss-bar { animation-delay: .3s; }
+.lt-anim .lt-loss-col:nth-child(2) .lt-loss-bar { animation-delay: .06s; }
+.lt-anim .lt-loss-col:nth-child(3) .lt-loss-bar { animation-delay: .12s; }
+.lt-anim .lt-loss-col:nth-child(4) .lt-loss-bar { animation-delay: .18s; }
+.lt-anim .lt-loss-col:nth-child(5) .lt-loss-bar { animation-delay: .24s; }
+.lt-anim .lt-loss-col:nth-child(6) .lt-loss-bar { animation-delay: .3s; }
 .lt-loss-y {
     padding: 6px 0 5px; text-align: center;
     font-family: var(--pixel); font-size: 9.5px; font-weight: 700; letter-spacing: .8px;
@@ -950,14 +950,21 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .lt-loss-svg .lt-loss-line,
 .lt-loss-svg .lt-loss-tail {
     fill: none; stroke-width: 1.9; stroke-linejoin: round; stroke-linecap: round;
-    stroke-dasharray: 1; stroke-dashoffset: 1;
+    stroke-dasharray: 1; stroke-dashoffset: 0;
+}
+.lt-anim .lt-loss-svg .lt-loss-line {
+    stroke-dashoffset: 1;
     animation: lt-loss-draw 1.4s cubic-bezier(.3, .7, .3, 1) .15s forwards;
 }
 .lt-loss-svg .lt-loss-line.ru { stroke: #ff9a76; }
-.lt-loss-svg .lt-loss-line.ua { stroke: #8dffc0; animation-delay: .35s; }
+.lt-loss-svg .lt-loss-line.ua { stroke: #8dffc0; }
+.lt-anim .lt-loss-svg .lt-loss-line.ua { animation-delay: .35s; }
 .lt-loss-svg .lt-loss-tail {
     stroke: rgba(255, 154, 118, .7); stroke-width: 1.4;
-    stroke-dasharray: .014 .012; stroke-dashoffset: 0; opacity: 0;
+    stroke-dasharray: .014 .012;
+}
+.lt-anim .lt-loss-svg .lt-loss-tail {
+    opacity: 0;
     animation: lt-loss-fade .6s 1.35s forwards;
 }
 .lt-loss-svg .dot { stroke: #07090c; stroke-width: 1; }
@@ -1042,7 +1049,28 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 }
 .lt-eq-tile:hover { border-color: var(--line-2); }
 .lt-eq-top { display: flex; align-items: center; gap: 6px; color: var(--dim); min-width: 0; }
-.lt-eq-ic { width: 26px; height: 16.25px; flex: 0 0 auto; color: #aab4bf; }
+/* іконки техніки — нарізані з пака користувача PNG; маска фарбує їх
+   у колір тексту, тому плитки й рейтинг лишаються монохромними */
+.lt-eq-ic {
+    display: inline-block; width: 26px; height: 16.25px; flex: 0 0 auto;
+    background: currentColor; opacity: .92;
+    -webkit-mask: var(--eq-ic) center / contain no-repeat;
+    mask: var(--eq-ic) center / contain no-repeat;
+}
+.eq-i-tank { --eq-ic: url(icons/eq-tank.png); }
+.eq-i-afv { --eq-ic: url(icons/eq-afv.png); }
+.eq-i-arty { --eq-ic: url(icons/eq-arty.png); }
+.eq-i-mlrs { --eq-ic: url(icons/eq-mlrs.png); }
+.eq-i-aa { --eq-ic: url(icons/eq-aa.png); }
+.eq-i-plane { --eq-ic: url(icons/eq-plane.png); }
+.eq-i-heli { --eq-ic: url(icons/eq-heli.png); }
+.eq-i-truck { --eq-ic: url(icons/eq-truck.png); }
+.eq-i-ship { --eq-ic: url(icons/eq-ship.png); }
+.eq-i-missile { --eq-ic: url(icons/eq-missile.png); }
+.eq-i-uav { --eq-ic: url(icons/eq-uav.png); }
+.eq-i-radar { --eq-ic: url(icons/eq-radar.png); }
+.eq-i-atgm { --eq-ic: url(icons/eq-atgm.png); }
+.eq-i-sub { --eq-ic: url(icons/eq-sub.png); }
 .lt-eq-k {
     font-family: var(--pixel); font-size: 8px; font-weight: 700;
     letter-spacing: .45px; line-height: 1.25; color: var(--dim);
@@ -1066,7 +1094,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
     align-items: center; gap: 7px;
 }
 .lt-eqb-k { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.lt-eqb-k .lt-eq-ic { width: 19px; height: 11.9px; color: var(--dim-2); }
+.lt-eqb-k .lt-eq-ic { width: 22px; height: 13.75px; color: var(--dim-2); }
 .lt-eqb-k i {
     font-style: normal; font-family: var(--pixel); font-size: 8px; font-weight: 700;
     letter-spacing: .4px; line-height: 1.15; color: var(--dim);
@@ -1082,8 +1110,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
     background: linear-gradient(90deg, rgba(255, 138, 92, .55), #ffc35e);
     box-shadow: 0 0 10px rgba(255, 179, 82, .28);
     transform-origin: left center;
-    animation: lt-eqb-grow .8s var(--ease) both;
 }
+.lt-anim .lt-eqb-track b { animation: lt-eqb-grow .8s var(--ease) both; }
 .lt-eqb-v {
     text-align: right; font-family: var(--pixel); font-size: 10.5px; font-weight: 700;
     letter-spacing: .2px; color: var(--text-2); font-variant-numeric: tabular-nums;
@@ -1167,6 +1195,18 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .lt-flag-strip:nth-child(1) { left: 0; background-position: 0% 50%; animation-delay: -2.27s; }
 .lt-flag-strip:nth-child(2) { left: 32%; background-position: 50% 50%; animation-delay: -1.13s; }
 .lt-flag-strip:nth-child(3) { left: 64%; background-position: 100% 50%; animation-delay: 0s; }
+/* союзний прапор — суцільним полотном: смуги рвали діагоналі хрестів,
+   тому тут одна тканина з м'яким погойдуванням навколо древка */
+.lt-flag-cloth {
+    position: absolute; inset: 0;
+    background-image: var(--flag);
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    transform-origin: 4% 50%;
+    backface-visibility: hidden;
+    animation: lt-flag-sway 6.8s cubic-bezier(.45, .05, .55, .95) infinite;
+    animation-play-state: paused;
+}
 /* прапор РФ розгортаємо дзеркально, як його зазвичай показують поруч */
 .lt-flag-ru { transform: scaleX(-1); perspective-origin: 100% 50%; }
 
@@ -1178,6 +1218,23 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
     animation-play-state: running;
     will-change: transform;
 }
+.lt-flag-mini .lt-flag-cloth {
+    animation-name: lt-flag-sway-mini;
+    animation-play-state: running;
+    will-change: transform;
+}
+@keyframes lt-flag-sway-mini {
+    0%, 100% { transform: rotateY(-2.5deg) skewY(.35deg); }
+    28% { transform: rotateY(4deg) skewY(-.5deg); }
+    56% { transform: rotateY(6.5deg) skewY(-.1deg); }
+    78% { transform: rotateY(1.2deg) skewY(.4deg); }
+}
+@keyframes lt-flag-sway {
+    0%, 100% { transform: rotateY(-4deg) skewY(.7deg); }
+    27% { transform: rotateY(7deg) skewY(-.9deg); }
+    52% { transform: rotateY(11deg) skewY(-.15deg); }
+    76% { transform: rotateY(2.5deg) skewY(.75deg); }
+}
 @keyframes lt-flag-wave-mini {
     0%, 100% { transform: rotateY(-3deg) skewY(.4deg); }
     28% { transform: rotateY(5deg) skewY(-.6deg); }
@@ -1188,9 +1245,13 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 /* анімацію тримаємо тільки на видимій панелі: закрита статистика й
    вкладка в фоні не витрачають кадри */
 #stats.open .lt-flag-strip,
-.pane.active .lt-flag-strip { animation-play-state: running; will-change: transform; }
+#stats.open .lt-flag-cloth,
+.pane.active .lt-flag-strip,
+.pane.active .lt-flag-cloth { animation-play-state: running; will-change: transform; }
 html.lt-bg #stats.open .lt-flag-strip,
-html.lt-bg .pane.active .lt-flag-strip {
+html.lt-bg #stats.open .lt-flag-cloth,
+html.lt-bg .pane.active .lt-flag-strip,
+html.lt-bg .pane.active .lt-flag-cloth {
     animation-play-state: paused;
     will-change: auto;
 }
