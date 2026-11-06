@@ -886,7 +886,7 @@
             'lt-anno-fill-shadow', 'lt-anno-fill', 'lt-anno-rim', 'lt-anno-glow', 'lt-anno-shadow', 'lt-anno-casing', 'lt-anno-line', 'lt-anno-hit', 'lt-anno-hit-fill',
             'lt-draft-fill', 'lt-draft-glow', 'lt-draft-casing', 'lt-draft-line', 'lt-draft-pts',
             'lt-ruler-fill', 'lt-ruler-glow', 'lt-ruler-shadow', 'lt-ruler-casing', 'lt-ruler-line', 'lt-ruler-halo', 'lt-ruler-dots',
-            'lt-ps-fill', 'lt-ps-glow', 'lt-ps-line'
+            'lt-ps-fill', 'lt-ps-glow', 'lt-ps-line', 'lt-ps-3d-plate', 'lt-ps-3d-rim'
         ].forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
     }
 
@@ -1636,10 +1636,13 @@
         if (!src) return;
         const fs = searchPick && searchPick.feature ? [searchPick.feature] : [];
         src.setData({ type: 'FeatureCollection', features: fs });
-        const vis = fs.length ? 'visible' : 'none';
+        // у 3D плоску заливку й пунктир ховаємо: вони лягли б під рельєф і
+        // дублювали обʼємну пластину, яку малює ядро
+        const vis = fs.length && !map._lt3d ? 'visible' : 'none';
         ['lt-ps-fill', 'lt-ps-glow', 'lt-ps-line'].forEach(id => {
             if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
         });
+        LT.setSearch3D(map, fs.length ? searchPick.feature : null);
         restack();
     }
 
@@ -1662,6 +1665,17 @@
             e.stopPropagation();
             clearSearch();
         });
+    }
+
+    // локальний індекс знає лише точку, тож перший клік може статися до
+    // відповіді Nominatim. коли приходить справжній контур того ж міста —
+    // підміняємо вибір, щоб камера стала по межі й зона намалювалася
+    function upgradeLocalPick(rows) {
+        if (!searchPick || !searchPick.res || !searchPick.res._local || searchPick.feature) return;
+        const key = searchPick.name.toLowerCase();
+        const hit = rows.find(r => r.geojson
+            && String(r.name || shortName(r)).trim().toLowerCase() === key);
+        if (hit) pickSearch(hit, 0);
     }
 
     function pickSearch(res, index) {
@@ -1723,7 +1737,10 @@
                 display_name: name,
                 type: (e[4] || 4) <= 3 ? 'city' : 'town',
                 lon, lat,
-                boundingbox: [lon - 0.1, lat - 0.07, lon + 0.1, lat + 0.07]
+                // порядок як у Nominatim: південь, північ, захід, схід. із
+                // іншим порядком fitBounds отримував перевернуту рамку й
+                // кидав камеру в випадкову точку на іншому кінці карти
+                boundingbox: [lat - 0.07, lat + 0.07, lon - 0.1, lon + 0.1]
             });
         }
         return rows;
@@ -1755,6 +1772,7 @@
                 searchRows = merged;
                 searchActive = 0;
                 renderSearchRows();
+                upgradeLocalPick(merged);
                 if (autoPick) pickSearch(merged[0], 0);
             } else if (local.length) {
                 searchRows = local;
@@ -1789,6 +1807,7 @@
         searchActive = -1;
         searchSeq++;
         clearSearchMarker();
+        LT.clearSearch3D(map);
         const src = map.getSource('lt-ps');
         if (src) src.setData(EMPTY_FC);
         ['lt-ps-fill', 'lt-ps-glow', 'lt-ps-line'].forEach(id => {
@@ -2042,6 +2061,13 @@
     function renderStats() {
         const body = $('stats-body');
         if (body) body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
+        // підзаголовок читається як «скільки триває війна», а не як дата
+        // початку даних: цифра однакова для всіх вкладок і рахується від 24.02
+        const sub = $('stats-sub');
+        if (sub) {
+            const n = LT.warDays();
+            sub.textContent = LT.t('stats.warDay', { n: n.toLocaleString(LT.locale()) });
+        }
         syncStatsTabs();
     }
 
@@ -2168,32 +2194,42 @@
         // набір полотен залежить від режиму: у 3D зони малює екструзія, тож
         // їхні градієнтні полотна прибираються (і повертаються в площині)
         if (blend) blend.sync();
+        // знайдена територія теж міняє вигляд: пластина в 3D, заливка в площині
+        if (searchPick) refreshSearchArea();
         // «РЕЛЬЄФ» має два різні стани (3D/площина) — після перемикання
         // показуємо той, що діє в новому режимі
         syncReliefBtn();
     }
 
     // стан читаємо з самої мапи, а не з класу кнопки: два перемикачі не зможуть
-    // розійтися, навіть якщо хтось натисне під час анімації нахилу
-    function toggle3D() { set3DView(!map._lt3d); }
+    // розійтися, навіть якщо хтось натисне під час анімації нахилу.
+    // під час переходу _lt3d ще показує старий режим, тому ціль беремо з _lt3dWant
+    function toggle3D() {
+        const want = map._lt3dWant == null ? !!map._lt3d : !!map._lt3dWant;
+        set3DView(!want);
+    }
 
     /* ------------------- перемикачі шарів: рельєф / НП / зони ------------------- */
 
     // «РЕЛЬЄФ» працює за режимом: у 3D керує горами обʼємної карти (типово
     // увімкнено), у площині вмикає тініювання (типово вимкнено)
+    function mode3d() {
+        return map._lt3dWant == null ? !!map._lt3d : !!map._lt3dWant;
+    }
+
     function syncReliefBtn() {
         const btn = $('view-relief');
         if (!btn) return;
-        const on = !!map._lt3d ? state.relief3d : state.reliefFlat;
+        const on = mode3d() ? state.relief3d : state.reliefFlat;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-pressed', String(on));
     }
 
     function setReliefToggle(on) {
         on = !!on;
-        if (map._lt3d) state.relief3d = on; else state.reliefFlat = on;
+        if (mode3d()) state.relief3d = on; else state.reliefFlat = on;
         try {
-            localStorage.setItem(map._lt3d ? 'LINETATE:relief3d' : 'LINETATE:reliefflat', on ? '1' : '0');
+            localStorage.setItem(mode3d() ? 'LINETATE:relief3d' : 'LINETATE:reliefflat', on ? '1' : '0');
         } catch (e) { }
         LT.setReliefUser(map, on);
         syncReliefBtn();

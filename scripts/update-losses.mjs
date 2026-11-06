@@ -24,6 +24,18 @@ let uaSlow = !!UA_PROXY;
 const ZONA_PAGE = 'https://zona.media/casualties';
 const ZONA_BUNDLE = 'https://s3.zona.media/infographics/bodycount/main.075985bf49bbe5ddf8ec.js.br';
 
+// втрати техніки РФ за зведеннями Генштабу ЗСУ: відкритий API з добовою
+// історією. Це заявлені втрати, а не підтверджені імена, тому в інтерфейсі
+// вони живуть окремим блоком зі своїм джерелом.
+const EQ_API = 'https://russianwarship.rip/api/v2';
+const EQ_FIELDS = [
+    'tanks', 'armoured_fighting_vehicles', 'artillery_systems', 'mlrs',
+    'aa_warfare_systems', 'planes', 'helicopters', 'vehicles_fuel_tanks',
+    'warships_cutters', 'cruise_missiles', 'uav_systems',
+    'special_military_equip', 'atgm_srbm_systems', 'submarines'
+];
+const EQ_DAYS = 30;
+
 const MONTHS_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -258,6 +270,36 @@ async function collectRU() {
     };
 }
 
+/* --------------------------- втрати техніки ---------------------------- */
+
+const isoDay = d => d.toISOString().slice(0, 10);
+
+async function collectEquip(prev) {
+    const latest = JSON.parse(await get(`${EQ_API}/statistics/latest`));
+    const d = latest && latest.data;
+    if (!d || !d.stats || !d.date) throw new Error('Генштаб не віддав поточний запис');
+    const end = new Date(d.date + 'T00:00:00Z');
+    const from = new Date(end.getTime() - (EQ_DAYS - 1) * 864e5);
+    const period = JSON.parse(await get(`${EQ_API}/statistics?date_from=${isoDay(from)}&date_to=${d.date}&limit=50`));
+    const recs = (period && period.data && period.data.records) || [];
+    // [дата, ...добові прирости в порядку EQ_FIELDS] — компактно для клієнта
+    const days = recs.map(r => {
+        const inc = r.increase || {};
+        return [r.date, ...EQ_FIELDS.map(f => Math.max(0, Number(inc[f]) || 0))];
+    });
+    console.log(`  Генштаб: ${days.length} днів, станом на ${d.date}`);
+    return {
+        asOf: d.date,
+        day: d.day,
+        url: 'https://russianwarship.rip/',
+        sourceUrl: d.resource || '',
+        fields: EQ_FIELDS,
+        totals: Object.fromEntries(EQ_FIELDS.map(f => [f, Math.max(0, Number((d.stats || {})[f]) || 0)])),
+        increase: Object.fromEntries(EQ_FIELDS.map(f => [f, Math.max(0, Number((d.increase || {})[f]) || 0)])),
+        days: days.length ? days : (prev && prev.days) || []
+    };
+}
+
 /* --------------------------------- main --------------------------------- */
 
 function readPrev() {
@@ -270,13 +312,20 @@ async function main() {
     const only = (process.env.ONLY || '').toLowerCase();
     let ua = prev.ua || {};
     let ru = prev.ru || {};
-    if (only !== 'ru') {
+    let equip = prev.equip || null;
+    if (only !== 'equip' && only !== 'ru') {
         console.log('Втрати: тягну UALosses…');
         ua = await collectUA(prev);
     }
-    if (only !== 'ua') {
+    if (only !== 'equip' && only !== 'ua') {
         console.log('Втрати: тягну Mediazona…');
         ru = await collectRU();
+    }
+    if (only !== 'ru' && only !== 'ua') {
+        console.log('Втрати: тягну техніку зі зведень Генштабу…');
+        // якщо API недоступне, лишаємо попередній блок, а не ламаємо весь прогін
+        try { equip = await collectEquip(prev.equip); }
+        catch (e) { console.log(`  Генштаб: ${e.message} — лишаю попередні дані`); }
     }
     if (!ua.killed || !ru.named) throw new Error('немає даних однієї зі сторін — файл не перезаписую');
 
@@ -285,9 +334,11 @@ async function main() {
         ru: { ...ru, source: 'Mediazona + Meduza', url: ZONA_PAGE },
         ua: { ...ua, source: 'UALosses', url: 'https://ualosses.org/en/statistics/' }
     };
+    if (equip) doc.equip = equip;
     // щоденний прогін без нових цифр не має плодити коміти: показуємо час,
     // коли дані справді змінилися, а не час останньої перевірки
-    if (prev.ru && prev.ua && JSON.stringify([prev.ru, prev.ua]) === JSON.stringify([doc.ru, doc.ua])) {
+    if (prev.ru && prev.ua && JSON.stringify([prev.ru, prev.ua, prev.equip])
+        === JSON.stringify([doc.ru, doc.ua, doc.equip])) {
         doc.updatedAt = prev.updatedAt || doc.updatedAt;
     }
     if (JSON.stringify(doc) === JSON.stringify(prev)) {

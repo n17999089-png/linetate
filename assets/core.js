@@ -15,6 +15,14 @@
     const isoOf = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     const fromIso = s => { const p = s.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); };
     const todayIso = () => isoOf(new Date());
+    // повних днів від 24.02.2022: рахуємо за календарними датами, без часу,
+    // щоб цифра не стрибала залежно від годинника
+    const WAR_START = Date.UTC(2022, 1, 24);
+    function warDays() {
+        const now = new Date();
+        const t = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+        return Math.max(0, Math.round((t - WAR_START) / 864e5));
+    }
     const startOfMonth = d => new Date(d.getFullYear(), d.getMonth(), 1);
     const fmtFull = iso => fromIso(iso).toLocaleDateString(locale(), { day: '2-digit', month: 'long', year: 'numeric' });
     const fmtShort = iso => { const p = iso.split('-'); return `${p[2]}.${p[1]}`; };
@@ -144,8 +152,8 @@
     /* ------------------------------ языки ------------------------------ */
 
     const LANG_KEY = 'LINETATE:__lang';
-    const LANGS = ['uk', 'en'];
-    const LOCALES = { uk: 'uk-UA', en: 'en-GB' };
+    const LANGS = ['uk', 'en', 'ru'];
+    const LOCALES = { uk: 'uk-UA', en: 'en-GB', ru: 'ru-RU' };
 
     const I18N = {
         uk: {
@@ -175,11 +183,11 @@
             'viewer.advanceNone': 'НЕМАЄ СУСІДНЬОЇ ДАТИ ДЛЯ ПОРІВНЯННЯ', 'viewer.tagline': 'ОПЕРАТИВНА КАРТА', 'dock.point': 'ТОЧКА',
             'viewer.stats': 'Статистика', 'viewer.statsHint': 'Підсумок змін фронту з 4 листопада',
             'tab.stats': 'Стат',
-            'stats.title': 'СТАТИСТИКА ФРОНТУ', 'stats.sub': 'З 4 ЛИСТОПАДА',
+            'stats.title': 'СТАТИСТИКА ФРОНТУ', 'stats.warDay': '{n} ДНІВ ВІД ПОЧАТКУ ВІЙНИ',
             'stats.ukr': 'УКРАЇНА', 'stats.rus': 'РОСІЯ', 'stats.ukrShort': 'УКР', 'stats.rusShort': 'РФ',
             'stats.plus': 'ЗДОБУТО', 'stats.minus': 'ВТРАЧЕНО', 'stats.day': 'ДЕНЬ', 'stats.km2': 'КМ²',
-            'stats.empty': 'НЕМАЄ ДАНИХ З 4 ЛИСТОПАДА',
-            'stats.emptyHint': 'СТАТИСТИКА РАХУЄТЬСЯ ВІД 04.11. ДОДАЙТЕ ЦЮ ДАТУ В РЕДАКТОРІ Й ПЕРЕРАХУЙТЕ.',
+            'stats.empty': 'НЕМАЄ ДАНИХ ДЛЯ СТАТИСТИКИ',
+            'stats.emptyHint': 'ДОДАЙТЕ ДАТИ В РЕДАКТОРІ Й ПЕРЕРАХУЙТЕ.',
             'stats.loading': 'РАХУЄМО ПЛОЩІ…', 'stats.baseline': 'БАЗА — {date}',
             'stats.period': 'ФРОНТ ЗА ПЕРІОД', 'stats.toUkr': 'на користь України',
             'stats.toRus': 'на користь Росії', 'stats.flat': 'без змін', 'stats.daysN': '{n} дн.',
@@ -201,7 +209,7 @@
             'stats.uaLiberated': 'ЗВІЛЬНИЛА УКРАЇНА', 'stats.uaSince': 'ЗА ВЕСЬ ЧАС',
             'stats.uaChart': 'ЗМІНА ТЕРИТОРІЙ', 'stats.uaNoDays': 'ЩЕ НЕМАЄ ДНІВ ДЛЯ ПОРІВНЯННЯ',
             'stats.tabLosses': 'ВТРАТИ',
-            'stats.lossAuto': 'АВТООНОВЛЕННЯ', 'stats.lossUpd': 'оновлено',
+            'stats.lossUpd': 'оновлено',
             'stats.lossRuCap': 'ВС РФ · ПІДТВЕРДЖЕНО ІМЕН', 'stats.lossUaCap': 'ЗСУ · ПІДТВЕРДЖЕНО ЗАГИБЛИХ',
             'stats.lossRu': 'РФ', 'stats.lossUa': 'ЗСУ', 'stats.lossPeople': 'осіб',
             'stats.lossExcess': 'оцінка надсмертності', 'stats.lossMissing': 'зниклих безвісти', 'stats.lossPow': 'у полоні',
@@ -211,9 +219,19 @@
             'stats.lossCumNote': 'лінія — за датою загибелі; підсумок UALosses — {n}, різниця — записи без дати',
             'stats.lossSrcRu': 'Джерело: поіменний список «Медіазони» + оцінка надсмертності Meduza',
             'stats.lossSrcUa': 'Джерело: UALosses — відкриті повідомлення про загибель',
-            'stats.lossWeekly': 'дані оновлюються автоматично',
             'stats.lossErr': 'НЕ ВДАЛОСЯ ЗАВАНТАЖИТИ ДАНІ', 'stats.lossRetry': 'СПРОБУВАТИ ЩЕ РАЗ',
             'stats.lossThousand': 'тис. осіб',
+            'stats.eqTitle': 'ВТРАТИ ТЕХНІКИ РФ', 'stats.eqSrc': 'за зведеннями Генштабу ЗСУ',
+            'stats.eqTotal': 'усього', 'stats.eqToday': 'за добу',
+            'stats.eqTanks': 'ТАНКИ', 'stats.eqAfv': 'ББМ', 'stats.eqArty': 'АРТИЛЕРІЯ',
+            'stats.eqMlrs': 'РСЗВ', 'stats.eqAa': 'ППО', 'stats.eqPlanes': 'ЛІТАКИ',
+            'stats.eqHelis': 'ГЕЛІКОПТЕРИ', 'stats.eqVehicles': 'АВТО Й ЦИСТЕРНИ',
+            'stats.eqShips': 'КОРАБЛІ Й КАТЕРИ', 'stats.eqMissiles': 'КРИЛАТІ РАКЕТИ',
+            'stats.eqUav': 'БПЛА', 'stats.eqSpecial': 'СПЕЦТЕХНІКА',
+            'stats.eqAtgm': 'ПТРК / ОТРК', 'stats.eqSubs': 'ПІДВОДНІ ЧОВНИ',
+            'stats.eqArtyChart': 'БРОНЯ Й АРТИЛЕРІЯ · 30 ДНІВ', 'stats.eqUavChart': 'БПЛА · 30 ДНІВ',
+            'stats.eqDaily': 'добові втрати', 'stats.eqNote': 'заявлені втрати за зведеннями Генштабу ЗСУ; підтверджені імена — вище',
+            'stats.eqSrcLink': 'Джерело: Генштаб ЗСУ · russianwarship.rip',
             'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
             'tools.rectHint': 'Прямокутник: протягніть по карті', 'tools.circleHint': 'Коло: протягніть по карті',
@@ -388,11 +406,11 @@
             'viewer.advanceNone': 'NO NEIGHBOURING DATE TO COMPARE', 'viewer.tagline': 'OPERATIONAL MAP', 'dock.point': 'POINT',
             'viewer.stats': 'Statistics', 'viewer.statsHint': 'Front change totals since 4 November',
             'tab.stats': 'Stats',
-            'stats.title': 'FRONT STATISTICS', 'stats.sub': 'SINCE 4 NOVEMBER',
+            'stats.title': 'FRONT STATISTICS', 'stats.warDay': '{n} DAYS SINCE THE WAR BEGAN',
             'stats.ukr': 'UKRAINE', 'stats.rus': 'RUSSIA', 'stats.ukrShort': 'UKR', 'stats.rusShort': 'RUS',
             'stats.plus': 'GAINED', 'stats.minus': 'LOST', 'stats.day': 'DAY', 'stats.km2': 'KM²',
-            'stats.empty': 'NO DATA SINCE 4 NOVEMBER',
-            'stats.emptyHint': 'STATISTICS START ON 04.11. ADD THAT DATE IN THE EDITOR AND RECALCULATE.',
+            'stats.empty': 'NO DATA FOR STATISTICS',
+            'stats.emptyHint': 'ADD DATES IN THE EDITOR AND RECALCULATE.',
             'stats.loading': 'MEASURING AREAS…', 'stats.baseline': 'BASE — {date}',
             'stats.period': 'FRONT FOR THE PERIOD', 'stats.toUkr': 'in Ukraine’s favour',
             'stats.toRus': 'in Russia’s favour', 'stats.flat': 'no change', 'stats.daysN': '{n} days',
@@ -414,7 +432,7 @@
             'stats.uaLiberated': 'UKRAINE LIBERATED', 'stats.uaSince': 'ALL TIME',
             'stats.uaChart': 'TERRITORY CHANGE', 'stats.uaNoDays': 'NO DAYS TO COMPARE YET',
             'stats.tabLosses': 'LOSSES',
-            'stats.lossAuto': 'AUTO-UPDATED', 'stats.lossUpd': 'updated',
+            'stats.lossUpd': 'updated',
             'stats.lossRuCap': 'RU ARMED FORCES · NAMED CONFIRMED', 'stats.lossUaCap': 'UKRAINIAN FORCES · CONFIRMED KILLED',
             'stats.lossRu': 'RU', 'stats.lossUa': 'UA', 'stats.lossPeople': 'people',
             'stats.lossExcess': 'excess mortality estimate', 'stats.lossMissing': 'missing', 'stats.lossPow': 'prisoners of war',
@@ -424,9 +442,19 @@
             'stats.lossCumNote': 'line follows date of death; UALosses project total is {n} — the gap is records without a date',
             'stats.lossSrcRu': 'Source: Mediazona name list + Meduza excess mortality estimate',
             'stats.lossSrcUa': 'Source: UALosses — open reports of deaths',
-            'stats.lossWeekly': 'data updates automatically',
             'stats.lossErr': 'COULD NOT LOAD THE DATA', 'stats.lossRetry': 'TRY AGAIN',
             'stats.lossThousand': 'thousand people',
+            'stats.eqTitle': 'RUSSIAN EQUIPMENT LOSSES', 'stats.eqSrc': 'per Ukraine’s General Staff reports',
+            'stats.eqTotal': 'total', 'stats.eqToday': 'last day',
+            'stats.eqTanks': 'TANKS', 'stats.eqAfv': 'AFV', 'stats.eqArty': 'ARTILLERY',
+            'stats.eqMlrs': 'MLRS', 'stats.eqAa': 'AIR DEFENCE', 'stats.eqPlanes': 'AIRCRAFT',
+            'stats.eqHelis': 'HELICOPTERS', 'stats.eqVehicles': 'VEHICLES & TANKERS',
+            'stats.eqShips': 'SHIPS & BOATS', 'stats.eqMissiles': 'CRUISE MISSILES',
+            'stats.eqUav': 'UAVs', 'stats.eqSpecial': 'SPECIAL EQUIPMENT',
+            'stats.eqAtgm': 'ATGM / SRBM', 'stats.eqSubs': 'SUBMARINES',
+            'stats.eqArtyChart': 'ARMOUR & ARTILLERY · 30 DAYS', 'stats.eqUavChart': 'UAVs · 30 DAYS',
+            'stats.eqDaily': 'daily losses', 'stats.eqNote': 'claimed losses per Ukraine’s General Staff reports; named confirmed deaths are above',
+            'stats.eqSrcLink': 'Source: Ukraine’s General Staff · russianwarship.rip',
             'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
             'tools.rectHint': 'Rectangle: drag on the map', 'tools.circleHint': 'Circle: drag on the map',
@@ -573,6 +601,230 @@
             'place.county': 'DISTRICT', 'place.state': 'REGION', 'place.region': 'REGION', 'place.administrative': 'DISTRICT',
             'place.locality': 'SETTLEMENT', 'place.area': 'REGION', 'place.district': 'DISTRICT',
             'place.territory': 'TERRITORY', 'place.object': 'OBJECT'
+        },
+        ru: {
+            'app.title': 'LINESTATE — оперативная карта',
+            'app.editorTitle': 'LINESTATE — редактор карты',
+            'app.editorTag': 'Редактор карты',
+            'app.openViewer': 'Открыть просмотр',
+            'app.loading': 'ЗАГРУЗКА КАРТЫ',
+            'app.ready': 'КАРТА ГОТОВА',
+            'app.lang': 'Язык',
+            'app.langHint': 'Сменить язык',
+            'app.telegram': 'Telegram',
+            'app.telegramHint': 'Открыть Telegram',
+            'admin.addPoint': '+ Точка',
+            'layer.point': 'ТОЧКА {n}', 'layer.image': 'ИЗОБРАЖЕНИЕ',
+            'object.point': 'ТОЧКА', 'object.image': 'ИЗОБРАЖЕНИЕ',
+            'object.size': 'Размер', 'object.shadow': 'Тень', 'object.icon': 'Символ',
+            'object.dot': 'Круг', 'object.diamond': 'Ромб', 'object.cross': 'Крест', 'object.flag': 'Флаг',
+            'object.hint': 'Щёлкните карту, чтобы поставить точку. Точки можно перетаскивать; они сохраняются вместе с датой.',
+            'map.regions': 'Области', 'map.volume': 'Объём слоя', 'map.height': 'Высота',
+            'map.overlays': 'СЛОИ КАРТЫ', 'map.hint': 'Пунктирные границы областей рисуются отдельным слоем поверх подложки и не попадают в данные карты.',
+            'viewer.menu': 'Слои', 'viewer.labels': 'Подписи', 'viewer.labelsHint': 'Включите подписи и тяните их прямо по карте. ◎ возвращает подпись в центр слоя.',
+            'viewer.center': 'Подпись в центр слоя', 'viewer.advance': 'Продвижение', 'viewer.advanceHint': 'Подсветить изменения против соседней даты',
+            'viewer.relief': 'Рельеф', 'viewer.reliefHint': 'В 3D управляет горами объёмной карты, в плоскости — затенением',
+            'viewer.places': 'НП', 'viewer.placesHint': 'Показывать названия населённых пунктов',
+            'viewer.zones': 'Зоны', 'viewer.zonesHint': 'Объёмные зоны контроля на 3D-карте',
+            'viewer.advanceNone': 'НЕТ СОСЕДНЕЙ ДАТЫ ДЛЯ СРАВНЕНИЯ', 'viewer.tagline': 'ОПЕРАТИВНАЯ КАРТА', 'dock.point': 'ТОЧКА',
+            'viewer.stats': 'Статистика', 'viewer.statsHint': 'Итог изменений фронта с 4 ноября',
+            'tab.stats': 'Стат',
+            'stats.title': 'СТАТИСТИКА ФРОНТА', 'stats.warDay': '{n} ДНЕЙ С НАЧАЛА ВОЙНЫ',
+            'stats.ukr': 'УКРАИНА', 'stats.rus': 'РОССИЯ', 'stats.ukrShort': 'УКР', 'stats.rusShort': 'РФ',
+            'stats.plus': 'ПРИОБРЕТЕНО', 'stats.minus': 'ПОТЕРЯНО', 'stats.day': 'ДЕНЬ', 'stats.km2': 'КМ²',
+            'stats.empty': 'НЕТ ДАННЫХ ДЛЯ СТАТИСТИКИ',
+            'stats.emptyHint': 'ДОБАВЬТЕ ДАТЫ В РЕДАКТОРЕ И ПЕРЕСЧИТАЙТЕ.',
+            'stats.loading': 'СЧИТАЕМ ПЛОЩАДИ…', 'stats.baseline': 'БАЗА — {date}',
+            'stats.period': 'ФРОНТ ЗА ПЕРИОД', 'stats.toUkr': 'в пользу Украины',
+            'stats.toRus': 'в пользу России', 'stats.flat': 'без изменений', 'stats.daysN': '{n} дн.',
+            'stats.roles': 'КТО ЕСТЬ КТО',
+            'stats.roleHint': 'Укажите слои для Украины, России, серой зоны и геоджейсона Украины. Выбор сохраняется на этом устройстве.',
+            'stats.roleUkr': 'Украина (жёлтая зона)', 'stats.roleRus': 'Россия (красная зона)',
+            'stats.roleGrey': 'Серая зона', 'stats.roleLand': 'Геоджейсон Украины',
+            'stats.recalc': 'ПЕРЕСЧИТАТЬ', 'stats.needLayer': '— НЕ ВЫБРАНО —',
+            'stats.auto': 'АВТООПРЕДЕЛЕНИЕ', 'stats.saved': 'РОЛИ СОХРАНЕНЫ',
+            'stats.adminHint': 'Роли применяются к просмотру на этом устройстве. После смены ролей статистика пересчитывается.',
+            'stats.rules': 'ПРАВИЛА',
+            'stats.rule1': 'Жёлтая зона вперёд — плюс Украине.',
+            'stats.rule2': 'Серая зона на жёлтую или пустую землю — минус Украине.',
+            'stats.rule3': 'Серая зона на красную — минус России и плюс Украине.',
+            'stats.rule4': 'Красная зона вперёд — плюс России и минус Украине.',
+            'stats.tabOverview': 'ОБЗОР', 'stats.tabUkraine': 'УКРАИНА',
+            'stats.uaOcc': 'СЕЙЧАС ПОД КОНТРОЛЕМ РФ', 'stats.uaOfUkraine': 'ОТ ПЛОЩАДИ УКРАИНЫ',
+            'stats.uaLand': 'ПЛОЩАДЬ УКРАИНЫ', 'stats.uaCaptured': 'ЗАХВАТИЛА РФ',
+            'stats.uaLiberated': 'ОСВОБОДИЛА УКРАИНА', 'stats.uaSince': 'ЗА ВСЁ ВРЕМЯ',
+            'stats.uaChart': 'ИЗМЕНЕНИЕ ТЕРРИТОРИЙ', 'stats.uaNoDays': 'ПОКА НЕТ ДНЕЙ ДЛЯ СРАВНЕНИЯ',
+            'stats.tabLosses': 'ПОТЕРИ',
+            'stats.lossUpd': 'обновлено',
+            'stats.lossRuCap': 'ВС РФ · ПОДТВЕРЖДЕНО ИМЁН', 'stats.lossUaCap': 'ВСУ · ПОДТВЕРЖДЕНО ПОГИБШИХ',
+            'stats.lossRu': 'РФ', 'stats.lossUa': 'ВСУ', 'stats.lossPeople': 'человек',
+            'stats.lossExcess': 'оценка сверхсмертности', 'stats.lossMissing': 'пропавших без вести', 'stats.lossPow': 'в плену',
+            'stats.lossYears': 'ПОТЕРИ ПО ГОДАМ', 'stats.lossCum': 'НАКОПЛЕНО С 24.02.2022',
+            'stats.lossEstimate': 'оценка', 'stats.lossAsOf': 'на',
+            'stats.lossPartial': 'неполный год — подтверждения запаздывают',
+            'stats.lossCumNote': 'линия — по дате гибели; итог UALosses — {n}, разница — записи без даты',
+            'stats.lossSrcRu': 'Источник: поименный список «Медиазоны» + оценка сверхсмертности Meduza',
+            'stats.lossSrcUa': 'Источник: UALosses — открытые сообщения о гибели',
+            'stats.lossErr': 'НЕ УДАЛОСЬ ЗАГРУЗИТЬ ДАННЫЕ', 'stats.lossRetry': 'ПОПРОБОВАТЬ ЕЩЁ РАЗ',
+            'stats.lossThousand': 'тыс. человек',
+            'stats.eqTitle': 'ПОТЕРИ ТЕХНИКИ РФ', 'stats.eqSrc': 'по сводкам Генштаба ВСУ',
+            'stats.eqTotal': 'всего', 'stats.eqToday': 'за сутки',
+            'stats.eqTanks': 'ТАНКИ', 'stats.eqAfv': 'ББМ', 'stats.eqArty': 'АРТИЛЛЕРИЯ',
+            'stats.eqMlrs': 'РСЗО', 'stats.eqAa': 'ПВО', 'stats.eqPlanes': 'САМОЛЁТЫ',
+            'stats.eqHelis': 'ВЕРТОЛЁТЫ', 'stats.eqVehicles': 'АВТО И ЦИСТЕРНЫ',
+            'stats.eqShips': 'КОРАБЛИ И КАТЕРА', 'stats.eqMissiles': 'КРЫЛАТЫЕ РАКЕТЫ',
+            'stats.eqUav': 'БПЛА', 'stats.eqSpecial': 'СПЕЦТЕХНИКА',
+            'stats.eqAtgm': 'ПТРК / ОТРК', 'stats.eqSubs': 'ПОДВОДНЫЕ ЛОДКИ',
+            'stats.eqArtyChart': 'БРОНЯ И АРТИЛЛЕРИЯ · 30 ДНЕЙ', 'stats.eqUavChart': 'БПЛА · 30 ДНЕЙ',
+            'stats.eqDaily': 'суточные потери', 'stats.eqNote': 'заявленные потери по сводкам Генштаба ВСУ; подтверждённые имена — выше',
+            'stats.eqSrcLink': 'Источник: Генштаб ВСУ · russianwarship.rip',
+            'boot.map': 'БАЗА КАРТЫ', 'boot.data': 'ДАННЫЕ ФРОНТА', 'boot.warm': 'ПОДГОТОВКА ГЕОМЕТРИИ', 'boot.render': 'ЗОНЫ И ЛИНИИ',
+            'tools.rulerHint': 'Линейка: клики по точкам, клик по первой точке или двойной клик — завершить', 'tools.penHint': 'Карандаш: рисовать линию от руки',
+            'tools.rectHint': 'Прямоугольник: протяните по карте', 'tools.circleHint': 'Круг: протяните по карте',
+            'tools.arrowHint': 'Стрелка: протяните от начала до конца', 'tools.arrow': 'СТРЕЛКА',
+            'tools.draw': 'РИСОВАНИЕ', 'tools.pen': 'КАРАНДАШ', 'tools.rect': 'КВАДРАТ',
+            'tools.circle': 'КРУГ', 'tools.zone': 'ЗОНА', 'tools.erase': 'ЛАСТИК',
+            'tools.width': 'ТОЛЩИНА', 'tools.head': 'НАКОНЕЧНИК', 'tools.color': 'ЦВЕТ',
+            'tools.clear': 'ОЧИСТИТЬ', 'tools.drawHint': 'Выберите инструмент и рисуйте по карте',
+            'tools.colorHint': 'Цвет рисунков', 'tools.fold': 'Свернуть / развернуть панель',
+            'tools.zoneHint': 'Зона: клики по карте, клик по первой точке или двойной клик — завершить', 'tools.eraseHint': 'Ластик: щёлкните по рисунку, чтобы удалить',
+            'tools.clearHint': 'Убрать все рисунки за эту дату', 'tools.clearAsk': 'Убрать все рисунки за эту дату?',
+            'tools.cleared': 'РИСУНКИ УБРАНЫ', 'tools.km': 'км', 'tools.m': 'м', 'tools.tooShort': 'СЛИШКОМ КОРОТКО — НАРИСУЙТЕ ДЛИННЕЕ',
+            'search.title': 'ПОИСК', 'search.clear': 'Очистить', 'search.area': 'ПЛОЩАДЬ',
+            'nav.prev': 'Предыдущий день', 'nav.next': 'Следующий день', 'nav.collapse': 'Свернуть панель',
+            'lang.uk': 'УКРАЇНСЬКА', 'lang.uk.sub': 'ЯЗЫК КАРТЫ',
+            'lang.en': 'ENGLISH', 'lang.en.sub': 'ЯЗЫК КАРТЫ',
+            'lang.ru': 'РУССКИЙ', 'lang.ru.sub': 'ЯЗЫК КАРТЫ',
+            'cal.today': 'сегодня', 'cal.jump': 'Перейти', 'cal.jumpTitle': 'Перейти к дате', 'cal.data': 'есть данные',
+            'status.ready': 'ГОТОВО', 'status.saved': 'СОХРАНЕНО', 'status.draft': 'ЗАПИСЬ…', 'status.error': 'ОШИБКА', 'status.newDate': 'НОВАЯ ДАТА',
+            'base.dark': 'Тёмная', 'base.hybrid': 'Гибрид',
+            'viewer.layers': 'Слои', 'viewer.empty': 'ПУСТО', 'viewer.noData': 'НЕТ ДАННЫХ',
+            'viewer.noDataText': 'На выбранную дату карта не заполнена.<br>Выберите другой день.',
+            'viewer.updated': 'ОБНОВЛЕНО', 'viewer.noLayers': 'ЗА ЭТУ ДАТУ СЛОЁВ НЕТ', 'viewer.zone': 'ЗОНА',
+            'viewer.arrows': 'СТРЕЛКИ', 'viewer.emptyVal': 'пусто', 'viewer.km': 'км2',
+            'viewer.layerOne': 'СЛОЙ', 'viewer.layerFew': 'СЛОЯ', 'viewer.layerMany': 'СЛОЁВ',
+            'viewer.arrowOne': 'стрелка', 'viewer.arrowFew': 'стрелки', 'viewer.arrowMany': 'стрелок',
+            'viewer.play': 'Пуск', 'viewer.stop': 'Стоп', 'viewer.playErr': 'НУЖНО МИНИМУМ ДВЕ ДАТЫ С ДАННЫМИ',
+            'viewer.photo': 'ФОТО', 'viewer.photoHint': 'СОХРАНИТЬ СНИМОК КАРТЫ',
+            'viewer.photoOk': 'СНИМОК СОХРАНЁН', 'viewer.photoErr': 'НЕ УДАЛОСЬ СОХРАНИТЬ СНИМОК',
+            'viewer.close': 'ЗАКРЫТЬ',
+            'tab.layers': 'Слои', 'tab.style': 'Слой', 'tab.map': 'Карта', 'tab.file': 'Файл',
+            'admin.addZone': '+ ПОЛИГОН', 'admin.addArrow': '+ Стрелки',
+            'admin.layersHint': 'Рисование продолжает область: новые штрихи объединяются с нарисованным, старые не исчезают. Ластик чистит только выбранный слой. По умолчанию рисуется только по суше; в настройках слоя можно разрешить рисование по воде.',
+            'admin.noLayers': 'НЕТ СЛОЁВ', 'admin.hardMark': 'ТВ.', 'admin.featArrow': 'стр.', 'admin.featZone': 'обл.', 'admin.emptyWord': 'пусто',
+            'admin.merge': 'Объединить со слоем выше',
+            'admin.mergeNone': 'ВЫШЕ НЕТ СЛОЯ ДЛЯ ОБЪЕДИНЕНИЯ',
+            'admin.mergeKind': 'ОБЪЕДИНЯТЬ МОЖНО ТОЛЬКО ЗОНЫ С ЗОНАМИ ИЛИ СТРЕЛКИ СО СТРЕЛКАМИ',
+            'admin.mergeEmpty': 'В ЭТОМ СЛОЕ НЕТ ГЕОМЕТРИИ',
+            'admin.merged': 'СЛОИ ОБЪЕДИНЕНЫ → {name}',
+            'admin.up': 'Выше', 'admin.down': 'Ниже', 'admin.visibility': 'Видимость', 'admin.delete': 'Удалить',
+            'style.pick': 'ВЫБЕРИТЕ СЛОЙ В СПИСКЕ', 'style.name': 'Позывной', 'style.fill': 'Заливка', 'style.stroke': 'Контур',
+            'style.alpha': 'Прозрачность', 'style.bw': 'Толщина', 'style.mask': 'Маски', 'style.none': 'НЕТ',
+            'style.maskHint': 'Можно выбрать несколько масок: слой обрезается объединением их контуров. Работает и для зон, и для стрелок.',
+            'style.noMasks': 'других слоёв нет',
+            'style.desc': 'Описание', 'style.descPh': 'краткое описание слоя',
+            'style.iglow': 'Свет внутри', 'style.igcol': 'Цвет внутреннего света',
+            'style.gradient': 'Градиент', 'style.gradColor': 'Второй цвет', 'style.gradDir': 'Направление градиента',
+            'style.gradHint': 'Заливка плавно переходит от основного цвета ко второму. Работает для зон и стрелок; контур и подпись не меняются.',
+            'style.clearGeom': 'Очистить геометрию',
+            'style.hard': 'Границы', 'style.hardSoft': 'Мягкие', 'style.hardSolid': 'Твёрдые',
+            'style.area': 'Рисование', 'style.areaLand': 'Только суша', 'style.areaWater': 'Суша и вода',
+            'style.areaHint': '«Суша и вода» позволяет заливать море и озёра — береговая линия больше не обрезает слой.',
+            'style.hardHint': 'Твёрдые границы не дают другим слоям рисовать поверх этого слоя. У мягкого слоя новое рисование соседнего слоя стирает его в месте перекрытия.',
+            'style.blend': 'Наложение', 'style.blendHint': 'Режим наложения заливки на карту: умножение затемняет, экран подсвечивает, разница инвертирует. Контур и подпись остаются обычными.',
+            'blend.normal': 'Обычное', 'blend.multiply': 'Умножение', 'blend.screen': 'Экран', 'blend.overlay': 'Перекрытие',
+            'blend.darken': 'Затемнение', 'blend.lighten': 'Осветление', 'blend.difference': 'Разница', 'blend.softlight': 'Мягкий свет',
+            'style.presets': 'Пресеты', 'style.width': 'Ширина, км', 'style.head': 'Наконечник', 'style.effects': 'Эффекты',
+            'style.d3': 'Объём 3D', 'style.d3Off': 'Плоскость', 'style.d3On': 'Объём',
+            'style.depth': 'Глубина', 'style.taper': 'Сужение', 'style.headW': 'Остриё',
+            'style.texture': 'Текстура', 'style.scale': 'Масштаб', 'style.border': 'Контур', 'style.glow': 'Сила свечения',
+            'style.anim': 'Анимация', 'style.label': 'Подпись', 'style.labelOn': 'На карте', 'style.labelOff': 'Нет',
+            'style.labelSize': 'Размер подписи', 'style.labelColor': 'Цвет подписи', 'style.labelText': 'Текст подписи', 'style.labelTextPh': 'по названию слоя', 'style.dup': 'Дубль', 'style.del': 'Удалить',
+            'style.copy': 'Копировать стиль', 'style.paste': 'Вставить стиль',
+            'style.copied': 'СТИЛЬ СКОПИРОВАН', 'style.pasted': 'СТИЛЬ ВСТАВЛЕН', 'style.pasteEmpty': 'НЕТ СКОПИРОВАННОГО СТИЛЯ',
+            'style.hint': 'Стрелки перестраиваются при изменении ширины, сужения и наконечника; объём 3D добавляет тень и боковую грань. Маска обрезает слой другой зоной. Поток бежит по стрелкам и контурам, марш — движущийся пунктир.',
+            'tex.none': 'Нет', 'tex.hatch': 'Штриховка', 'tex.diag': 'Диагональ', 'tex.grid': 'Сетка', 'tex.dots': 'Точки',
+            'tex.cross': 'Кресты', 'tex.bricks': 'Кирпич', 'tex.waves': 'Волны', 'tex.hazard': 'Полосы',
+            'border.solid': 'Сплошной', 'border.dashed': 'Пунктир', 'border.glow': 'Свечение',
+            'border.none': 'Без контура',
+            'anim.none': 'Нет', 'anim.pulse': 'Пульсация', 'anim.flow': 'Поток', 'anim.march': 'Марш',
+            'preset.front': 'ФРОНТ', 'preset.rear': 'ТЫЛ', 'preset.cauldron': 'КОТЁЛ', 'preset.strike': 'УДАР',
+            'preset.water': 'ВОДА', 'preset.rad': 'РАДИАЦИЯ',
+            'fx.presets': 'Пресеты', 'fx.neutral': 'БАЗА', 'fx.night': 'НОЧЬ', 'fx.thermal': 'ТЕПЛО',
+            'fx.print': 'ПЕЧАТЬ', 'fx.neon': 'НЕОН', 'fx.glitch': 'ГЛИТЧ', 'fx.filters': 'Фильтры',
+            'fx.bright': 'Яркость', 'fx.contrast': 'Контраст', 'fx.sat': 'Насыщенность', 'fx.blur': 'Размытие',
+            'fx.hue': 'Оттенок', 'fx.gray': 'Ч/Б', 'fx.sepia': 'Сепия', 'fx.invert': 'Инверсия',
+            'fx.film': 'Плёнка', 'fx.vig': 'Виньетка', 'fx.scan': 'Скан-линии', 'fx.grain': 'Зерно',
+            'fx.reset': 'Сбросить эффекты', 'fx.base': 'Подложка', 'fx.ghostOn': 'Контур прошлого дня: вкл',
+            'fx.ghostOff': 'Контур прошлого дня: выкл',
+            'fx.hint': 'Эффекты карты сохраняются и повторяются в просмотре. Контур прошлого дня рисуется пунктиром и только для просмотра — в данные не попадает.',
+            'file.importGeo': 'Импорт GeoJSON', 'file.exportAll': 'Экспорт всех дат', 'file.exportSite': 'Экспорт для сайта (data/map.json)',
+            'file.siteHint': 'Для GitHub Pages: положите map.json в папку data/ репозитория. Просмотр берёт этот файл, если в браузере нет сохранённых данных.',
+            'file.importFile': 'Импорт файла',
+            'file.delImported': 'Удалить импортированные слои',
+            'file.exportGeo': 'Экспорт GeoJSON', 'file.copyPrev': 'Копировать на пред. день',
+            'file.copyNext': 'Копировать на след. день', 'file.deleteMap': 'Удалить карту за дату',
+            'file.hint': 'GeoJSON (например, границы области) загружается отдельным слоем, файл можно просто перетащить на карту. Данные лежат в localStorage браузера.',
+            'file.reset': 'Полный сброс данных', 'file.deleteAll': 'Удалить все даты',
+            'file.optimize': 'Оптимизировать память браузера',
+            'file.optimized': 'ОПТИМИЗИРОВАНО · ОСВОБОЖДЕНО {kb} KB',
+            'file.optimizedNone': 'ПАМЯТЬ УЖЕ ОПТИМИЗИРОВАНА · {kb} KB · {dates} дат',
+            'file.usage': 'В памяти браузера: {kb} KB · {dates} дат',
+            'file.usageIdb': 'Расширенное хранилище: {kb} KB · {dates} дат · границы сняты',
+            'views.title': 'Просмотры карты', 'views.device': 'Это устройство', 'views.public': 'Все устройства',
+            'views.total': 'Открытий', 'views.days': 'Дней с просмотром', 'views.today': 'Сегодня',
+            'views.last': 'Последний просмотр', 'views.none': 'Ещё не было', 'views.byDay': 'По дням',
+            'views.refresh': 'Обновить общий счётчик', 'views.offline': 'общий счётчик недоступен',
+            'views.wait': '…',
+            'views.hint': 'Открытие страницы карты считается один раз. Локальная статистика живёт только в этом браузере, общую сумму даёт открытый счётчик Abacus. Редактор просмотры не начисляет.',
+            'gh.title': 'Публикация на GitHub', 'gh.tokenPh': 'Токен (contents: write)',
+            'gh.publish': 'Опубликовать карту', 'gh.publishing': 'Публикация…',
+            'gh.remember': 'Запомнить на этом устройстве', 'gh.forget': 'Забыть',
+            'gh.saved': '●●●●●●●● сохранено на этом устройстве', 'gh.forgot': 'ТОКЕН ЗАБЫТ НА ЭТОМ УСТРОЙСТВЕ',
+            'gh.kept': 'ТОКЕН ЗАПОМНЕН НА ЭТОМ УСТРОЙСТВЕ',
+            'gh.hint': 'Без галочки токен живёт до закрытия вкладки. С галочкой — остаётся только в этом браузере, закрытый от посторонних глаз; в файлы, хранилище или историю он не попадает.',
+            'gh.need': 'Укажите токен и репозиторий owner/name', 'gh.badRepo': 'Репозиторий в формате owner/name',
+            'gh.badToken': 'ТОКЕН СОДЕРЖИТ ПОСТОРОННИЕ СИМВОЛЫ — скопируйте его с GitHub заново',
+            'gh.ok': 'ОПУБЛИКОВАНО · {dates} дат · {kb} KB', 'gh.denied': 'ТОКЕН НЕ ПРИНЯТ — нужно право contents: write',
+            'gh.forbidden': 'ДОСТУП ЗАПРЕЩЁН — проверьте токен и права на репозиторий',
+            'gh.fail': 'НЕ ОПУБЛИКОВАНО · {code}', 'gh.empty': 'НЕТ ДАННЫХ ДЛЯ ПУБЛИКАЦИИ',
+            'dock.zone': 'ЗОНА', 'dock.arrow': 'СТРЕЛКА', 'dock.erase': 'ЛАСТИК', 'dock.pan': 'ПАНОРАМА',
+            'search.placeholder': 'Город, село, район, область', 'search.go': 'Найти', 'search.add': 'В слой',
+            'search.notFound': 'НИЧЕГО НЕ НАЙДЕНО', 'search.unavailable': 'ПОИСК НЕДОСТУПЕН',
+            'search.noContour': 'КОНТУР НЕ НАЙДЕН — ТОЛЬКО ТОЧКА', 'search.added': 'КОНТУР ДОБАВЛЕН В СЛОЙ',
+            'search.noFeature': 'У ЭТОГО ОБЪЕКТА НЕТ КОНТУРА', 'search.badContour': 'НЕВЕРНЫЙ КОНТУР', 'search.contour': 'КОНТУР',
+            'drop.title': 'GEOJSON', 'drop.hint': 'ОТПУСТИТЕ ФАЙЛ — ПОЯВИТСЯ НОВЫЙ СЛОЙ',
+            'hint.bar': '1 — зона · 2 — стрелка · 3 — ластик · 0 — панорама · Ctrl+Z — отменить',
+            'toast.tooShort': 'ЛИНИЯ СЛИШКОМ КОРОТКАЯ', 'toast.tooSmall': 'ОБЛАСТЬ СЛИШКОМ МАЛА',
+            'toast.badShape': 'НЕВЕРНАЯ ФОРМА', 'toast.landOnly': 'ТОЛЬКО ПО СУШЕ',
+            'toast.hardBlock': 'ТВЁРДАЯ ГРАНИЦА «{name}»', 'toast.hardBlockNoName': 'ТВЁРДАЯ ГРАНИЦА',
+            'toast.arrowFail': 'НЕ УДАЛОСЬ ПОСТРОИТЬ СТРЕЛКУ', 'toast.noLayer': 'СНАЧАЛА ВЫБЕРИТЕ СЛОЙ',
+            'toast.nothingErase': 'В СЛОЕ «{name}» НЕЧЕГО СТИРАТЬ', 'toast.nothingUndo': 'НЕЧЕГО ОТМЕНИТЬ',
+            'toast.geomCleared': 'ГЕОМЕТРИЯ «{name}» ОЧИЩЕНА', 'toast.geomEmpty': 'СЛОЙ УЖЕ ПУСТ',
+            'toast.noImported': 'НЕТ ИМПОРТИРОВАННЫХ СЛОЁВ', 'toast.importedDeleted': 'УДАЛЕНО ИМПОРТИРОВАННЫХ: {n}',
+            'toast.copied': 'СКОПИРОВАНО НА {date}', 'toast.mapDeleted': 'КАРТА УДАЛЕНА', 'toast.allDeleted': 'ВСЕ КАРТЫ УДАЛЕНЫ',
+            'toast.needTwo': 'НУЖНО МИНИМУМ ДВЕ ДАТЫ', 'toast.imported': 'ЗАГРУЖЕНО ДАТ: {n}',
+            'toast.badFile': 'НЕВЕРНЫЙ ФАЙЛ', 'toast.geoImported': 'ГЕОДЖЕЙСОН: {n} ОБЛ.{skipped}',
+            'toast.geoSkipped': ' · ПРОПУЩЕНО: {n}', 'toast.exported': 'ФАЙЛ СОХРАНЁН',
+            'toast.noExport': 'НЕТ ДАННЫХ ДЛЯ ЭКСПОРТА', 'toast.noDates': 'НЕТ СОХРАНЁННЫХ ДАТ',
+            'toast.advance': 'ПРОДВИЖЕНИЕ +{gain} КМ2 · ОТХОД −{loss} КМ2',
+            'toast.advanceGain': 'ПРОДВИЖЕНИЕ +{n} КМ2', 'toast.advanceLoss': 'ОТХОД −{n} КМ2',
+            'toast.advanceSame': 'ФРОНТ БЕЗ ИЗМЕНЕНИЙ',
+            'confirm.replaceDate': 'За {date} уже есть данные. Заменить их копией текущей карты?',
+            'confirm.deleteMap': 'Удалить карту за {date} полностью?',
+            'confirm.deleteLayer': 'Удалить слой «{name}»?',
+            'confirm.delImported': 'Удалить все импортированные слои ({n})?',
+            'confirm.reset': 'Удалить все даты и слои без возможности восстановления?',
+            'confirm.deleteAll': 'Удалить все карты ({n} дат) без возможности восстановления?',
+            'err.memFull': 'ПАМЯТЬ БРАУЗЕРА ПЕРЕПОЛНЕНА', 'err.badGeo': 'НЕВЕРНЫЙ GEOJSON',
+            'err.storeMemOnly': 'ХРАНИЛИЩЕ БРАУЗЕРА НЕДОСТУПНО — ИЗМЕНЕНИЯ ЖИВУТ ДО ПЕРЕЗАГРУЗКИ',
+            'err.noPolygons': 'НЕТ ПОЛИГОНОВ', 'err.tooBig': 'ФАЙЛ СЛИШКОМ БОЛЬШОЙ', 'err.invalidFile': 'НЕВЕРНЫЙ ФАЙЛ',
+            'layer.front': 'ЛИНИЯ ФРОНТА', 'layer.offensive': 'НАСТУПЛЕНИЕ', 'layer.zone': 'ПОЛИГОН {n}', 'layer.copy': 'КОПИЯ', 'layer.import': 'ИМПОРТ', 'layer.noName': 'БЕЗ НАЗВАНИЯ',
+            'place.city': 'ГОРОД', 'place.village': 'СЕЛО', 'place.hamlet': 'ХУТОР', 'place.hut': 'ХУТОР',
+            'place.suburb': 'РАЙОН', 'place.quarter': 'КВАРТАЛ', 'place.municipality': 'МУНИЦИПАЛИТЕТ',
+            'place.county': 'РАЙОН', 'place.state': 'ОБЛАСТЬ', 'place.region': 'РЕГИОН', 'place.administrative': 'РАЙОН',
+            'place.locality': 'НАС. ПУНКТ', 'place.area': 'ОБЛАСТЬ', 'place.district': 'РАЙОН',
+            'place.territory': 'ТЕРРИТОРИЯ', 'place.object': 'ОБЪЕКТ'
         }
     };
 
@@ -580,7 +832,6 @@
     try {
         const saved = localStorage.getItem(LANG_KEY);
         if (LANGS.indexOf(saved) >= 0) currentLang = saved;
-        else if (saved === 'ru') localStorage.setItem(LANG_KEY, 'uk');
     } catch (e) { }
 
     function lang() {
@@ -616,7 +867,9 @@
     }
 
     function switchLang(next) {
-        const target = LANGS.indexOf(next) >= 0 ? next : (currentLang === 'uk' ? 'en' : 'uk');
+        const target = LANGS.indexOf(next) >= 0
+            ? next
+            : LANGS[(LANGS.indexOf(currentLang) + 1) % LANGS.length];
         if (target === currentLang) return;
         const el = document.getElementById('map');
         const done = () => {
@@ -2156,7 +2409,21 @@
              <stop offset=".76" stop-color="#000" stop-opacity=".13"/>
              <stop offset=".91" stop-color="#fff" stop-opacity=".12"/>
              <stop offset="1" stop-color="#000" stop-opacity=".24"/>`),
-        en: '<svg viewBox="0 0 60 30" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><clipPath id="union-clip"><path d="M0 0h60v30H0z"/></clipPath><clipPath id="union-diagonal"><path d="M30 15h30v15zM30 15v15H0zM30 15H0V0zM30 15V0h30z"/></clipPath></defs><g clip-path="url(#union-clip)"><path d="M0 0h60v30H0z" fill="#012169"/><path d="m0 0 60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="m0 0 60 30m0-30L0 30" stroke="#c8102e" stroke-width="4" clip-path="url(#union-diagonal)"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#c8102e" stroke-width="6"/></g></svg>'
+        en: flagSvg('En',
+            `<rect width="60" height="40" fill="#012169"/>
+             <path d="M0 0l60 40M60 0L0 40" stroke="#fff" stroke-width="8"/>
+             <path d="M0 0l60 40M60 0L0 40" stroke="#c8102e" stroke-width="4.4"/>
+             <rect x="24" width="12" height="40" fill="#fff"/><rect y="14" width="60" height="12" fill="#fff"/>
+             <rect x="26" width="8" height="40" fill="#c8102e"/><rect y="16" width="60" height="8" fill="#c8102e"/>
+             <path d="M21 0h.5v40H21z" fill="#000" opacity=".13"/><path d="M42 0h-1v40h1z" fill="#000" opacity=".1"/>`,
+            `<stop offset="0" stop-color="#000" stop-opacity=".3"/>
+             <stop offset=".1" stop-color="#000" stop-opacity=".06"/>
+             <stop offset=".25" stop-color="#fff" stop-opacity=".17"/>
+             <stop offset=".42" stop-color="#000" stop-opacity=".12"/>
+             <stop offset=".59" stop-color="#fff" stop-opacity=".14"/>
+             <stop offset=".75" stop-color="#000" stop-opacity=".14"/>
+             <stop offset=".9" stop-color="#fff" stop-opacity=".1"/>
+             <stop offset="1" stop-color="#000" stop-opacity=".26"/>`)
     };
 
     // MapLibre 3.6: Marker з увімкненим рельєфом на кожен «move» озброює
@@ -2258,7 +2525,7 @@
 
     function applyMapLang(map) {
         if (!map || !map.getStyle || !map.getStyle()) return;
-        const key = currentLang === 'en' ? 'name:en' : 'name:uk';
+        const key = currentLang === 'en' ? 'name:en' : (currentLang === 'ru' ? 'name:ru' : 'name:uk');
         (map.getStyle().layers || []).forEach(layer => {
             if (layer.type !== 'symbol') return;
             const field = layer.layout && layer.layout['text-field'];
@@ -3209,9 +3476,15 @@
         // оголошений нижче, а цей рядок виконується під час завантаження.
         // вища стіна (58 px) тонула в власній тіні й з'їдала сусідню зону
         wallPx: 38,
+        // смуги втрат і надбань неминуче перекриваються там, де фронт ходив
+        // туди-назад. на одній висоті верхні грані стають копланарними й
+        // б'ються по глибині — на стику видно ґратку з чужого кольору. тому
+        // втрати малюються окремим шаром на 2.2 px вище: різниця на екрані
+        // непомітна, але глибина вирішується однозначно
+        bumpPx: 2.2,
         budget: 1500
     };
-    const ADV_LAYERS = ['lt-adv-fill', 'lt-adv-case', 'lt-adv-line', 'lt-adv-band'];
+    const ADV_LAYERS = ['lt-adv-fill', 'lt-adv-case', 'lt-adv-line', 'lt-adv-band', 'lt-adv-band-loss'];
 
     function ensureAdvance(map) {
         if (map.getSource('lt-adv')) return;
@@ -3239,10 +3512,22 @@
         });
         map.addLayer({
             id: 'lt-adv-band', type: 'fill-extrusion', source: 'lt-adv-3d',
+            filter: ['==', ['get', 'mode'], 'gain'],
             paint: {
                 'fill-extrusion-color': ['get', 'color'],
                 'fill-extrusion-opacity': 0.95,
                 'fill-extrusion-height': wallStops(ADV.wallPx)
+            }
+        });
+        // втрати — окремим шаром вище: інакше на перекритті двох смуг верхні
+        // грані копланарні й б'ються по глибині (ґратка чужого кольору)
+        map.addLayer({
+            id: 'lt-adv-band-loss', type: 'fill-extrusion', source: 'lt-adv-3d',
+            filter: ['==', ['get', 'mode'], 'loss'],
+            paint: {
+                'fill-extrusion-color': ['get', 'color'],
+                'fill-extrusion-opacity': 0.95,
+                'fill-extrusion-height': wallStops(ADV.wallPx + ADV.bumpPx)
             }
         });
     }
@@ -3299,7 +3584,7 @@
                     { widthPx: ADV.bandPx, cast: false, budget: ADV.budget });
             } catch (e) { out = []; s.err = String((e && e.stack) || e); }
             out.forEach(f => {
-                f.properties = { color: mode === 'loss' ? ADV.loss : ADV.gain };
+                f.properties = { color: mode === 'loss' ? ADV.loss : ADV.gain, mode };
                 feats.push(f);
             });
         });
@@ -3392,6 +3677,7 @@
                 if (map.getLayer('lt-adv-line')) map.setPaintProperty('lt-adv-line', 'line-opacity', lineOp);
                 if (map.getLayer('lt-adv-case')) map.setPaintProperty('lt-adv-case', 'line-opacity', 0.5 * fillK);
                 if (map.getLayer('lt-adv-band')) map.setPaintProperty('lt-adv-band', 'fill-extrusion-opacity', bandOp * bandK);
+                if (map.getLayer('lt-adv-band-loss')) map.setPaintProperty('lt-adv-band-loss', 'fill-extrusion-opacity', bandOp * bandK);
             } catch (e) { }
         };
         if (!dur) { set(1, 1, 1); return; }
@@ -3432,6 +3718,108 @@
         if (g >= 1 && l >= 1) toast(t('toast.advance', { gain: g, loss: l }));
         else if (g >= 1) toast(t('toast.advanceGain', { n: g }));
         else toast(t('toast.advanceLoss', { n: l }));
+    }
+
+    /* ------------------------------ 3D-пошук ------------------------------ */
+
+    // Знайдена територія у площині — заливка з пунктиром. На обʼємній карті
+    // вона читалась би як пляма під рельєфом, тому в 3D її замінює пластина
+    // з бордюром: смуга вздовж контуру встає над верхньою гранню, і межа
+    // міста/області лишається видимою навіть за нахилу.
+    const PS3D = {
+        platePx: 15,
+        rimUpPx: 2.6,
+        bandPx: 4.6,
+        plate: '#ffcf4d',
+        rim: '#fff1b8',
+        plateOp: 0.36,
+        rimOp: 0.92,
+        budget: 2200
+    };
+    const ps3dState = new WeakMap();
+
+    function ps3d(map) {
+        let s = ps3dState.get(map);
+        if (!s) {
+            s = { feature: null, bandPx: 0 };
+            ps3dState.set(map, s);
+        }
+        return s;
+    }
+
+    function ensureSearch3d(map) {
+        if (map.getSource('lt-ps-3d')) return;
+        map.addSource('lt-ps-3d', { type: 'geojson', data: EMPTY });
+        map.addSource('lt-ps-3d-rim', { type: 'geojson', data: EMPTY });
+        map.addLayer({
+            id: 'lt-ps-3d-plate', type: 'fill-extrusion', source: 'lt-ps-3d',
+            layout: { visibility: 'none' },
+            paint: {
+                'fill-extrusion-color': PS3D.plate,
+                'fill-extrusion-opacity': PS3D.plateOp,
+                'fill-extrusion-base': 0,
+                'fill-extrusion-height': wallStops(PS3D.platePx),
+                'fill-extrusion-vertical-gradient': true
+            }
+        });
+        map.addLayer({
+            // бордюр піднятий над пластиною: його стіна не збігається зі
+            // стіною пластини, тож z-fighting між двома екструзіями немає
+            id: 'lt-ps-3d-rim', type: 'fill-extrusion', source: 'lt-ps-3d-rim',
+            layout: { visibility: 'none' },
+            paint: {
+                'fill-extrusion-color': PS3D.rim,
+                'fill-extrusion-opacity': PS3D.rimOp,
+                'fill-extrusion-base': wallStops(PS3D.platePx),
+                'fill-extrusion-height': wallStops(PS3D.platePx + PS3D.rimUpPx)
+            }
+        });
+    }
+
+    function refreshSearch3d(map) {
+        if (!map || !map.getStyle || !map.getStyle()) return;
+        const s = ps3d(map);
+        const on = !!map._lt3d && !!s.feature;
+        ['lt-ps-3d-plate', 'lt-ps-3d-rim'].forEach(id => {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+        });
+        const rim = map.getSource('lt-ps-3d-rim');
+        if (!rim) return;
+        if (!on) {
+            rim.setData(EMPTY);
+            s.bandPx = 0;
+            return;
+        }
+        const kp = pxToM(1, map.getZoom()) / 1000;
+        let feats = [];
+        try {
+            feats = zone3dFeatures(prepZone({ type: 'FeatureCollection', features: [s.feature] }),
+                kp, map.getBounds(), null,
+                { widthPx: PS3D.bandPx, cast: false, budget: PS3D.budget })
+                .filter(f => f.properties && f.properties.role === 'rim');
+        } catch (e) { feats = []; }
+        rim.setData({ type: 'FeatureCollection', features: feats });
+        s.bandPx = PS3D.bandPx;
+        ['lt-ps-3d-plate', 'lt-ps-3d-rim'].forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
+    }
+
+    function setSearch3D(map, feature) {
+        if (!map || !map.getStyle || !map.getStyle()) return;
+        ensureSearch3d(map);
+        const s = ps3d(map);
+        s.feature = feature && feature.geometry ? feature : null;
+        const plate = map.getSource('lt-ps-3d');
+        if (plate) plate.setData(s.feature ? { type: 'FeatureCollection', features: [s.feature] } : EMPTY);
+        refreshSearch3d(map);
+    }
+
+    function clearSearch3D(map) {
+        if (!map || !map.getStyle || !map.getStyle()) return;
+        const s = ps3dState.get(map);
+        if (s) s.feature = null;
+        const plate = map.getSource('lt-ps-3d');
+        if (plate) plate.setData(EMPTY);
+        refreshSearch3d(map);
     }
 
     /* ------------------------------ статистика ------------------------------ */
@@ -3830,6 +4218,156 @@
         return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`;
     };
 
+    /* ---------------------- втрати техніки (Генштаб) ---------------------- */
+
+    const EQ_FIELDS = [
+        'tanks', 'armoured_fighting_vehicles', 'artillery_systems', 'mlrs',
+        'aa_warfare_systems', 'planes', 'helicopters', 'vehicles_fuel_tanks',
+        'warships_cutters', 'cruise_missiles', 'uav_systems',
+        'special_military_equip', 'atgm_srbm_systems', 'submarines'
+    ];
+    const EQ_META = {
+        tanks: ['stats.eqTanks', 'tank'],
+        armoured_fighting_vehicles: ['stats.eqAfv', 'afv'],
+        artillery_systems: ['stats.eqArty', 'arty'],
+        mlrs: ['stats.eqMlrs', 'mlrs'],
+        aa_warfare_systems: ['stats.eqAa', 'aa'],
+        planes: ['stats.eqPlanes', 'plane'],
+        helicopters: ['stats.eqHelis', 'heli'],
+        vehicles_fuel_tanks: ['stats.eqVehicles', 'truck'],
+        warships_cutters: ['stats.eqShips', 'ship'],
+        cruise_missiles: ['stats.eqMissiles', 'missile'],
+        uav_systems: ['stats.eqUav', 'uav'],
+        special_military_equip: ['stats.eqSpecial', 'radar'],
+        atgm_srbm_systems: ['stats.eqAtgm', 'atgm'],
+        submarines: ['stats.eqSubs', 'sub']
+    };
+    // власний набір іконок: однакова товщина лінії й сітка 24×24,
+    // щоб на 16–18 px вони читались однаково з рештою HUD
+    const EQ_ICONS = {
+        tank: '<path d="M3.5 14h17v3.2a1.6 1.6 0 0 1-1.6 1.6H5.1a1.6 1.6 0 0 1-1.6-1.6z"/><path d="M6.8 14v-2.6h5.8l2.6 2.6"/><path d="M13.4 11.8 21 9.8"/><circle cx="7.4" cy="19.8" r="1.4"/><circle cx="16.6" cy="19.8" r="1.4"/>',
+        afv: '<path d="M3.5 13.4h17l-2.2 4.4H5.7z"/><path d="M7.6 13.4V11h4.6l2.4 2.4"/><circle cx="7.6" cy="19.6" r="1.5"/><circle cx="16.4" cy="19.6" r="1.5"/>',
+        arty: '<path d="M9.4 14.6 20.2 4.8"/><path d="M18.2 4.4l2.2 2.2"/><path d="M6.6 16.6h10.8l1.4 2.6H7.4z"/><circle cx="7.2" cy="18.6" r="2.2"/><circle cx="16.8" cy="18.6" r="2.2"/>',
+        mlrs: '<path d="M3.5 14.6h10.6V18H3.5z"/><path d="M14.1 15.4h3.6l3 2.6h-6.6z"/><circle cx="6.6" cy="19.4" r="1.5"/><circle cx="17.4" cy="19.4" r="1.5"/><path d="M12.6 12.6 20 5.6"/><path d="M14.8 14.6 22 7.6"/>',
+        aa: '<path d="M4 19h7"/><path d="M7.5 19v-4"/><path d="M9.6 15.2 19 4"/><path d="M19 4l.6 3.2M19 4l-3 .8"/>',
+        plane: '<path d="M12 2.6c.8 0 1.4 1.2 1.4 2.6v3.4l7.6 4.2v1.8l-7.6-2v4.2l2.4 1.8v1.4L12 19l-3.8 1v-1.4l2.4-1.8v-4.2l-7.6 2v-1.8l7.6-4.2V5.2c0-1.4.6-2.6 1.4-2.6z"/>',
+        heli: '<path d="M3 9.4h18"/><path d="M12 9.4v2.2"/><path d="M7.6 13.6a4.4 3.6 0 0 1 8.8 0v1.8H7.6z"/><path d="M16.4 13.2h4.2l.8-1.6"/><path d="M8.4 18.6h7.2"/><path d="M10.4 15.4v3.2M14 15.4v3.2"/>',
+        uav: '<circle cx="12" cy="12" r="2.4"/><path d="M10.4 10.4 6.6 6.6M13.6 10.4l3.8-3.8M10.4 13.6l-3.8 3.8M13.6 13.6l3.8 3.8"/><circle cx="5" cy="5" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="5" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/>',
+        missile: '<path d="M12 2.8c1.6 1.8 2.4 4 2.4 6.2v5.4H9.6V9c0-2.2.8-4.4 2.4-6.2z"/><path d="M9.6 12.2 7 16v3.4l2.6-1z"/><path d="M14.4 12.2 17 16v3.4l-2.6-1z"/><circle cx="12" cy="8" r="1"/>',
+        truck: '<path d="M3 12.6h9.4v5.8H3z"/><path d="M12.4 14h4.2l3 3v1.4h-7.2z"/><circle cx="6.4" cy="18.6" r="1.6"/><circle cx="16.4" cy="18.6" r="1.6"/>',
+        ship: '<path d="M3 14.4h18l-2.8 4.6H5.8z"/><path d="M8.6 14.4v-4h6.8v4"/><path d="M12 10.4V5.6"/><path d="M12 5.6h4"/>',
+        radar: '<path d="M5 10.6A6.4 6.4 0 0 1 14.6 16"/><path d="M3.4 8.4A9.4 9.4 0 0 1 17 15.4"/><path d="M6 19h8"/><path d="M10 19v-4.6"/>',
+        atgm: '<path d="M4 15.6 16.6 9.4l2 3.8L6 19.4z"/><path d="M16.6 9.4 20 7.8l2 3.8-3.4 1.6"/><path d="M9 16.6 6.4 21M14 14.2l1.6 4.6"/>',
+        sub: '<path d="M3 14.4h18c-1.2 3.4-4.6 5-9 5s-7.8-1.6-9-5z"/><path d="M9.6 14.4V11h4.8v3.4"/><path d="M12 11V7.6"/><path d="M12 7.6h3"/>'
+    };
+    const eqIcon = k => `<svg class="lt-eq-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${EQ_ICONS[k] || ''}</svg>`;
+
+    // добові ряди лежать як [дата, ...прирости в порядку полів], тому
+    // індекс шукаємо за списком полів, а не за жорстким номером
+    const eqIndex = (E, k) => (E.fields || EQ_FIELDS).indexOf(k);
+    const eqDay = (E, row, k) => {
+        const i = eqIndex(E, k);
+        return i < 0 ? 0 : (row[1 + i] || 0);
+    };
+    const eqDateShort = iso => {
+        const p = String(iso || '').split('-');
+        return p.length === 3 ? `${p[2]}.${p[1]}` : '';
+    };
+
+    function eqGrid(E) {
+        const inc = E.increase || {};
+        return `<div class="lt-eq-grid">${EQ_FIELDS.map(k => {
+            const [key, icon] = EQ_META[k];
+            const d = inc[k] || 0;
+            return `<article class="lt-eq-tile" title="${esc(t(key))}">
+                <span class="lt-eq-top">${eqIcon(icon)}<span class="lt-eq-k">${esc(t(key))}</span></span>
+                <b class="lt-eq-n">${lossNum(E.totals[k])}</b>
+                <span class="lt-eq-d${d ? ' up' : ''}">${d ? '+' + lossNum(d) : '—'}</span>
+            </article>`;
+        }).join('')}</div>`;
+    }
+
+    function eqLineSVG(E, days, keys) {
+        const W = 340, H = 122, L = 22, R = 8, T = 8, B = 20;
+        const n = days.length;
+        let max = 1;
+        for (const row of days) for (const k of keys) max = Math.max(max, eqDay(E, row, k));
+        const step = max > 40 ? 20 : max > 10 ? 5 : 2;
+        max = Math.ceil(max / step) * step;
+        const px = i => L + (n < 2 ? 0 : i / (n - 1)) * (W - L - R);
+        const py = v => (H - B) - (v || 0) / max * (H - B - T);
+        let grid = '';
+        for (let i = 0; i <= 2; i++) {
+            const v = max / 2 * i, y = py(v);
+            grid += `<line x1="${L - 3}" x2="${W - R}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"/>`;
+            grid += `<text class="ax" x="${L - 6}" y="${(y + 2.6).toFixed(2)}" text-anchor="end">${lossNum(v)}</text>`;
+        }
+        const cls = { tanks: 't', armoured_fighting_vehicles: 'a', artillery_systems: 'r', mlrs: 'm', aa_warfare_systems: 'd' };
+        let lines = '';
+        for (const k of keys) {
+            const pts = days.map((row, i) => `${i ? 'L' : 'M'}${px(i).toFixed(2)} ${py(eqDay(E, row, k)).toFixed(2)}`).join(' ');
+            lines += `<path class="lt-eq-line eq-${cls[k] || 'x'}" d="${pts}"/>`;
+        }
+        let xs = '';
+        [0, Math.floor((n - 1) / 2), n - 1].forEach((i, j) => {
+            xs += `<text class="ax" x="${px(i).toFixed(2)}" y="${H - 6}" text-anchor="${j === 0 ? 'start' : j === 2 ? 'end' : 'middle'}">${esc(eqDateShort(days[i][0]))}</text>`;
+        });
+        return `<svg class="lt-loss-svg lt-eq-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t('stats.eqArtyChart'))}"><g class="grid">${grid}</g>${lines}${xs}</svg>`;
+    }
+
+    function eqBarSVG(E, days, key) {
+        const W = 340, H = 122, L = 34, R = 8, T = 8, B = 20;
+        const n = days.length;
+        let max = 1;
+        for (const row of days) max = Math.max(max, eqDay(E, row, key));
+        max = Math.ceil(max / 500) * 500;
+        const bw = (W - L - R) / n;
+        const py = v => (H - B) - (v || 0) / max * (H - B - T);
+        let grid = '';
+        for (let i = 0; i <= 2; i++) {
+            const v = max / 2 * i, y = py(v);
+            grid += `<line x1="${L - 3}" x2="${W - R}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"/>`;
+            grid += `<text class="ax" x="${L - 6}" y="${(y + 2.6).toFixed(2)}" text-anchor="end">${lossNum(v)}</text>`;
+        }
+        const bars = days.map((row, i) => {
+            const v = eqDay(E, row, key);
+            const h = Math.max(v ? 1.4 : 0, py(0) - py(v));
+            const cls = i === n - 1 ? 'lt-eq-bar last' : 'lt-eq-bar';
+            return `<rect class="${cls}" x="${(L + i * bw + bw * 0.2).toFixed(2)}" y="${(py(0) - h).toFixed(2)}" width="${(bw * 0.6).toFixed(2)}" height="${h.toFixed(2)}" rx="1"><title>${esc(eqDateShort(row[0]))} · ${lossNum(v)}</title></rect>`;
+        }).join('');
+        let xs = '';
+        [0, Math.floor((n - 1) / 2), n - 1].forEach((i, j) => {
+            xs += `<text class="ax" x="${(L + i * bw + bw / 2).toFixed(2)}" y="${H - 6}" text-anchor="${j === 0 ? 'start' : j === 2 ? 'end' : 'middle'}">${esc(eqDateShort(days[i][0]))}</text>`;
+        });
+        return `<svg class="lt-loss-svg lt-eq-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t('stats.eqUavChart'))}"><g class="grid">${grid}</g>${bars}${xs}</svg>`;
+    }
+
+    function statsEquip(E) {
+        if (!E || !E.totals) return '';
+        const days = (E.days || []).filter(r => Array.isArray(r) && r.length > 1);
+        const keysA = ['tanks', 'armoured_fighting_vehicles', 'artillery_systems', 'mlrs', 'aa_warfare_systems'];
+        const legendA = keysA.map(k => `<span class="eq-${({ tanks: 't', armoured_fighting_vehicles: 'a', artillery_systems: 'r', mlrs: 'm', aa_warfare_systems: 'd' })[k]}">${esc(t(EQ_META[k][0]))}</span>`).join('');
+        const lastUav = days.length ? eqDay(E, days[days.length - 1], 'uav_systems') : 0;
+        return `<section class="lt-eq">
+            <div class="lt-eq-head">
+                <div class="lt-loss-head"><span>${esc(t('stats.eqTitle'))}</span><em>${E.asOf ? esc(lossDate(E.asOf)) : ''}</em></div>
+                <div class="lt-eq-cap">${esc(t('stats.eqSrc'))}</div>
+            </div>
+            ${eqGrid(E)}
+            ${days.length > 1 ? `<div class="lt-loss-chart lt-eq-chart">
+                <div class="lt-loss-head"><span>${esc(t('stats.eqArtyChart'))}</span><em>${esc(t('stats.eqDaily'))}</em></div>
+                <div class="lt-loss-leg">${legendA}</div>
+                ${eqLineSVG(E, days, keysA)}
+            </div>` : ''}
+            ${days.length > 1 ? `<div class="lt-loss-chart lt-eq-chart">
+                <div class="lt-loss-head"><span>${esc(t('stats.eqUavChart'))}</span><em>${esc(t('stats.eqDaily'))} · ${lossNum(lastUav)}</em></div>
+                ${eqBarSVG(E, days, 'uav_systems')}
+            </div>` : ''}
+            <div class="lt-loss-foot"><span>${esc(t('stats.eqNote'))}</span></div>
+            <div class="lt-loss-src"><a href="${esc(E.url || 'https://russianwarship.rip/')}" target="_blank" rel="noopener">${esc(t('stats.eqSrcLink'))}</a></div>
+        </section>`;
+    }
+
     // накопичувальні ряди й SVG-графік: суцільна лінія — підтверджені дані,
     // пунктир у РФ — те, що додалося після останнього повного тижня
     function lossCumSVG(ru, ua) {
@@ -3905,7 +4443,6 @@
             return `<div class="lt-stats-empty lt-loss-err">
                 <b>${esc(t('stats.lossErr'))}</b>
                 <button type="button" class="lt-loss-retry">${esc(t('stats.lossRetry'))}</button>
-                <span>${esc(t('stats.lossWeekly'))}</span>
             </div>`;
         }
         if (!L || !L.ru || !L.ua || !L.ru.named) {
@@ -3942,7 +4479,7 @@
         }).join('');
 
         return `<div class="lt-loss-status">
-            <span class="lt-loss-live"><i></i>${esc(t('stats.lossAuto'))}</span>
+            <span class="lt-loss-war">${esc(t('stats.warDay', { n: lossNum(warDays()) }))}</span>
             <em>${esc(t('stats.lossUpd'))} ${esc(lossWhen(L.updatedAt))}</em>
         </div>
         <div class="lt-loss-heroes">
@@ -3980,10 +4517,10 @@
             ${lossCumSVG(ru, ua)}
             <div class="lt-loss-foot"><span>${esc(t('stats.lossCumNote', { n: lossNum(ua.killed) }))}</span></div>
         </div>
+        ${statsEquip(L.equip)}
         <div class="lt-loss-src">
             <a href="${esc(ru.url)}" target="_blank" rel="noopener">${esc(t('stats.lossSrcRu'))}</a>
             <a href="${esc(ua.url)}" target="_blank" rel="noopener">${esc(t('stats.lossSrcUa'))}</a>
-            <span>${esc(t('stats.lossWeekly'))}</span>
         </div>`;
     }
 
@@ -4656,7 +5193,7 @@
     function z3d(map) {
         let s = zone3d.get(map);
         if (!s) {
-            s = { byId: new Map(), kp: 0, t: 0, relief: null, ex: 0, bound: null, build: null, armed: false, reliefPending: false, relief3d: true, reliefFlat: false, reliefTheme: null, adv: null };
+            s = { byId: new Map(), kp: 0, t: 0, relief: null, ex: 0, bound: null, build: null, armed: false, reliefPending: false, relief3d: true, reliefFlat: false, reliefTheme: null, adv: null, fe: new Map(), mix: null, mixRaf: 0 };
             zone3d.set(map, s);
             // перемикання підкладки забирає стиль разом із рельєфом: повертаємо
             // його за режимом — у 3D за замовчуванням увімкнено, у площині лише
@@ -4749,6 +5286,7 @@
         // стіна просування живе в тому самому кадрі й за тим самим зумом, тому
         // перебудовується цим же проходом, а не окремим таймером
         advanceBand(map);
+        refreshSearch3d(map);
     }
 
     function clearZone3d(map) {
@@ -4764,6 +5302,7 @@
         // пляма, а підкладка з обводкою — повертатися на місце. той самий
         // advanceBand: map._lt3d уже виставлено ще до цього дзвінка
         advanceBand(map);
+        refreshSearch3d(map);
     }
 
     // перемикач «обʼємні 3D-зони»: коли вимкнено, у 3D зони лишаються плоскими
@@ -5401,6 +5940,9 @@
                 'fill-extrusion-vertical-gradient': true
             }
         });
+        // анімація 3D ↔ площина перебирає саме ці шари: тримаємо список,
+        // щоб у кадрі не сканувати весь стиль
+        z3d(map).fe.set(l.id, l);
         map.addLayer({
             id: 'gw_' + l.id, type: 'line', source: srcId,
             layout: { visibility: 'none' },
@@ -5438,7 +5980,7 @@
         const fs = fxState.get(map);
         if (fs) fs.run.delete(id);
         const z = zone3d.get(map);
-        if (z) z.byId.delete(id);
+        if (z) { z.byId.delete(id); z.fe.delete(id); }
         ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'fr_', 'fe_', 'f_', 'cs_', 'sh_', 'xs_', 'xb_'].forEach(p => {
             if (map.getLayer(p + id)) map.removeLayer(p + id);
         });
@@ -5554,7 +6096,17 @@
         map.setLayoutProperty('p_' + l.id, 'visibility', d3 ? 'none' : (pattern && !gradient ? vis : 'none'));
         if (map.getLayer('fe_' + l.id)) {
             map.setLayoutProperty('fe_' + l.id, 'visibility', d3 ? vis : 'none');
-            if (d3) map.setPaintProperty('fe_' + l.id, 'fill-extrusion-opacity', ZONE_3D_OPACITY * k);
+            if (d3) {
+                // mix — ступінь переходу 3D: під час перемикання стіни ростуть
+                // і гаснуть разом із нахилом камери, а не стрибають
+                const s3 = zone3d.get(map);
+                const mix = s3 && s3.mix != null ? Math.max(0, Math.min(1, s3.mix)) : 1;
+                map.setPaintProperty('fe_' + l.id, 'fill-extrusion-opacity', ZONE_3D_OPACITY * k * mix);
+                if (mix < 1) {
+                    map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height',
+                        wallStops(Math.max(0.0001, (l._w3d || WALL_PX) * mix)));
+                }
+            }
         }
         // обʼємний контур (fr_) і cast-тінь (cs_) прибрані: вони давали
         // z-fighting і коштували найдорожчого проходу геометрії на жест
@@ -5669,6 +6221,67 @@
 
     const THREE_D_PITCH = 55;
 
+    // Нахил, висота стін і прозорість ідуть одним тактом: якщо камера вже
+    // стала, а блоки ще ростуть, на зламі видно шов. reduced-motion лишає
+    // миттєвий перехід — це системна вимога, а не смак.
+    function threeDMs() {
+        try {
+            if (matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
+        } catch (e) { }
+        return docMobile() ? 720 : 880;
+    }
+
+    // частка 3D: 0 — площина, 1 — повний обʼєм. міняється кадром під час
+    // перемикання, а всі, хто малює екструзії, читають її звідси
+    function mix3d(map, to, dur) {
+        const s = z3d(map);
+        if (s.mixRaf) { cancelAnimationFrame(s.mixRaf); s.mixRaf = 0; }
+        const from = s.mix == null ? (to ? 0 : 1) : s.mix;
+        if (!dur || from === to) {
+            s.mix = to;
+            paint3dMix(map);
+            return;
+        }
+        const t0 = performance.now();
+        const tick = now => {
+            const p = Math.min(1, (now - t0) / dur);
+            s.mix = from + (to - from) * (1 - Math.pow(1 - p, 3));
+            paint3dMix(map);
+            if (p < 1) s.mixRaf = requestAnimationFrame(tick);
+            else { s.mix = to; s.mixRaf = 0; paint3dMix(map); }
+        };
+        s.mixRaf = requestAnimationFrame(tick);
+    }
+
+    function paint3dMix(map) {
+        const s = zone3d.get(map);
+        if (!s) return;
+        const mix = s.mix == null ? 1 : Math.max(0, Math.min(1, s.mix));
+        s.fe.forEach((l, id) => {
+            if (!map.getLayer('fe_' + id)) return;
+            const w = Math.max(0.0001, (l._w3d || WALL_PX) * mix);
+            const k = Math.max(0, Math.min(1, fxCurrent(map, id)));
+            try {
+                map.setPaintProperty('fe_' + id, 'fill-extrusion-height', wallStops(w));
+                map.setPaintProperty('fe_' + id, 'fill-extrusion-opacity', ZONE_3D_OPACITY * k * mix);
+            } catch (e) { }
+        });
+        // стіна просування й пластина пошуку ростуть разом із зонами
+        try {
+            if (map.getLayer('lt-adv-band')) {
+                map.setPaintProperty('lt-adv-band', 'fill-extrusion-height', wallStops(Math.max(0.0001, ADV.wallPx * mix)));
+            }
+            if (map.getLayer('lt-adv-band-loss')) {
+                map.setPaintProperty('lt-adv-band-loss', 'fill-extrusion-height', wallStops(Math.max(0.0001, (ADV.wallPx + ADV.bumpPx) * mix)));
+            }
+            if (map._lt3d && map.getLayer('lt-ps-3d-plate')) {
+                map.setPaintProperty('lt-ps-3d-plate', 'fill-extrusion-height', wallStops(Math.max(0.0001, PS3D.platePx * mix)));
+                map.setPaintProperty('lt-ps-3d-rim', 'fill-extrusion-base', wallStops(Math.max(0.0001, PS3D.platePx * mix)));
+                map.setPaintProperty('lt-ps-3d-rim', 'fill-extrusion-height', wallStops(Math.max(0.0001, (PS3D.platePx + PS3D.rimUpPx) * mix)));
+            }
+        } catch (e) { }
+    }
+
     // Системне перемикання 3D: нахил камери + екструзія зон. Полота бленд-рушія
     // ходять за камерою перспективною проєкцією (заливка лягає на верхню грань
     // блока), тож multiply та решта наложень працюють і під нахилом; підписи
@@ -5677,8 +6290,14 @@
     // і екструзій для всіх шарів одразу.
     function set3D(map, on, opts) {
         opts = opts || {};
-        if (!!map._lt3d === !!on) return;
-        map._lt3d = !!on;
+        on = !!on;
+        // map._lt3d — те, що зараз малюється, _lt3dWant — те, куди йдемо.
+        // під час виходу з 3D перше ще true, тож другий клік не зриває
+        // анімацію з середини, а розвертає її назад
+        if (on === !!map._lt3dWant && on === !!map._lt3d) return;
+        map._lt3dWant = on;
+        const s = z3d(map);
+        const dur = threeDMs();
         const repaint = () => {
             if (opts.layers && opts.isVisible) {
                 Object.values(opts.layers).forEach(l => {
@@ -5690,45 +6309,54 @@
             // повторне вмикання під час ще не завершеного вимикання: старий
             // слухач moveend має зникнути, інакше він зніме 3D посеред анімації
             if (set3D._off) { map.off('moveend', set3D._off); set3D._off = null; }
-            map.setMaxPitch(60);
-            if (map.dragRotate) map.dragRotate.enable();
-            if (map.touchPitch) map.touchPitch.enable();
-            // колесо й у 3D веде наш smoothZoom: якір він тепер тримає
-            // проєктивно (setLocationAtPoint), тож рідний обробник не потрібен
-            // на старті сторінки рельєф не потрібен у першу ж секунду: DEM-тайли
-            // з мережі й розбір висот забирають головний потік, і під завісою
-            // мапа показує кадр на три секунди пізніше. тому підйом 3D після
-            // перезавантаження іде без гір, а вмикає їх виклик reliefArm — коли
-            // завіса вже впала
-            if (opts.deferRelief) z3d(map).reliefPending = true;
-            else setRelief(map, z3d(map).relief3d !== false, map._ltBase);
-            bind3dZoom(map);
-            startZone3d(map);
-            try { map.easeTo({ pitch: THREE_D_PITCH, duration: docMobile() ? 800 : 1000 }); } catch (e) { }
+            if (!map._lt3d) {
+                map._lt3d = true;
+                s.mix = 0;
+                map.setMaxPitch(60);
+                if (map.dragRotate) map.dragRotate.enable();
+                if (map.touchPitch) map.touchPitch.enable();
+                // колесо й у 3D веде наш smoothZoom: якір він тепер тримає
+                // проєктивно (setLocationAtPoint), тож рідний обробник не потрібен
+                // на старті сторінки рельєф не потрібен у першу ж секунду: DEM-тайли
+                // з мережі й розбір висот забирають головний потік, і під завісою
+                // мапа показує кадр на три секунди пізніше. тому підйом 3D після
+                // перезавантаження іде без гір, а вмикає їх виклик reliefArm — коли
+                // завіса вже впала
+                if (opts.deferRelief) s.reliefPending = true;
+                else setRelief(map, s.relief3d !== false, map._ltBase);
+                bind3dZoom(map);
+                startZone3d(map);
+            }
             repaint();
+            mix3d(map, 1, dur);
+            try { map.easeTo({ pitch: THREE_D_PITCH, duration: dur }); } catch (e) { }
         } else {
+            if (!map._lt3d) return;
+            mix3d(map, 0, dur);
             // у площину повертаємось і північчю догори: і плоска меркатор-рамка
             // полотен, і швидка проекція підписів валідні лише при bearing = 0
             const level = () => (map.getPitch() < 0.5)
                 && Math.abs(map.getBearing ? map.getBearing() : 0) < 0.5;
-            try { map.easeTo({ pitch: 0, bearing: 0, duration: docMobile() ? 600 : 700 }); } catch (e) { }
+            try { map.easeTo({ pitch: 0, bearing: 0, duration: dur }); } catch (e) { }
             const off = () => {
                 if (!level()) return;
                 map.off('moveend', off);
                 set3D._off = null;
+                // тільки тепер: до кінця нахилу зони лишаються обʼємними,
+                // інакше плоска заливка стрибає під нахиленою камерою
+                map._lt3d = false;
                 map.setMaxPitch(0);
                 if (map.dragRotate) map.dragRotate.disable();
                 if (map.touchPitch) map.touchPitch.disable();
                 unbind3dZoom(map);
-                const st = z3d(map);
-                st.reliefPending = false;
-                if (st.reliefFlat === true) {
+                s.reliefPending = false;
+                if (s.reliefFlat === true) {
                     // «Рельєф» увімкнено для плоскої мапи: гори лишаються
                     // тініюванням (hillshade), без рідного terrain. шари
                     // lt-relief/lt-dem переконуємо лише за потреби
                     try { map.setTerrain(null); } catch (e) { }
-                    st.armed = false;
-                    st.ex = 0;
+                    s.armed = false;
+                    s.ex = 0;
                     if (!map.getLayer('lt-relief')) setRelief(map, true, map._ltBase);
                 } else {
                     setRelief(map, false);
@@ -7324,7 +7952,7 @@
         PREFIX,
         DATE_RE, MIN_DATE, dateBounds,
         device: () => deviceState || detectDevice(), initDevice,
-        isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger,
+        isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger, warDays,
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,
         store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage, onMirrorUpdate },
@@ -7339,6 +7967,7 @@
         blendEngine, featBox, onScreen, bakeParts, warmGeometry, lodTols,
         ensureFlow, updateFlow, startAnimations,
         showAdvance, clearAdvance, advanceToast,
+        setSearch3D, clearSearch3D,
         statsCompute, statsRender, statsRoles, setStatsRoles, statsDetectRoles, statsDate: STATS_START, loadLosses,
         loadFX, saveFX, applyFX, initFX,
         views: { local: localViews, record: recordView, ask: askRemoteViews, cached: cachedRemoteViews, publicHost },
