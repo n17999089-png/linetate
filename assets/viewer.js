@@ -1746,12 +1746,93 @@
         return rows;
     }
 
+    const normSearchName = s => String(s || '').toLowerCase()
+        .replace(/[’`'ʼ]/g, "'").replace(/\s+/g, ' ').trim();
+
+    const searchHasArea = res => {
+        const g = res && res.geojson;
+        return !!g && (g.type === 'Polygon' || g.type === 'MultiPolygon');
+    };
+
+    const SEARCH_TIER = { city: 70, town: 55, municipality: 45, borough: 40, village: 25, hamlet: 10, suburb: 5 };
+
+    const searchIsSettlement = res => {
+        if (!res) return false;
+        if (res._local) return res.type === 'city' || res.type === 'town';
+        const t = String(res.addresstype || res.type || '');
+        return !!SEARCH_TIER[t];
+    };
+
+    // Nominatim за запитом «Дніпро» ставить річку вище міста, а за «Львів» —
+    // хутір у Криму вище міста: без власного рейтингу камера летіла не туди
+    // й зона не малювалась, бо в результату не було полігону
+    function searchScore(res, q) {
+        const n = normSearchName(shortName(res)), needle = normSearchName(q);
+        let s = 0;
+        if (n === needle) s += 120;
+        else if (n.startsWith(needle)) s += 45;
+        const cc = String((res.address && res.address.country_code) || '');
+        const ua = cc === 'ua' || (res._local && res.lon > 21 && res.lon < 41 && res.lat > 44 && res.lat < 53);
+        if (ua) s += 80;
+        if (searchHasArea(res)) s += 35;
+        const tier = String(res.addresstype || res.type || '');
+        s += SEARCH_TIER[tier] || 0;
+        if (res._local) s += 20;
+        if (tier === 'state' || tier === 'region' || tier === 'county' || tier === 'province') s -= 10;
+        if (res.class === 'waterway' || res.class === 'natural' || tier === 'river' || tier === 'stream') s -= 80;
+        s += Math.max(0, Math.min(100, (Number(res.importance) || 0) * 100));
+        return s;
+    }
+
+    // камера не виходить за межі карти: результат поза ними все одно
+    // притиснувся б до краю й виглядав як «кинуло невідомо куди»
+    function searchInView(res) {
+        const mb = map && map.getMaxBounds && map.getMaxBounds();
+        if (!mb) return true;
+        let lon = Number(res.lon), lat = Number(res.lat);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+            const bb = res.boundingbox;
+            if (bb && bb.length === 4) {
+                lon = (+bb[2] + +bb[3]) / 2;
+                lat = (+bb[0] + +bb[1]) / 2;
+            } else if (res.geojson) {
+                const b = LT.boundsOf([{ type: 'Feature', properties: {}, geometry: res.geojson }]);
+                if (b) { lon = (b[0] + b[2]) / 2; lat = (b[1] + b[3]) / 2; }
+            }
+        }
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) return true;
+        const pad = 0.02;
+        return lon >= mb.getWest() - pad && lon <= mb.getEast() + pad
+            && lat >= mb.getSouth() - pad && lat <= mb.getNorth() + pad;
+    }
+
+    function mergeSearchRows(netRows, local, q) {
+        // локальний рядок викидаємо лише тоді, коли мережа знає такий самий
+        // населений пункт або його полігон, а не однойменну річку чи область
+        const merged = netRows.concat(local.filter(x => {
+            const n = normSearchName(x.name);
+            return !netRows.some(r => normSearchName(shortName(r)) === n && (searchHasArea(r) || searchIsSettlement(r)));
+        }));
+        merged.sort((a, b) => searchScore(b, q) - searchScore(a, q));
+        const seen = new Set();
+        const out = [];
+        for (const r of merged) {
+            if (!searchInView(r)) continue;
+            const key = normSearchName(shortName(r)) + '|' + String((r.address && r.address.country_code) || '');
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(r);
+            if (out.length >= 8) break;
+        }
+        return out;
+    }
+
     async function doSearch(autoPick) {
         const q = String($('ps-q') && $('ps-q').value || '').trim();
         if (!q) return;
         const wrap = $('place-search');
         const seq = ++searchSeq;
-        const local = localSearchRows(q);
+        const local = localSearchRows(q).filter(searchInView);
         if (local.length) {
             searchRows = local;
             searchActive = 0;
@@ -1759,7 +1840,7 @@
         }
         if (wrap) wrap.classList.add('ps-busy');
         try {
-            const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1'
+            const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=8&addressdetails=1'
                 + '&polygon_geojson=1&accept-language=' + LT.lang() + '&q=' + encodeURIComponent(q);
             const r = await fetch(url, { headers: { Accept: 'application/json' } });
             if (seq !== searchSeq) return;
@@ -1767,13 +1848,19 @@
             const rows = await r.json();
             if (seq !== searchSeq) return;
             if (Array.isArray(rows) && rows.length) {
-                const names = new Set(rows.map(x => shortName(x).toLowerCase()));
-                const merged = rows.concat(local.filter(x => !names.has(x.name.toLowerCase())));
-                searchRows = merged;
-                searchActive = 0;
-                renderSearchRows();
-                upgradeLocalPick(merged);
-                if (autoPick) pickSearch(merged[0], 0);
+                const merged = mergeSearchRows(rows, local, q);
+                if (merged.length) {
+                    searchRows = merged;
+                    searchActive = 0;
+                    renderSearchRows();
+                    upgradeLocalPick(merged);
+                    if (autoPick) pickSearch(merged[0], 0);
+                } else {
+                    searchRows = [];
+                    searchActive = -1;
+                    renderSearchRows(LT.t('search.notFound'));
+                    if (autoPick) LT.toast(LT.t('search.notFound'), 'err');
+                }
             } else if (local.length) {
                 searchRows = local;
                 searchActive = 0;
