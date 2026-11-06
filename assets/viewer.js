@@ -1537,7 +1537,7 @@
     /* ---------------------------- поиск мест ---------------------------- */
 
     const PLACE_TYPES = {
-        city: 'place.city', town: 'place.city', village: 'place.village', hamlet: 'place.hamlet',
+        city: 'place.city', town: 'place.town', village: 'place.village', hamlet: 'place.hamlet',
         isolated_dwelling: 'place.hut', suburb: 'place.suburb', quarter: 'place.quarter',
         municipality: 'place.municipality', county: 'place.county', state: 'place.state',
         province: 'place.state', region: 'place.region', state_district: 'place.district',
@@ -1556,6 +1556,20 @@
         if (dn.includes('область')) return LT.t('place.state');
         if (dn.includes('район')) return LT.t('place.district');
         return type ? String(type).toUpperCase() : LT.t('place.object');
+    }
+
+    // іконка рядка повторює мову значків на мапі: місто — квадрат, село —
+    // кружок. інші обʼєкти лишаються шпилькою, бо в них немає класу НП
+    const SEARCH_PIN = '<path d="M12 21s6.4-5.7 6.4-11A6.4 6.4 0 1 0 5.6 10c0 5.3 6.4 11 6.4 11z"/><circle cx="12" cy="10" r="2.3"/>';
+
+    function searchIcon(res) {
+        const t = res._local ? res.type : String(res.addresstype || res.type || '');
+        const kind = (t === 'city' || t === 'town') ? 'city'
+            : (t === 'village' || t === 'hamlet' || t === 'isolated_dwelling' || t === 'locality') ? 'vil'
+            : 'obj';
+        if (kind === 'city') return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2" fill="currentColor"/></svg>';
+        if (kind === 'vil') return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4" fill="currentColor"/></svg>';
+        return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SEARCH_PIN}</svg>`;
     }
 
     function shortName(res) {
@@ -1593,7 +1607,7 @@
         box.innerHTML = searchRows.map((res, i) => {
             const dn = String(res.display_name || '').split(',').slice(1, 3).join(',').trim();
             return `<button type="button" class="sr${i === searchActive ? ' active' : ''}" data-i="${i}" role="option" aria-selected="${i === searchActive}" style="--i:${i}">
-                <span class="sr-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6.4-5.7 6.4-11A6.4 6.4 0 1 0 5.6 10c0 5.3 6.4 11 6.4 11z"/><circle cx="12" cy="10" r="2.3"/></svg></span>
+                <span class="sr-ico" aria-hidden="true">${searchIcon(res)}</span>
                 <span class="sr-txt"><b>${esc(shortName(res).toUpperCase())}</b><small><em>${esc(placeType(res))}</em>${dn ? ' · ' + esc(dn) : ''}</small></span>
                 <svg class="sr-go" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
             </button>`;
@@ -1611,22 +1625,34 @@
         });
     }
 
+    let hintLast = '';
+
     function syncSearchHint() {
         const hint = $('ps-hint');
         if (!hint) return;
-        if (!searchPick) {
-            hint.textContent = '';
-            return;
+        let text = '';
+        if (searchPick) {
+            if (!searchPick.feature) {
+                text = searchPick.res && searchPick.res._local
+                    ? searchPick.label
+                    : LT.t('search.noContour');
+            } else {
+                let km2 = 0;
+                try { km2 = turf.area(searchPick.feature) / 1e6; } catch (e) { km2 = 0; }
+                text = LT.t('search.area') + ' — ' + Math.round(km2).toLocaleString(LT.locale()) + ' ' + LT.t('viewer.km');
+            }
         }
-        if (!searchPick.feature) {
-            hint.textContent = searchPick.res && searchPick.res._local
-                ? searchPick.label
-                : LT.t('search.noContour');
-            return;
-        }
-        let km2 = 0;
-        try { km2 = turf.area(searchPick.feature) / 1e6; } catch (e) { km2 = 0; }
-        hint.textContent = LT.t('search.area') + ' — ' + Math.round(km2).toLocaleString(LT.locale()) + ' ' + LT.t('viewer.km');
+        if (text === hintLast) return;
+        hintLast = text;
+        hint.textContent = text;
+        // нова підказка проявляється зсувом; панель відкривається навіть тоді,
+        // коли анімації заборонені системою — текст уже стоїть на місці
+        if (!text || !hint.animate) return;
+        try {
+            if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            hint.animate([{ transform: 'translateY(5px)' }, { transform: 'none' }],
+                { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
+        } catch (e) { }
     }
 
     function refreshSearchArea() {
@@ -1657,7 +1683,9 @@
         clearSearchMarker();
         const el = document.createElement('div');
         el.className = 'search-marker';
-        el.innerHTML = `<span>${esc(label)}</span><b title="${esc(LT.t('viewer.close'))}">×</b>`;
+        // анімація живе на внутрішній обгортці: MapLibre пише власний
+        // inline transform маркеру на кожному кадрі й гасив би анімацію
+        el.innerHTML = `<span class="sm-in"><span>${esc(label)}</span><b title="${esc(LT.t('viewer.close'))}">×</b></span>`;
         searchMarker = new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -8] })
             .setLngLat(lngLat)
             .addTo(map);
@@ -1691,11 +1719,15 @@
         syncSearchHint();
 
         let b = feature ? LT.boundsOf([feature]) : null;
-        if (!b && res.boundingbox) {
+        if (!b && !res._local && res.boundingbox) {
             b = [+res.boundingbox[2], +res.boundingbox[0], +res.boundingbox[3], +res.boundingbox[1]];
         }
         if (b && b.every(Number.isFinite)) {
             map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 70, duration: 700, maxZoom: 12 });
+        } else if (res.lon && res.lat) {
+            // локальний індекс знає лише точку: синтетична рамка давала
+            // оманливо широкий кадр, тому летимо до точки й не дрібніше 12.5
+            map.easeTo({ center: [+res.lon, +res.lat], zoom: Math.max(map.getZoom(), 12.5), duration: 700 });
         }
         if (res.lon && res.lat) setSearchMarker([+res.lon, +res.lat], searchPick.name.toUpperCase());
         if (!feature && !res._local) LT.toast(LT.t('search.noContour'));
@@ -1732,11 +1764,14 @@
             if (!name || seen.has(key)) continue;
             seen.add(key);
             const lon = e[2] / 1e5, lat = e[3] / 1e5;
+            // тип рахуємо тим самим правилом, що й значок на мапі (placeKind):
+            // інакше кожне село з рангом 4+ підписувалось як «МІСТО»
+            const city = !!e[5] || (+e[4] || 4) <= 2 || (+e[6] || 0) >= 20000;
             rows.push({
                 _local: true,
                 name,
                 display_name: name,
-                type: (e[4] || 4) <= 3 ? 'city' : 'town',
+                type: city ? 'city' : 'village',
                 lon, lat,
                 // порядок як у Nominatim: південь, північ, захід, схід. із
                 // іншим порядком fitBounds отримував перевернуту рамку й
@@ -1759,7 +1794,7 @@
 
     const searchIsSettlement = res => {
         if (!res) return false;
-        if (res._local) return res.type === 'city' || res.type === 'town';
+        if (res._local) return res.type === 'city' || res.type === 'town' || res.type === 'village';
         const t = String(res.addresstype || res.type || '');
         return !!SEARCH_TIER[t];
     };

@@ -1043,12 +1043,20 @@
 }
 
 .search-marker {
-    display: flex; align-items: center; gap: 9px;
     padding: 7px 10px; border-radius: 9px;
     background: linear-gradient(155deg, #262628, #0e0e10);
     border: 1px solid rgba(255, 207, 77, .5);
     color: #ffe9a8; font-family: var(--pixel); font-size: 13px; font-weight: 700; letter-spacing: .7px;
     box-shadow: 0 10px 26px rgba(0, 0, 0, .5); white-space: nowrap;
+}
+/* рухається внутрішня обгортка: зовнішньому елементу MapLibre пише transform */
+.search-marker .sm-in {
+    display: flex; align-items: center; gap: 9px;
+    animation: sm-drop .34s var(--ease-pop) backwards;
+}
+@keyframes sm-drop {
+    from { transform: translateY(10px) scale(.92); }
+    to { transform: none; }
 }
 .search-marker b { color: var(--dim); font-size: 15px; cursor: pointer; line-height: 1; padding: 2px; }
 .search-marker b:hover { color: var(--text); }
@@ -1182,9 +1190,10 @@
 .dev-mobile .ps-pop { max-height: min(56vh, 430px); }
 .dev-mobile #ps-results .sr {
     padding: 10px 11px; min-height: 56px;
-    /* мапа на телефоні тримає головний потік: відкладена анімація рядків
-       може застигнути на нулі й лишити список порожнім — показуємо одразу */
-    animation: none;
+    /* ключфрейми рухають лише transform, тож навіть застигла анімація
+       не ховає рядок; на телефоні крок швидший і коротший */
+    animation: ps-row .26s var(--ease-pop) backwards;
+    animation-delay: calc(var(--i, 0) * 16ms);
 }
 .dev-mobile .sr-txt b { font-size: 14px; }
 .dev-mobile .sr-txt small { font-size: 11px; }
@@ -1415,5 +1424,6 @@
     .boot-stage, .boot-halo, .boot-orbit, .boot-orbit b, .boot-mark img, .boot-sheen,
     .boot-bar i::after, #boot-state::before, .boot-step.on i { animation: none; }
     .boot-sheen { display: none; }
+    #ps-results .sr, .search-marker .sm-in { animation: none; }
 }
 
