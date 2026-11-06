@@ -236,6 +236,7 @@
             'stats.eqDaily': 'добові втрати', 'stats.eqNote': 'рахуємо лише техніку, підтверджену фото чи відео, тому цифри нижчі за зведення Генштабу; підтверджені імена — вище',
             'stats.eqSrcLink': 'Джерело: Oryx · Attack On Europe',
             'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
+            'boot.stage.map': 'КАРТА', 'boot.stage.data': 'ДАНІ', 'boot.stage.warm': 'ГЕОМЕТРІЯ', 'boot.stage.render': 'ІНТЕРФЕЙС',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
             'tools.rectHint': 'Прямокутник: протягніть по карті', 'tools.circleHint': 'Коло: протягніть по карті',
             'tools.arrowHint': 'Стрілка: протягніть від початку до кінця', 'tools.arrow': 'СТРІЛКА',
@@ -462,6 +463,7 @@
             'stats.eqDaily': 'daily losses', 'stats.eqNote': 'only photo- or video-confirmed equipment is counted, so the numbers stay below General Staff claims; named confirmed deaths are above',
             'stats.eqSrcLink': 'Source: Oryx · Attack On Europe',
             'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
+            'boot.stage.map': 'MAP', 'boot.stage.data': 'DATA', 'boot.stage.warm': 'GEOMETRY', 'boot.stage.render': 'INTERFACE',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
             'tools.rectHint': 'Rectangle: drag on the map', 'tools.circleHint': 'Circle: drag on the map',
             'tools.arrowHint': 'Arrow: drag from start to end', 'tools.arrow': 'ARROW',
@@ -688,6 +690,7 @@
             'stats.eqDaily': 'суточные потери', 'stats.eqNote': 'считаем только технику, подтверждённую фото или видео, поэтому цифры ниже сводок Генштаба; подтверждённые имена — выше',
             'stats.eqSrcLink': 'Источник: Oryx · Attack On Europe',
             'boot.map': 'БАЗА КАРТЫ', 'boot.data': 'ДАННЫЕ ФРОНТА', 'boot.warm': 'ПОДГОТОВКА ГЕОМЕТРИИ', 'boot.render': 'ЗОНЫ И ЛИНИИ',
+            'boot.stage.map': 'КАРТА', 'boot.stage.data': 'ДАННЫЕ', 'boot.stage.warm': 'ГЕОМЕТРИЯ', 'boot.stage.render': 'ИНТЕРФЕЙС',
             'tools.rulerHint': 'Линейка: клики по точкам, клик по первой точке или двойной клик — завершить', 'tools.penHint': 'Карандаш: рисовать линию от руки',
             'tools.rectHint': 'Прямоугольник: протяните по карте', 'tools.circleHint': 'Круг: протяните по карте',
             'tools.arrowHint': 'Стрелка: протяните от начала до конца', 'tools.arrow': 'СТРЕЛКА',
@@ -6642,6 +6645,11 @@
                 }
                 clearZone3d(map);
                 repaint();
+                // полотна бленд-рушія прибиралися на вході в 3D (там заливку
+                // малює екструзія). Повертаємо їх лише тут, коли map._lt3d уже
+                // false: виклик на початку виходу бачив ще старий режим і
+                // полотна не створювалися — лишався голий контур.
+                if (opts.onExit) { try { opts.onExit(); } catch (e) { } }
             };
             set3D._off = off;
             map.on('moveend', off);
@@ -6694,6 +6702,16 @@
         const ca = parseHex(a), cb = parseHex(b);
         if (!ca || !cb) return '#0a1622';
         const h = v => Math.round((ca[v] + cb[v]) / 2).toString(16).padStart(2, '0');
+        return '#' + h(0) + h(1) + h(2);
+    }
+
+    // змішування двох кольорів у заданій пропорції: чотиристопний градієнт
+    // зон має плавні переходи, а не один різкий стрибок посередині
+    function mixHex(a, b, t) {
+        const ca = parseHex(a), cb = parseHex(b);
+        if (!ca || !cb) return '#0a1622';
+        const k = Math.max(0, Math.min(1, Number(t) || 0));
+        const h = v => Math.round(ca[v] + (cb[v] - ca[v]) * k).toString(16).padStart(2, '0');
         return '#' + h(0) + h(1) + h(2);
     }
 
@@ -7276,6 +7294,35 @@
         return hit;
     }
 
+    // Готовий Path2D полігона в меркатор-одиницях зі зсувом на власний центр.
+    // Кадр більше не обходить вершини в JS: він лише ставить трансформацію і
+    // віддає шлях Skia. Зсув тримає координати дрібними (float32 у Path2D),
+    // тому на міському зумі кромка не «сіпається». Дірки лишаються в тому ж
+    // шляху, тож evenodd віднімає їх від свого зовнішнього кільця.
+    const polyPaths = new WeakMap();
+    function polyPath(poly, tol) {
+        let m = polyPaths.get(poly);
+        if (!m) { m = new Map(); polyPaths.set(poly, m); }
+        let rec = m.get(tol);
+        if (rec !== undefined) return rec;
+        if (!poly.box) { m.set(tol, null); return null; }
+        const ox = poly.mx, oy = poly.my;
+        const p = new Path2D();
+        let n = 0;
+        poly.rings.forEach(pr => {
+            const f = lodM(pr, tol);
+            const len = f.length;
+            if (len < 6) return;
+            p.moveTo(f[0] - ox, f[1] - oy);
+            for (let i = 2; i < len; i += 2) p.lineTo(f[i] - ox, f[i + 1] - oy);
+            p.closePath();
+            n += len;
+        });
+        rec = n ? { p: p, ox: ox, oy: oy, n: n } : null;
+        m.set(tol, rec);
+        return rec;
+    }
+
     // «випікання» FeatureCollection: плаский список кілець разом з їх рамками.
     // Раніше на кожен кадр ми знову розгортали geometry.type, нарізали
     // тимчасові масиви polygon[] і обходили вершини заради рамки.
@@ -7288,16 +7335,49 @@
         (fc.features || []).forEach(f => {
             const g = f.geometry || {};
             const rings = [];
-            const put = r => {
-                const flat = flatRing(r);
-                if (flat) rings.push({ flat: flat, mflat: mercFlat(flat), box: flatBox(flat) });
+            const polys = [];
+            // Полігон лишається окремою одиницею: дірки мають відніматися саме
+            // від свого зовнішнього кільця, а не від усього шару. Заодно кожен
+            // полігон отримує власний origin — Path2D зберігає float32, і без
+            // зсуву на близькому зумі вершини «сіпалися» б на піксель.
+            const addPoly = coords => {
+                const prs = [];
+                (coords || []).forEach(r => {
+                    const flat = flatRing(r);
+                    if (flat) prs.push({ flat: flat, mflat: mercFlat(flat), box: flatBox(flat) });
+                });
+                if (!prs.length) return;
+                let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+                prs.forEach(pr => {
+                    const b = pr.box;
+                    if (!b) return;
+                    if (b[0] < w) w = b[0];
+                    if (b[1] < s) s = b[1];
+                    if (b[2] > e) e = b[2];
+                    if (b[3] > n) n = b[3];
+                });
+                const box = isFinite(w) && isFinite(s) && isFinite(e) && isFinite(n) ? [w, s, e, n] : null;
+                const poly = { rings: prs, box: box, mbox: null, mx: 0, my: 0 };
+                if (box) {
+                    const mx = (box[0] + box[2]) / 2, my = (box[1] + box[3]) / 2;
+                    poly.mx = mercX(mx);
+                    poly.my = mercY(my);
+                    const mx0 = mercX(box[0]), mx1 = mercX(box[2]);
+                    const my0 = mercY(box[3]), my1 = mercY(box[1]);
+                    poly.mbox = [
+                        Math.min(mx0, mx1), Math.min(my0, my1),
+                        Math.max(mx0, mx1), Math.max(my0, my1)
+                    ];
+                }
+                polys.push(poly);
+                prs.forEach(pr => rings.push(pr));
             };
             if (g.type === 'Polygon') {
-                (g.coordinates || []).forEach(put);
+                addPoly(g.coordinates);
             } else if (g.type === 'MultiPolygon') {
-                (g.coordinates || []).forEach(poly => (poly || []).forEach(put));
+                (g.coordinates || []).forEach(addPoly);
             }
-            if (rings.length) out.push({ box: featBox(f), rings });
+            if (rings.length) out.push({ box: featBox(f), rings, polys });
         });
         fcBakes.set(fc, out);
         return out;
@@ -7314,18 +7394,50 @@
         return lodLadder;
     }
 
-    function warmGeometry(fcs) {
+    // сходинка, потрібна кадру на цьому зумі: нею й прогріваємо невидимі
+    // дати — повна сходи для них коштує девʼять разів більше й важить лише
+    // тоді, коли користувач справді поїде в цю дату
+    function warmTolAt(z) {
+        const raw = lodTol(z, false);
+        return raw > 0 ? lodRung(Math.min(raw, tolCapAt(z))) : 0;
+    }
+
+    function warmGeometry(fcs, opts) {
         const t0 = performance.now();
         const list = lodTols();
+        // paths: 'all' — усі сходинки (поточна дата під завісою), 'base' —
+        // лише повна точність (решта дат: грубі сходинки будуються в кадрі
+        // за потреби, інакше дев'ять дат Path2D з'їли б десятки мегабайтів)
+        const mode = (opts && opts.paths) || 'base';
+        // zoom — прогрів лише однієї сходинки, під поточну камеру
+        const only = opts && typeof opts.zoom === 'number' ? warmTolAt(opts.zoom) : null;
         let rings = 0;
         (fcs || []).forEach(fc => {
-            bakeParts(fc).forEach(part => part.rings.forEach(pr => {
-                rings++;
-                for (let i = 0; i < list.length; i++) lodM(pr, list[i]);
-            }));
+            bakeParts(fc).forEach(part => {
+                part.rings.forEach(pr => {
+                    rings++;
+                    if (only != null) lodM(pr, only);
+                    else for (let i = 0; i < list.length; i++) lodM(pr, list[i]);
+                });
+                if (mode === 'off' || only != null) return;
+                part.polys.forEach(poly => {
+                    if (mode === 'all') {
+                        for (let i = 0; i < list.length; i++) polyPath(poly, list[i]);
+                    } else {
+                        polyPath(poly, 0);
+                    }
+                });
+            });
         });
-        return { rings: rings, tols: list.length, ms: +(performance.now() - t0).toFixed(1) };
+        return { rings: rings, tols: only != null ? 1 : list.length, ms: +(performance.now() - t0).toFixed(1) };
     }
+
+    // спільний буфер видимих полігонів кадру: жодного масиву на кожен кадр
+    const PAINT_VIS = [];
+    const PAINT_RECT = [];
+    // вище цього зуму float32 у Path2D починає помітно округлювати вершини:
+    // там кадр проєктує їх напряму (видимих полігонів на такому огляді одиниці)
+    const PATH_MAX_Z = 15.5;
 
     function blendEngine(map, getLayers, isVisible, displayFC) {
         let host = null;
@@ -7762,6 +7874,10 @@
             // читається, зате з'їдає ~30 % кадру, тож у русі її пропускаємо:
             // заливка й контур лишаються, лаг і «пливучі» краї меншають
             const rimOn = !(isMobile() && moving);
+            // широка м'яка кромка — лише на ПК, лише коли камера стала і лише
+            // на середньому/далекому огляді: у русі й наблизько вона не
+            // читається (контур там і так різкий), зате коштує другого проходу
+            const rimWide = !isMobile() && !moving && zoom < 10.5;
 
             items.forEach(it => {
                 const ctx = it.ctx;
@@ -7805,109 +7921,169 @@
                 // + дрібні шматки на слабкому телефоні не светяться взагалі
 
                 ctx.globalCompositeOperation = 'source-over';
-                ctx.fillStyle = hexA(l.style.color, l.style.alpha * fxA);
-                ctx.beginPath();
-                let pts = 0;
-                // кромка світіння збирається одразу у Path2D: другий прохід по
-                // всіх вершинах і купички координат у JS-масиві зникають
-                let rimPath = null;
+                // збираємо видимі полігони один раз: culling, кромка й градієнт
+                // рахуються з тих самих рамок — жодного повторного обходу
+                const vis = PAINT_VIS;
+                const rects = PAINT_RECT;
+                vis.length = 0;
+                rects.length = 0;
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
+                let mminX = Infinity, mminY = Infinity, mmaxX = -Infinity, mmaxY = -Infinity;
                 parts.forEach(part => {
                     // умная прорисовка: фича целиком вне экрана не проектируется
                     // и не попадает в путь — на фронте это половина слоёв
                     if (part.box && !onScreen(map, part.box, rx, ry, cv.width, cv.height, padC, offX, offY, fr)) return;
-
-                    for (let ri = 0; ri < part.rings.length; ri++) {
-                        const pr = part.rings[ri];
-                        let rim = rimOn;
-                        if (pr.box) {
-                            const rr = boxRect(map, pr.box, rx, ry, offX, offY, fr);
-                            if (rr) {
-                                // частина поза екраном або мікроскопічна на цьому
-                                // огляді — не малюємо і в градієнт не рахуємо
-                                if (rr[2] < -padC || rr[0] > cv.width + padC || rr[3] < -padC || rr[1] > cv.height + padC) continue;
-                                if (rr[2] - rr[0] < tinyPx && rr[3] - rr[1] < tinyPx) continue;
-                                // кромку світіння на дрібних частинах не малюємо
-                                if (rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx) rim = false;
-                            }
+                    part.polys.forEach(poly => {
+                        // градієнт шару будуємо по всій геометрії, а не по
+                        // видимій частині: інакше при панорамі він «дихав» би
+                        if (poly.mbox) {
+                            const mb = poly.mbox;
+                            if (mb[0] < mminX) mminX = mb[0];
+                            if (mb[1] < mminY) mminY = mb[1];
+                            if (mb[2] > mmaxX) mmaxX = mb[2];
+                            if (mb[3] > mmaxY) mmaxY = mb[3];
                         }
+                        const rr = poly.box ? boxRect(map, poly.box, rx, ry, offX, offY, fr) : null;
+                        if (rr) {
+                            if (rr[2] < -padC || rr[0] > cv.width + padC || rr[3] < -padC || rr[1] > cv.height + padC) return;
+                            if (rr[2] - rr[0] < tinyPx && rr[3] - rr[1] < tinyPx) return;
+                            if (rr[0] < minX) minX = rr[0];
+                            if (rr[1] < minY) minY = rr[1];
+                            if (rr[2] > maxX) maxX = rr[2];
+                            if (rr[3] > maxY) maxY = rr[3];
+                        }
+                        vis.push(poly);
+                        rects.push(rr);
+                    });
+                });
+                if (!vis.length) return;
+
+                const alpha = Number(l.style.alpha) * fxA;
+                const gcol = l.style.gcol || '#04101c';
+                const ang = (Number(l.style.gdir) || 0) * Math.PI / 180;
+                const gdx = Math.cos(ang), gdy = Math.sin(ang);
+                const flatSolid = hexA(l.style.color, alpha);
+                const rimA = Math.min(0.58, alpha * 0.82);
+                const rimW = Math.max(1.1, 1.7 * rx);
+                const bloomW = 5.4 * rx;
+                const invScale = 1 / Math.max(1e-9, (kx + ky) / 2);
+                // чотири сходи градієнта рахуємо раз на шар, не на полігон
+                const gStop0 = hexA(l.style.color, Math.min(1, alpha * 1.16));
+                const gStop1 = hexA(mixHex(l.style.color, gcol, 0.34), alpha * 1.02);
+                const gStop2 = hexA(mixHex(l.style.color, gcol, 0.68), alpha * 0.94);
+                const gStop3 = hexA(gcol, Math.max(0, alpha * 0.86));
+                const gcx = (mminX + mmaxX) / 2, gcy = (mminY + mmaxY) / 2;
+                const ghalf = Math.abs((mmaxX - mminX) * gdx) / 2 + Math.abs((mmaxY - mminY) * gdy) / 2;
+                const gradFlat = l.style.grad === true && isFinite(mminX) && isFinite(mminY) && ghalf > 0;
+
+                // Плоский кадр: шлях уже спечений у меркаторі, тому Skia малює
+                // його нативною трансформацією — замість десятків тисяч moveTo
+                // у JS на кадр лишається setTransform + fill + stroke.
+                // Понад 15.5 зума float32 у Path2D починає округлювати помітно,
+                // там повертаємось до прямої проєкції вершин (їх на такому
+                // огляді одиниці, тож це дешево й точно).
+                if (!tilted && zoom < PATH_MAX_Z) {
+                    const rw = rimW * invScale, bw = bloomW * invScale;
+                    for (let vi = 0; vi < vis.length; vi++) {
+                        const poly = vis[vi];
+                        const rec = polyPath(poly, tol);
+                        if (!rec) continue;
+                        ctx.setTransform(kx, 0, 0, ky, zx + rec.ox * kx, zy + rec.oy * ky);
+                        if (gradFlat) {
+                            // градієнт — у власних координатах полігона (після
+                            // зсуву origin): ті самі кольори лягають на шар
+                            // безперервно, без швів між полігонами
+                            const g = ctx.createLinearGradient(
+                                gcx - gdx * ghalf - rec.ox, gcy - gdy * ghalf - rec.oy,
+                                gcx + gdx * ghalf - rec.ox, gcy + gdy * ghalf - rec.oy);
+                            g.addColorStop(0, gStop0);
+                            g.addColorStop(0.42, gStop1);
+                            g.addColorStop(0.74, gStop2);
+                            g.addColorStop(1, gStop3);
+                            ctx.fillStyle = g;
+                        } else {
+                            ctx.fillStyle = flatSolid;
+                        }
+                        try { ctx.fill(rec.p, 'evenodd'); } catch (e) { ctx.fill(rec.p); }
+                        const rr = rects[vi];
+                        if (!rimOn || (rr && rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx)) continue;
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.lineJoin = 'round';
+                        if (rimWide) {
+                            ctx.strokeStyle = hexA(lightHex(l.style.color, 0.5), rimA * 0.22);
+                            ctx.lineWidth = bw;
+                            ctx.stroke(rec.p);
+                        }
+                        ctx.strokeStyle = hexA(lightHex(l.style.color, 0.68), rimA);
+                        ctx.lineWidth = rw;
+                        ctx.stroke(rec.p);
+                        ctx.globalCompositeOperation = 'source-over';
+                    }
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    return;
+                }
+
+                // Перспектива (3D) і екстремальний зум: вершини проєктуються
+                // в екран, але шлях будується один раз на полігон — ним же йде
+                // і заливка, і кромка (раніше кромка будувала другий шлях).
+                let gradT = null;
+                if (l.style.grad === true && isFinite(minX) && isFinite(minY)) {
+                    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+                    const half = Math.abs((maxX - minX) * gdx) / 2 + Math.abs((maxY - minY) * gdy) / 2;
+                    if (half > 0.5) {
+                        gradT = ctx.createLinearGradient(cx - gdx * half, cy - gdy * half, cx + gdx * half, cy + gdy * half);
+                        gradT.addColorStop(0, gStop0);
+                        gradT.addColorStop(0.42, gStop1);
+                        gradT.addColorStop(0.74, gStop2);
+                        gradT.addColorStop(1, gStop3);
+                    }
+                }
+                const fillT = gradT || flatSolid;
+                for (let vi = 0; vi < vis.length; vi++) {
+                    const poly = vis[vi];
+                    ctx.setTransform(1, 0, 0, 1, 0, 0);
+                    ctx.beginPath();
+                    let pts = 0;
+                    poly.rings.forEach(pr => {
                         const f = lodM(pr, tol);
                         const len = f.length;
-                        if (len < 6) continue;
-                        if (rim && !rimPath) rimPath = new Path2D();
-                        const rp = rim ? rimPath : null;
-                        // кожна лінія — окремий підшлях: інакше канвас тягне
-                        // прямі сполучні лінії між далекими частинами фронту
+                        if (len < 6) return;
                         if (tilted) {
                             const dm = DEM.on ? ringDem(map, f) : null;
                             const n = projectRing(f, fr, rx, ry, offX, offY, dm);
-                            if (n < 6) continue;
+                            if (n < 6) return;
                             for (let i = 0; i < n; i += 2) {
-                                const x = RING_OUT[i], y = RING_OUT[i + 1];
-                                if (x < minX) minX = x;
-                                if (x > maxX) maxX = x;
-                                if (y < minY) minY = y;
-                                if (y > maxY) maxY = y;
-                                if (i === 0) {
-                                    ctx.moveTo(x, y);
-                                    if (rp) rp.moveTo(x, y);
-                                } else {
-                                    ctx.lineTo(x, y);
-                                    if (rp) rp.lineTo(x, y);
-                                }
+                                if (i === 0) ctx.moveTo(RING_OUT[i], RING_OUT[i + 1]);
+                                else ctx.lineTo(RING_OUT[i], RING_OUT[i + 1]);
                                 pts++;
                             }
                         } else {
                             for (let i = 0; i < len; i += 2) {
                                 const x = zx + f[i] * kx;
                                 const y = zy + f[i + 1] * ky;
-                                if (x < minX) minX = x;
-                                if (x > maxX) maxX = x;
-                                if (y < minY) minY = y;
-                                if (y > maxY) maxY = y;
-                                if (i === 0) {
-                                    ctx.moveTo(x, y);
-                                    if (rp) rp.moveTo(x, y);
-                                } else {
-                                    ctx.lineTo(x, y);
-                                    if (rp) rp.lineTo(x, y);
-                                }
+                                if (i === 0) ctx.moveTo(x, y);
+                                else ctx.lineTo(x, y);
                                 pts++;
                             }
                         }
                         ctx.closePath();
-                        if (rp) rp.closePath();
-                    }
-                });
-
-                if (pts) {
-                    if (l.style.grad === true && isFinite(minX) && isFinite(minY)) {
-                        const ang = (Number(l.style.gdir) || 0) * Math.PI / 180;
-                        const dx = Math.cos(ang), dy = Math.sin(ang);
-                        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-                        const half = Math.abs((maxX - minX) * dx) / 2 + Math.abs((maxY - minY) * dy) / 2;
-                        if (half > 0.5) {
-                            const g2 = ctx.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
-                            const a = Number(l.style.alpha) * fxA;
-                            g2.addColorStop(0, hexA(l.style.color, Math.min(1, a * 1.12)));
-                            g2.addColorStop(0.52, hexA(midHex(l.style.color, l.style.gcol || '#04101c'), a * 0.92));
-                            g2.addColorStop(1, hexA(l.style.gcol || '#04101c', Math.max(0, a * 0.86)));
-                            ctx.fillStyle = g2;
-                        }
-                    }
+                    });
+                    if (!pts) continue;
+                    ctx.fillStyle = fillT;
                     try { ctx.fill('evenodd'); } catch (e) { ctx.fill(); }
-
-                    // светлая кромка по контуру: читается граница зоны на снимке;
-                    // окремий Path2D — тільки великі частини, без дрібних плям
-                    if (rimPath) {
-                        ctx.globalCompositeOperation = 'lighter';
-                        ctx.strokeStyle = hexA(lightHex(l.style.color, 0.62), Math.min(0.5, Number(l.style.alpha) * 0.55 * fxA));
-                        ctx.lineWidth = Math.max(1.2, 2.2 * rx);
-                        ctx.lineJoin = 'round';
-                        ctx.stroke(rimPath);
-                        ctx.globalCompositeOperation = 'source-over';
+                    const rr = rects[vi];
+                    if (!rimOn || (rr && rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx)) continue;
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.lineJoin = 'round';
+                    if (rimWide) {
+                        ctx.strokeStyle = hexA(lightHex(l.style.color, 0.5), rimA * 0.22);
+                        ctx.lineWidth = bloomW;
+                        ctx.stroke();
                     }
+                    ctx.strokeStyle = hexA(lightHex(l.style.color, 0.68), rimA);
+                    ctx.lineWidth = rimW;
+                    ctx.stroke();
+                    ctx.globalCompositeOperation = 'source-over';
                 }
             });
 

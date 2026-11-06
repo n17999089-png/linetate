@@ -213,7 +213,7 @@
         if (warmState.idx < warmState.ids.length) {
             const l = entry.layers[warmState.ids[warmState.idx]];
             if (l) {
-                try { LT.warmGeometry([displayFC(l, entry.layers)]); } catch (e) { }
+                try { LT.warmGeometry([displayFC(l, entry.layers)], { paths: 'off' }); } catch (e) { }
             }
         }
         warmState.idx++;
@@ -229,7 +229,7 @@
         const fcs = [];
         zoneIds(entry.layers).forEach(id => fcs.push(displayFC(entry.layers[id], entry.layers)));
         warmState.done.add(state.date);
-        return LT.warmGeometry(fcs);
+        return LT.warmGeometry(fcs, { paths: 'all' });
     }
 
     function preloadRest() {
@@ -2394,7 +2394,12 @@
         LT.set3D(map, !!on, {
             layers: state.layers,
             isVisible,
-            deferRelief: !!deferRelief
+            deferRelief: !!deferRelief,
+            // вихід із 3D завершується асинхронно: доки камера не ляже рівно,
+            // map._lt3d ще true, і полотна зон створювати не можна. Тому
+            // перебудову бленд-полотен робимо в момент, коли режим справді
+            // знято, а не одразу після кліку (там ще діє старий режим).
+            onExit: () => { if (blend) blend.sync(); }
         });
         // набір полотен залежить від режиму: у 3D зони малює екструзія, тож
         // їхні градієнтні полотна прибираються (і повертаються в площині)
@@ -2996,49 +3001,135 @@
     let styleReady = false;
 
     // чорна завіса на старті: під нею мапа розмита і в чорно-білому, тому
-    // перші кадри не показують сирі тайли. знімаємо коли є кадр полів
+    // перші кадри не показують сирі тайли. знімаємо коли готові меню,
+    // поточний день і геометрія всіх дат — перший дотик не рахує нічого
     let veilLifted = false;
     const veilStart = Date.now();
-    // етапи завантаження й скільки відсотків смуги їм відповідає: прогрес
-    // показує реальний шлях (база → дані → кадр), а не вигаданий таймер
-    const BOOT_PCT = { 'boot.data': 46, 'boot.warm': 78, 'boot.render': 92 };
+    let bootProg = 0;
+    let preloadStarted = false;
+    const BOOT_STEPS = ['map', 'data', 'warm', 'render'];
+
+    // смуга тільки росте: етапи йдуть паралельно і не мають права відкотити
+    // відсоток назад, інакше прогрес читається як глюк
     function bootPct(p) {
         const veil = $('boot');
         if (!veil) return;
-        veil.style.setProperty('--p', p + '%');
+        bootProg = Math.max(bootProg, Math.min(100, p));
+        veil.style.setProperty('--p', bootProg + '%');
         const el = $('boot-pct');
-        if (el) el.textContent = Math.round(p) + '%';
+        if (el) el.textContent = Math.round(bootProg) + '%';
     }
-    function bootStage(key) {
-        const el = $('boot-state');
-        if (el && !veilLifted) el.textContent = LT.t(key);
-        if (BOOT_PCT[key] != null) bootPct(BOOT_PCT[key]);
+    function bootStage(key, p, note) {
+        const idx = BOOT_STEPS.indexOf(String(key).split('.').pop());
+        if (!veilLifted) {
+            const el = $('boot-state');
+            if (el) el.textContent = LT.t(key);
+            const nt = $('boot-note');
+            if (nt) nt.textContent = note || '';
+            const box = $('boot-steps');
+            if (box && idx >= 0) {
+                box.querySelectorAll('.boot-step').forEach(n => {
+                    const i = BOOT_STEPS.indexOf(n.dataset.step);
+                    n.classList.toggle('done', i < idx);
+                    n.classList.toggle('on', i === idx);
+                });
+            }
+        }
+        if (p != null) bootPct(p);
     }
+    // кадр або таймер: у прихованій вкладці rAF не приходить зовсім, і без
+    // страховки черга прогріву застрягла б назавжди
+    function yieldFrame() {
+        return new Promise(res => {
+            let fin = false;
+            const go = () => { if (!fin) { fin = true; res(); } };
+            requestAnimationFrame(go);
+            setTimeout(go, 60);
+        });
+    }
+    function withTimeout(p, ms) {
+        if (!p) return Promise.resolve();
+        return Promise.race([Promise.resolve(p).catch(() => { }), new Promise(r => setTimeout(r, ms))]);
+    }
+
+    // геометрія дати друкується під завісою: base — лише поточний LOD, all —
+    // усі сходи, щоб зум не перебудовував Path2D під час першого жесту
+    function warmDate(date, paths, zoom) {
+        const entry = docCache.get(date) || loadDoc(date);
+        const fcs = [];
+        zoneIds(entry.layers).forEach(id => fcs.push(displayFC(entry.layers[id], entry.layers)));
+        if (fcs.length) {
+            try { LT.warmGeometry(fcs, { paths, zoom }); } catch (e) { }
+        }
+        warmState.done.add(date);
+    }
+
     function liftVeil() {
         if (veilLifted) return;
         const veil = $('boot');
         if (!veil) return;
         veilLifted = true;
+        const box = $('boot-steps');
+        if (box) box.querySelectorAll('.boot-step').forEach(n => { n.classList.remove('on'); n.classList.add('done'); });
         bootPct(100);
-        // карта показали — це і є один перегляд; адмінка сама не рахується
+        // карту показали — це і є один перегляд; адмінка сама не рахується
         try { LT.views.record(); } catch (e) { }
         // решта дат додрукована в фоні: жоден перебір календаря не має туманити
-        setTimeout(preloadRest, 400);
+        setTimeout(preloadRest, 600);
         // на швидкій мережі завіса мигнула б за сто мілісекунд — тримаємо
         // мінімум, щоб перехід читався як завантаження, а не як глітч
         setTimeout(() => {
             veil.classList.add('done');
-            setTimeout(() => veil.remove(), 700);
+            setTimeout(() => veil.remove(), 750);
             // перший кадр показано — тепер гори можна й завантажувати
             LT.reliefArm(map);
-        }, Math.max(0, 620 - (Date.now() - veilStart)));
+        }, Math.max(0, 900 - (Date.now() - veilStart)));
     }
-    setTimeout(liftVeil, 14000);
+
+    // усе під завісою: меню, шрифти, поточний день, решта дат і перший кадр
+    // полотен. кожна дата дає кадру подихати, щоб смуга рухалась, а браузер
+    // не застигав на довгому синхронному розрахунку
+    async function preloadAll() {
+        if (preloadStarted) return;
+        preloadStarted = true;
+        stopWarm();
+        warmState.date = null;
+        warmState.ids = null;
+        const t0 = Date.now();
+        const cap = (window.matchMedia && matchMedia('(max-width: 700px)').matches) ? 7000 : 5500;
+        const cur = state.date;
+        if (!warmState.done.has(cur)) warmDate(cur, 'all');
+        const rest = store.listDates().map(d => d.date)
+            .filter(d => d !== cur)
+            .sort((a, b) => Math.abs(Date.parse(a) - Date.parse(cur)) - Math.abs(Date.parse(b) - Date.parse(cur)));
+        const total = rest.length + 1;
+        let k = 1;
+        bootStage('boot.warm', 34, k + '/' + total);
+        for (let i = 0; i < rest.length; i++) {
+            if (Date.now() - t0 > cap) break;
+            await yieldFrame();
+            warmDate(rest[i], 'base', map.getZoom());
+            k++;
+            bootStage('boot.warm', 34 + Math.round(52 * k / total), k + '/' + total);
+        }
+        // хвіст, що не встиг під завісою, добирає фоновий прогрів
+        warmState.dates = rest.filter(d => !warmState.done.has(d));
+        bootStage('boot.render', 90, '');
+        if (document.fonts && document.fonts.ready) await withTimeout(document.fonts.ready, 1200);
+        await withTimeout(fetch('data/losses.json', { cache: 'force-cache' }), 900);
+        bootPct(96);
+        // перший кадр полотен малюємо тут: після підняття завіси заливки вже
+        // на місці й не «проявляються» окремим кадром
+        try { if (blend) blend.sync(); } catch (e) { }
+        await yieldFrame();
+        liftVeil();
+    }
+    setTimeout(liftVeil, 16000);
 
     function markStyleReady() {
         if (styleReady) return;
         styleReady = true;
-        bootStage('boot.data');
+        bootStage('boot.data', 22);
         boot();
     }
 
@@ -3084,7 +3175,7 @@
             if (localStorage.getItem('LINETATE:3d') === '1') set3DView(true, true);
         } catch (e) { }
         // поточний день друкується тут: далі жест не має право нічого спрощувати
-        bootStage('boot.warm');
+        bootStage('boot.warm', 30);
         try { warmCurrent(); } catch (e) { }
         startAnimations();
         watchLive();
@@ -3394,14 +3485,14 @@
         syncZonesBtn();
         syncLabelsBtn();
 
-        // завіса падає через два кадри: полотно зон уже намальоване
-        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(liftVeil, 220)));
+        // далі — повна предзагрузка всіх дат і першого кадру під завісою
+        preloadAll();
     }
 
     // опубликованные данные лежат рядом с сайтом: data/map.json
     LT.store.loadRemoteData('data/map.json').then(() => {
         dataReady = true;
-        bootStage('boot.render');
+        bootStage('boot.warm', 30);
         if (!mapReady) state.date = clampDate(pickDate());
         else if (!dateHasData(state.date)) state.date = clampDate(pickDate());
         boot();
