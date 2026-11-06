@@ -3762,17 +3762,101 @@
         rim: '#fff1b8',
         plateOp: 0.36,
         rimOp: 0.92,
-        budget: 2200
+        budget: 2200,
+        // пластина тонша за стіну зони (24–36 px), тому під дахом окупації
+        // вона зникала повністю. підняття має лишатися сталим у пікселях, як і
+        // самі стіни, тому висота баз задається тим самим wallStops
+        liftPx: 46
     };
     const ps3dState = new WeakMap();
 
     function ps3d(map) {
         let s = ps3dState.get(map);
         if (!s) {
-            s = { feature: null, bandPx: 0 };
+            s = { feature: null, bandPx: 0, liftPx: 0 };
             ps3dState.set(map, s);
         }
         return s;
+    }
+
+    function pointInRing(x, y, ring) {
+        let inside = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const xi = ring[i][0], yi = ring[i][1];
+            const xj = ring[j][0], yj = ring[j][1];
+            if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+        }
+        return inside;
+    }
+
+    function pointInGeom(p, g) {
+        if (!g) return false;
+        const polys = g.type === 'Polygon' ? [g.coordinates]
+            : g.type === 'MultiPolygon' ? g.coordinates : null;
+        if (!polys) return false;
+        for (let i = 0; i < polys.length; i++) {
+            const rings = polys[i];
+            if (!rings || !rings[0] || !pointInRing(p[0], p[1], rings[0])) continue;
+            let hole = false;
+            for (let r = 1; r < rings.length; r++) {
+                if (pointInRing(p[0], p[1], rings[r])) { hole = true; break; }
+            }
+            if (!hole) return true;
+        }
+        return false;
+    }
+
+    // сітка точок у bbox міста: центроїд блукає за формою контуру, а сітка
+    // ловить і місто на лінії фронту, яке зоною перекрите лише частково
+    function searchSamples(feature) {
+        const out = [];
+        try {
+            const bb = turf.bbox(feature);
+            for (let i = 1; i <= 3; i++) {
+                for (let j = 1; j <= 3; j++) {
+                    out.push([bb[0] + (bb[2] - bb[0]) * i / 4, bb[1] + (bb[3] - bb[1]) * j / 4]);
+                }
+            }
+        } catch (e) { }
+        return out;
+    }
+
+    function searchCovered(map, feature) {
+        if (map._ltZones3d === false) return false;
+        const s = zone3d.get(map);
+        if (!s || !s.byId.size || !feature) return false;
+        const pts = searchSamples(feature);
+        if (!pts.length) return false;
+        let hit = false;
+        s.byId.forEach((e, id) => {
+            if (hit || !e.shown || !e.geo || !e.geo.features) return;
+            const l = s.fe.get(id);
+            if (!l || l.kind !== 'zone') return;
+            for (let i = 0; i < e.geo.features.length && !hit; i++) {
+                const g = e.geo.features[i].geometry;
+                for (let k = 0; k < pts.length; k++) {
+                    if (pointInGeom(pts[k], g)) { hit = true; break; }
+                }
+            }
+        });
+        return hit;
+    }
+
+    // висоти задані стопами на зум, тож підняття лишається сталим у пікселях;
+    // mix масштабує його разом зі стінами, щоб перехід 3D ↔ площина не рвався
+    function paintSearch3d(map) {
+        if (!map.getLayer('lt-ps-3d-plate') || !map.getLayer('lt-ps-3d-rim')) return;
+        const s = ps3d(map);
+        const z = zone3d.get(map);
+        const mix = z && z.mix != null ? Math.max(0.0001, Math.min(1, z.mix)) : 1;
+        const lift = Math.max(0, s.liftPx || 0) * mix;
+        const top = lift + PS3D.platePx * mix;
+        try {
+            map.setPaintProperty('lt-ps-3d-plate', 'fill-extrusion-base', wallStops(lift));
+            map.setPaintProperty('lt-ps-3d-plate', 'fill-extrusion-height', wallStops(top));
+            map.setPaintProperty('lt-ps-3d-rim', 'fill-extrusion-base', wallStops(top));
+            map.setPaintProperty('lt-ps-3d-rim', 'fill-extrusion-height', wallStops(top + PS3D.rimUpPx * mix));
+        } catch (e) { }
     }
 
     function ensureSearch3d(map) {
@@ -3816,6 +3900,7 @@
         if (!on) {
             rim.setData(EMPTY);
             s.bandPx = 0;
+            s.liftPx = 0;
             return;
         }
         const kp = pxToM(1, map.getZoom()) / 1000;
@@ -3828,6 +3913,10 @@
         } catch (e) { feats = []; }
         rim.setData({ type: 'FeatureCollection', features: feats });
         s.bandPx = PS3D.bandPx;
+        // якщо знайдений контур лежить під видимою зоною, пластина піднімається
+        // над її дахом: інакше в окупованому місті «3D-територія» просто зникала
+        s.liftPx = searchCovered(map, s.feature) ? PS3D.liftPx : 0;
+        paintSearch3d(map);
         ['lt-ps-3d-plate', 'lt-ps-3d-rim'].forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
     }
 
@@ -4919,6 +5008,55 @@
         return WALL_PX + Math.min(rank, RANK_MAX) * LIFT_PX;
     }
 
+    // окупована територія в 3D має читатися інакше за вільну: дах блока
+    // дістає косу штриховку кольору тривоги й світлу кромку по межі. назва
+    // шару — єдина ознака, яку бачить ядро: у даних він зветься «ЗС РФ»
+    const CAPTURE_NAME = /(^|[^а-яїієґ])рф|росс|росі|russ|orc|орк|окуп/i;
+    function zoneCaptured(l) {
+        return !!(l && l.kind === 'zone' && l.id !== 'zone_6d0bf'
+            && CAPTURE_NAME.test(String(l.name || '')));
+    }
+
+    // штриховка живе в одній картинці: темна підкладка тримає колір зони,
+    // крізь неї видно місто й рельєф, а діагональні смуги дають «заборонену
+    // зону» навіть тоді, коли межа блока за кадром
+    function capturePattern(map) {
+        const id = 'lt-cap-hatch';
+        if (!map.hasImage(id)) {
+            // крок має ділити розмір тайла націло: інакше смуга на шві
+            // обривається зі зсувом і на великому зумі видно прямокутну сітку
+            const size = 44, step = 22;
+            const c = document.createElement('canvas');
+            c.width = c.height = size;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = 'rgba(44,9,3,.44)';
+            ctx.fillRect(0, 0, size, size);
+            ctx.strokeStyle = 'rgba(255,88,54,.82)';
+            ctx.lineWidth = 3.2;
+            for (let i = -size; i <= size * 2; i += step) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i + size, size);
+                ctx.stroke();
+            }
+            map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 1 });
+        }
+        return id;
+    }
+
+    // кромка окупації — не лінія (лінії лежать на землі), а вузька екструзія
+    // на місці верхнього ребра: тому вона тримається контуру на будь-якому
+    // нахилі камери й не залежить від z-index плоских шарів
+    const CAPTURE_RIM_PX = 3.2;
+    const CAPTURE_RIM_COLOR = '#ff5630';
+    const CAPTURE_RIM_OPACITY = 0.9;
+
+    function captureRimPaint(map, l, w) {
+        const wpx = w == null ? WALL_PX : w;
+        map.setPaintProperty('cr_' + l.id, 'fill-extrusion-base', wallStops(wpx + 0.2));
+        map.setPaintProperty('cr_' + l.id, 'fill-extrusion-height', wallStops(wpx + 0.2 + CAPTURE_RIM_PX));
+    }
+
     function polyRings(geom) {
         const out = [];
         if (!geom) return out;
@@ -5283,7 +5421,7 @@
     function z3d(map) {
         let s = zone3d.get(map);
         if (!s) {
-            s = { byId: new Map(), kp: 0, t: 0, relief: null, ex: 0, bound: null, build: null, armed: false, reliefPending: false, relief3d: true, reliefFlat: false, reliefTheme: null, adv: null, fe: new Map(), mix: null, mixRaf: 0 };
+            s = { byId: new Map(), kp: 0, t: 0, relief: null, ex: 0, bound: null, build: null, armed: false, reliefPending: false, relief3d: true, reliefFlat: false, reliefTheme: null, adv: null, fe: new Map(), cap: new Map(), mix: null, mixRaf: 0 };
             zone3d.set(map, s);
             // перемикання підкладки забирає стиль разом із рельєфом: повертаємо
             // його за режимом — у 3D за замовчуванням увімкнено, у площині лише
@@ -5352,7 +5490,12 @@
 
     function syncZone3d(map, l, geo, shown) {
         const s = z3d(map);
+        const prev = s.byId.get(l.id);
         s.byId.set(l.id, { geo, shown: !!shown });
+        // кромка окупації будується з byId: нові дані чи поява шару мають
+        // поставити її в чергу, інакше після зміни дати вона лишається старою
+        if (s.cap.has(l.id) && map._lt3d
+            && (!prev || prev.shown !== !!shown || prev.geo !== geo)) queueZone3d(map, true);
         const src = map.getSource('x_' + l.id);
         if (!src) return;
         // обʼємний контур і cast-тінь зон прибрані, тому найдорожчий прохід
@@ -5376,7 +5519,31 @@
         // стіна просування живе в тому самому кадрі й за тим самим зумом, тому
         // перебудовується цим же проходом, а не окремим таймером
         advanceBand(map);
+        refreshCaptured3d(map);
         refreshSearch3d(map);
+    }
+
+    // кромка окупації будується з тої самої геометрії, що й дах, але вужчою
+    // смугою: дах лишається точним контуром, а кромка — підсвіченим ребром
+    function refreshCaptured3d(map) {
+        const s = z3d(map);
+        if (!s.cap.size) return;
+        const on = !!map._lt3d && map._ltZones3d !== false;
+        const bounds = on ? map.getBounds() : null;
+        const budget = docMobile() ? 1400 : 2400;
+        s.cap.forEach((l, id) => {
+            const src = map.getSource('ci_' + id);
+            if (!src) return;
+            const e = s.byId.get(id);
+            if (!on || !e || !e.shown || !e.geo) { src.setData(EMPTY); return; }
+            let feats = [];
+            try {
+                feats = zone3dFeatures(prepZone(e.geo), s.kp, bounds, null,
+                    { widthPx: 4.2, cast: false, budget })
+                    .filter(f => f.properties && f.properties.role === 'rim');
+            } catch (err) { feats = []; }
+            src.setData(feats.length ? { type: 'FeatureCollection', features: feats } : EMPTY);
+        });
     }
 
     function clearZone3d(map) {
@@ -5392,6 +5559,7 @@
         // пляма, а підкладка з обводкою — повертатися на місце. той самий
         // advanceBand: map._lt3d уже виставлено ще до цього дзвінка
         advanceBand(map);
+        refreshCaptured3d(map);
         refreshSearch3d(map);
     }
 
@@ -5400,6 +5568,9 @@
     // перезастосовує paint до всіх шарів
     function setZones3d(map, on) {
         map._ltZones3d = !!on;
+        // при вимкнених обʼємних зонах кромка й піднята пластина не мають сенсу:
+        // перерахунок очищає їх і повертає пластину на землю
+        if (map._lt3d) queueZone3d(map, true);
     }
 
     /* ------------------------------ рельеф ------------------------------ */
@@ -6032,7 +6203,22 @@
         });
         // анімація 3D ↔ площина перебирає саме ці шари: тримаємо список,
         // щоб у кадрі не сканувати весь стиль
-        z3d(map).fe.set(l.id, l);
+        const zs = z3d(map);
+        zs.fe.set(l.id, l);
+        if (zoneCaptured(l)) {
+            map.addSource('ci_' + l.id, { type: 'geojson', data: EMPTY });
+            map.addLayer({
+                id: 'cr_' + l.id, type: 'fill-extrusion', source: 'ci_' + l.id,
+                layout: { visibility: 'none' },
+                paint: {
+                    'fill-extrusion-color': CAPTURE_RIM_COLOR,
+                    'fill-extrusion-opacity': CAPTURE_RIM_OPACITY,
+                    'fill-extrusion-base': wallStops(WALL_PX + 0.2),
+                    'fill-extrusion-height': wallStops(WALL_PX + 0.2 + CAPTURE_RIM_PX)
+                }
+            });
+            zs.cap.set(l.id, l);
+        }
         map.addLayer({
             id: 'gw_' + l.id, type: 'line', source: srcId,
             layout: { visibility: 'none' },
@@ -6070,13 +6256,14 @@
         const fs = fxState.get(map);
         if (fs) fs.run.delete(id);
         const z = zone3d.get(map);
-        if (z) { z.byId.delete(id); z.fe.delete(id); }
-        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'fr_', 'fe_', 'f_', 'cs_', 'sh_', 'xs_', 'xb_'].forEach(p => {
+        if (z) { z.byId.delete(id); z.fe.delete(id); z.cap.delete(id); }
+        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'fr_', 'fe_', 'cr_', 'f_', 'cs_', 'sh_', 'xs_', 'xb_'].forEach(p => {
             if (map.getLayer(p + id)) map.removeLayer(p + id);
         });
         dropLayerLabel(map, id);
         if (map.getSource('s_' + id)) map.removeSource('s_' + id);
         if (map.getSource('x_' + id)) map.removeSource('x_' + id);
+        if (map.getSource('ci_' + id)) map.removeSource('ci_' + id);
     }
 
     /* ------------------------------ плавна поява шарів ------------------------------ */
@@ -6186,6 +6373,10 @@
         map.setLayoutProperty('p_' + l.id, 'visibility', d3 ? 'none' : (pattern && !gradient ? vis : 'none'));
         if (map.getLayer('fe_' + l.id)) {
             map.setLayoutProperty('fe_' + l.id, 'visibility', d3 ? vis : 'none');
+            // окупований блок має читатися окремо навіть без межі в кадрі:
+            // коса штриховка на даху лишається єдиною підказкою належності
+            map.setPaintProperty('fe_' + l.id, 'fill-extrusion-pattern',
+                zoneCaptured(l) ? capturePattern(map) : null);
             if (d3) {
                 // mix — ступінь переходу 3D: під час перемикання стіни ростуть
                 // і гаснуть разом із нахилом камери, а не стрибають
@@ -6196,7 +6387,14 @@
                     map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height',
                         wallStops(Math.max(0.0001, (l._w3d || WALL_PX) * mix)));
                 }
+                if (map.getLayer('cr_' + l.id)) {
+                    map.setPaintProperty('cr_' + l.id, 'fill-extrusion-opacity',
+                        CAPTURE_RIM_OPACITY * k * mix);
+                }
             }
+        }
+        if (map.getLayer('cr_' + l.id)) {
+            map.setLayoutProperty('cr_' + l.id, 'visibility', d3 ? vis : 'none');
         }
         // обʼємний контур (fr_) і cast-тінь (cs_) прибрані: вони давали
         // z-fighting і коштували найдорожчого проходу геометрії на жест
@@ -6292,9 +6490,10 @@
                     if (l._w3d !== w) {
                         l._w3d = w;
                         map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height', wallStops(w));
+                        if (map.getLayer('cr_' + l.id)) captureRimPaint(map, l, w);
                     }
                 }
-                ['xb_', 'xs_', 'cs_', 'sh_', 'f_', 'p_', 'fe_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
+                ['xb_', 'xs_', 'cs_', 'sh_', 'f_', 'p_', 'fe_', 'cr_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
                     if (map.getLayer(p + l.id)) map.moveLayer(p + l.id);
                 });
             });
@@ -6356,6 +6555,17 @@
                 map.setPaintProperty('fe_' + id, 'fill-extrusion-opacity', ZONE_3D_OPACITY * k * mix);
             } catch (e) { }
         });
+        // гаряча кромка окупації росте разом зі стіною свого блока
+        s.cap.forEach((l, id) => {
+            if (!map.getLayer('cr_' + id)) return;
+            const k = Math.max(0, Math.min(1, fxCurrent(map, id)));
+            const w = Math.max(0.0001, (l._w3d || WALL_PX) * mix);
+            try {
+                map.setPaintProperty('cr_' + id, 'fill-extrusion-base', wallStops(w + 0.2 * mix));
+                map.setPaintProperty('cr_' + id, 'fill-extrusion-height', wallStops(w + (0.2 + CAPTURE_RIM_PX) * mix));
+                map.setPaintProperty('cr_' + id, 'fill-extrusion-opacity', CAPTURE_RIM_OPACITY * k * mix);
+            } catch (e) { }
+        });
         // стіна просування й пластина пошуку ростуть разом із зонами
         try {
             if (map.getLayer('lt-adv-band')) {
@@ -6364,11 +6574,7 @@
             if (map.getLayer('lt-adv-band-loss')) {
                 map.setPaintProperty('lt-adv-band-loss', 'fill-extrusion-height', wallStops(Math.max(0.0001, (ADV.wallPx + ADV.bumpPx) * mix)));
             }
-            if (map._lt3d && map.getLayer('lt-ps-3d-plate')) {
-                map.setPaintProperty('lt-ps-3d-plate', 'fill-extrusion-height', wallStops(Math.max(0.0001, PS3D.platePx * mix)));
-                map.setPaintProperty('lt-ps-3d-rim', 'fill-extrusion-base', wallStops(Math.max(0.0001, PS3D.platePx * mix)));
-                map.setPaintProperty('lt-ps-3d-rim', 'fill-extrusion-height', wallStops(Math.max(0.0001, (PS3D.platePx + PS3D.rimUpPx) * mix)));
-            }
+            paintSearch3d(map);
         } catch (e) { }
     }
 
