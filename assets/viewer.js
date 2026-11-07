@@ -1595,24 +1595,33 @@
         }
     }
 
-    function renderSearchRows(emptyMsg) {
-        const box = $('ps-results');
-        const pop = $('ps-pop');
-        if (!box) return;
-        if (!searchRows.length) {
-            box.innerHTML = emptyMsg ? `<div class="ps-empty">${esc(emptyMsg)}</div>` : '';
-            if (pop) pop.classList.toggle('show', !!emptyMsg);
-            return;
-        }
-        box.innerHTML = searchRows.map((res, i) => {
+    // рядки перемальовуємо лише коли список справді змінився: інакше на
+    // кожну літеру анімація каскаду стартує заново й список смикається
+    let rowsHtml = '';
+
+    function searchRowsHtml() {
+        return searchRows.map((res, i) => {
             const dn = String(res.display_name || '').split(',').slice(1, 3).join(',').trim();
-            return `<button type="button" class="sr${i === searchActive ? ' active' : ''}" data-i="${i}" role="option" aria-selected="${i === searchActive}" style="--i:${i}">
+            return `<button type="button" class="sr" data-i="${i}" role="option" style="--i:${i}">
                 <span class="sr-ico" aria-hidden="true">${searchIcon(res)}</span>
                 <span class="sr-txt"><b>${esc(shortName(res).toUpperCase())}</b><small><em>${esc(placeType(res))}</em>${dn ? ' · ' + esc(dn) : ''}</small></span>
                 <svg class="sr-go" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
             </button>`;
         }).join('');
-        if (pop) pop.classList.add('show');
+    }
+
+    function renderSearchRows(emptyMsg) {
+        const box = $('ps-results');
+        const pop = $('ps-pop');
+        if (!box) return;
+        const html = searchRows.length ? searchRowsHtml()
+            : (emptyMsg ? `<div class="ps-empty">${esc(emptyMsg)}</div>` : '');
+        if (html !== rowsHtml) {
+            box.innerHTML = html;
+            rowsHtml = html;
+        }
+        if (searchRows.length) markSearchActive();
+        if (pop) pop.classList.toggle('show', searchRows.length ? true : !!emptyMsg);
         syncSearchHint();
     }
 
@@ -1936,10 +1945,7 @@
         ['lt-ps-fill', 'lt-ps-glow', 'lt-ps-line'].forEach(id => {
             if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
         });
-        const box = $('ps-results');
-        if (box) box.innerHTML = '';
-        const pop = $('ps-pop');
-        if (pop) pop.classList.remove('show');
+        renderSearchRows();
         syncSearchHint();
     }
 

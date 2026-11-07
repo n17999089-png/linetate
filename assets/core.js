@@ -5003,6 +5003,14 @@
             && CAPTURE_NAME.test(String(l.name || '')));
     }
 
+    // окупований блок у 3D свідомо плоский: стіна з косої штриховки на
+    // граничному куті зливалася в суцільну помаранчеву смугу навколо кожної
+    // ділянки, а її ступінчастий край на телефоні лежав поверх детального
+    // контуру як «другий контур». дах лишається штрихованим — цього достатньо,
+    // щоб окупація читалась окремо, без жодної стіни
+    const CAP_FLAT_PX = 0.02;
+    function capFlat(l) { return zoneCaptured(l) ? CAP_FLAT_PX : null; }
+
     // штриховка живе в одній картинці: темна підкладка тримає колір зони,
     // крізь неї видно місто й рельєф, а діагональні смуги дають «заборонену
     // зону» навіть тоді, коли межа блока за кадром
@@ -6316,8 +6324,9 @@
                 const mix = s3 && s3.mix != null ? Math.max(0, Math.min(1, s3.mix)) : 1;
                 map.setPaintProperty('fe_' + l.id, 'fill-extrusion-opacity', ZONE_3D_OPACITY * k * mix);
                 if (mix < 1) {
+                    const wp = capFlat(l) != null ? CAP_FLAT_PX : (l._w3d || WALL_PX);
                     map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height',
-                        wallStops(Math.max(0.0001, (l._w3d || WALL_PX) * mix)));
+                        wallStops(Math.max(0.0001, wp * mix)));
                 }
             }
         }
@@ -6411,10 +6420,11 @@
             .sort((a, b) => a.z - b.z)
             .forEach(l => {
                 if (map.getLayer('fe_' + l.id)) {
+                    const flat = capFlat(l) != null;
                     const w = l.kind === 'zone' ? zoneWallPx(rank++) : WALL_PX;
-                    if (l._w3d !== w) {
+                    if (l._w3d !== w || flat) {
                         l._w3d = w;
-                        map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height', wallStops(w));
+                        map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height', wallStops(flat ? CAP_FLAT_PX : w));
                     }
                 }
                 ['xb_', 'xs_', 'cs_', 'sh_', 'f_', 'p_', 'fe_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
@@ -6472,7 +6482,8 @@
         const mix = s.mix == null ? 1 : Math.max(0, Math.min(1, s.mix));
         s.fe.forEach((l, id) => {
             if (!map.getLayer('fe_' + id)) return;
-            const w = Math.max(0.0001, (l._w3d || WALL_PX) * mix);
+            const flat = capFlat(l) != null;
+            const w = Math.max(0.0001, (flat ? CAP_FLAT_PX : (l._w3d || WALL_PX)) * mix);
             const k = Math.max(0, Math.min(1, fxCurrent(map, id)));
             try {
                 map.setPaintProperty('fe_' + id, 'fill-extrusion-height', wallStops(w));
