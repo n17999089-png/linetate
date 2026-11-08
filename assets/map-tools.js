@@ -6,16 +6,15 @@
 
     function installMapTools(map, options) {
         const opts = options || {};
-        // контури областей низькополігонні: довгі хорди ріжуть фронт навпіл
-        // (скарга зі скріна під Запорізьким). У переглядачі їх більше немає
-        // взагалі — лишились тільки підписи областей. Адмінці лінії потрібні
-        // для орієнтування, тому вона вмикає їх окремим прапорцем.
+        // лінії областей малюємо тією самою геометрією, що й підписи, без
+        // окремого «грубого» шару: спрощення в MapLibre різало кордон довгими
+        // хордами, і на карті зʼявлялася ламана лінія через пів області
         const regionLines = !!opts.regionLines;
-        let regions = false;
+        // стартовий стан перемикача: remount/setRegions можуть не прийти до
+        // першого кадру, тож шари мусять народитись уже видимими
+        let regions = opts.regionsOn === true;
         const REGION_LAYERS = ['lt-region-label']
-            .concat(regionLines ? ['lt-region-casing', 'lt-region-line', 'lt-region-lo-casing', 'lt-region-lo-line'] : []);
-        // за цим зумом показуємо грубшу геометрію: на дрібному масштабі деталі все одно не видно
-        const LOD_Z = 7;
+            .concat(regionLines ? ['lt-region-casing', 'lt-region-line'] : []);
         const borderVis = {};
         const regionVis = () => (regions ? 'visible' : 'none');
         const regionField = () => {
@@ -43,45 +42,25 @@
                 const anchor = ((map.getStyle().layers || []).find(l => /^(?:f|p|l)_/.test(l.id)) || {}).id;
                 const vis = regionVis();
                 if (regionLines) {
-                    map.addSource('lt-regions', { type: 'geojson', data: regionData.lines, tolerance: 0.5 });
-                    map.addSource('lt-regions-lo', { type: 'geojson', data: regionData.lines, tolerance: 2.2 });
+                    map.addSource('lt-regions', { type: 'geojson', data: regionData.lines, tolerance: 0.4 });
                     const dash = [4, 3];
                     [
                         {
-                            id: 'lt-region-casing', type: 'line', source: 'lt-regions', minzoom: LOD_Z + 1,
-                            layout: { visibility: vis },
+                            id: 'lt-region-casing', type: 'line', source: 'lt-regions',
+                            layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
                             paint: {
                                 'line-color': '#000000',
-                                'line-width': ['interpolate', ['linear'], ['zoom'], 5, 2.1, 8, 2.5, 11, 3],
-                                'line-opacity': 0.42, 'line-blur': 0.35, 'line-dasharray': dash
+                                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.8, 8, 2.4, 11, 2.8],
+                                'line-opacity': 0.36, 'line-blur': 0.3, 'line-dasharray': dash
                             }
                         },
                         {
-                            id: 'lt-region-line', type: 'line', source: 'lt-regions', minzoom: LOD_Z + 1,
-                            layout: { visibility: vis },
+                            id: 'lt-region-line', type: 'line', source: 'lt-regions',
+                            layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
                             paint: {
-                                'line-color': '#eef2f7',
-                                'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.1, 8, 1.15, 11, 1.4],
-                                'line-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.8, 8, 0.78, 11, 0.85],
-                                'line-dasharray': dash
-                            }
-                        },
-                        {
-                            id: 'lt-region-lo-casing', type: 'line', source: 'lt-regions-lo', maxzoom: LOD_Z + 1,
-                            layout: { visibility: vis },
-                            paint: {
-                                'line-color': '#000000',
-                                'line-width': ['interpolate', ['linear'], ['zoom'], 5, 2.1, 8, 2.5],
-                                'line-opacity': 0.42, 'line-dasharray': dash
-                            }
-                        },
-                        {
-                            id: 'lt-region-lo-line', type: 'line', source: 'lt-regions-lo', maxzoom: LOD_Z + 1,
-                            layout: { visibility: vis },
-                            paint: {
-                                'line-color': '#eef2f7',
-                                'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.1, 8, 1.15],
-                                'line-opacity': 0.78,
+                                'line-color': '#dbe4ef',
+                                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.9, 8, 1.05, 11, 1.25],
+                                'line-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.5, 7, 0.62, 11, 0.72],
                                 'line-dasharray': dash
                             }
                         }
@@ -115,62 +94,153 @@
         }
 
         // державні кордони: точні лінії OSM, розкладені на категорії ще на
-        // етапі збірки (scripts/build-state-borders.js). У кадрі нічого не
-        // рахується — три статичні джерела й по два шари на кожне
+        // етапі збірки (scripts/build-state-borders.js)
         function borderData() {
             if (window.__ltBorderData) return window.__ltBorderData;
             const raw = window.LT_STATE_BORDERS;
             if (!raw || !raw.cats) return null;
             const out = {};
             raw.cats.forEach(c => {
-                out[c.id] = {
-                    meta: c,
-                    fc: {
-                        type: 'FeatureCollection',
-                        features: c.lines.map(line => ({
-                            type: 'Feature',
-                            properties: { cat: c.id },
-                            geometry: { type: 'LineString', coordinates: LT.decodePolyline(line) }
-                        }))
+                const features = c.lines.map(line => {
+                    const coords = LT.decodePolyline(line);
+                    const f = {
+                        type: 'Feature',
+                        properties: { cat: c.id },
+                        geometry: { type: 'LineString', coordinates: coords }
+                    };
+                    // рамка в градусах: за нею відсікаємо цілі лінії, не
+                    // проєктуючи жодної вершини
+                    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+                    for (let i = 0; i < coords.length; i++) {
+                        const p = coords[i];
+                        if (p[0] < x0) x0 = p[0];
+                        if (p[0] > x1) x1 = p[0];
+                        if (p[1] < y0) y0 = p[1];
+                        if (p[1] > y1) y1 = p[1];
                     }
-                };
+                    f._bb = [x0, y0, x1, y1];
+                    return f;
+                });
+                out[c.id] = { meta: c, fc: { type: 'FeatureCollection', features } };
             });
             window.__ltBorderData = out;
             return out;
         }
 
-        function mountBorders() {
-            if (map.getLayer('lt-b-ru')) return;
+        // кордони малюємо власним полотном поверх заливок зон. шари мапи
+        // лежали під DOM-полотном blend, тому під окупованою територією лінія
+        // кордону зникала — на карті це виглядало як «дірки» в кордоні
+        let bHost = null, bCv = null, bCtx = null, bDirty = true;
+
+        function mercX(lon) { return (lon + 180) / 360; }
+        // та сама формула, що в MapLibre: y = (1 - ln(tan(π/4 + φ/2)) / π) / 2
+        function mercY(lat) {
+            const φ = Math.max(-85.05, Math.min(85.05, lat)) * Math.PI / 180;
+            return (1 - Math.log(Math.tan(Math.PI / 4 + φ / 2)) / Math.PI) / 2;
+        }
+
+        // плоска камера: перетворення «меркатор → екран» строго афінне, тому
+        // коефіцієнти беруться з двох опорних точок і кожна вершина коштує
+        // два множники замість map.project. під нахилом рамка перспективна —
+        // там вершини проєктуються як є
+        function projector() {
+            if ((map.getPitch ? map.getPitch() : 0) > 0.5) {
+                return (lon, lat) => map.project([lon, lat]);
+            }
+            const c = map.getCenter();
+            const p0 = map.project(c);
+            const ep = 0.25;
+            const pLon = map.project([c.lng + ep, c.lat]);
+            const pLat = map.project([c.lng, c.lat + ep]);
+            const mx0 = mercX(c.lng), my0 = mercY(c.lat);
+            const dmx = mercX(c.lng + ep) - mx0;
+            const dmy = mercY(c.lat + ep) - my0;
+            if (!dmx || !dmy) return (lon, lat) => map.project([lon, lat]);
+            const a = (pLon.x - p0.x) / dmx, b = (pLat.x - p0.x) / dmy;
+            const d = (pLon.y - p0.y) / dmx, e = (pLat.y - p0.y) / dmy;
+            return (lon, lat) => {
+                const dx = mercX(lon) - mx0, dy = mercY(lat) - my0;
+                return { x: p0.x + a * dx + b * dy, y: p0.y + d * dx + e * dy };
+            };
+        }
+
+        function paintBorders() {
+            if (!bCv) return;
+            const src = map.getCanvas();
+            const w = src.clientWidth || src.width;
+            const h = src.clientHeight || src.height;
+            if (!w || !h) return;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const pw = Math.round(w * dpr), ph = Math.round(h * dpr);
+            if (bCv.width !== pw || bCv.height !== ph) { bCv.width = pw; bCv.height = ph; }
+            const ctx = bCtx;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, pw, ph);
             const data = borderData();
             if (!data) return;
-            const layers = map.getStyle().layers || [];
-            const anchor = (layers.find(l => l.type === 'symbol') || {}).id;
+            const view = map.getBounds();
+            const vw = view.getWest() - 0.35, ve = view.getEast() + 0.35;
+            const vs = view.getSouth() - 0.35, vn = view.getNorth() + 0.35;
+            const zoom = map.getZoom();
+            const proj = projector();
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
             Object.keys(data).forEach(id => {
+                if (borderVis[id] === false) return;
                 const { meta, fc } = data[id];
-                if (!map.getSource('lt-b-' + id)) {
-                    map.addSource('lt-b-' + id, { type: 'geojson', data: fc, tolerance: 1.1, maxzoom: 14 });
-                }
-                const vis = borderVis[id] === false ? 'none' : 'visible';
-                const w = meta.width || 2.4;
-                map.addLayer({
-                    id: 'lt-b-' + id + '-case', type: 'line', source: 'lt-b-' + id,
-                    layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
-                    paint: {
-                        'line-color': meta.caseColor || '#05080d',
-                        'line-width': ['interpolate', ['linear'], ['zoom'], 4, w + 0.8, 8, w + 1.5, 11, w + 2.1],
-                        'line-opacity': meta.caseOpacity != null ? meta.caseOpacity : 0.62, 'line-blur': 0.4
+                const core = meta.color || '#eae3d3';
+                const cw = meta.width || 2.6;
+                const wCore = cw * (zoom < 6.5 ? 0.84 : 1);
+                const caseW = wCore + 2.2;
+                fc.features.forEach(f => {
+                    const bb = f._bb;
+                    if (bb && (bb[2] < vw || bb[0] > ve || bb[3] < vs || bb[1] > vn)) return;
+                    const pts = f.geometry.coordinates;
+                    let started = false;
+                    ctx.beginPath();
+                    for (let i = 0; i < pts.length; i++) {
+                        const p = proj(pts[i][0], pts[i][1]);
+                        if (!p || !isFinite(p.x) || !isFinite(p.y)) { started = false; continue; }
+                        if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+                        else ctx.lineTo(p.x, p.y);
                     }
-                }, anchor);
-                map.addLayer({
-                    id: 'lt-b-' + id, type: 'line', source: 'lt-b-' + id,
-                    layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
-                    paint: {
-                        'line-color': meta.color,
-                        'line-width': ['interpolate', ['linear'], ['zoom'], 4, w * 0.62, 8, w, 11, w * 1.25],
-                        'line-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.85, 7, 0.95, 13, 1]
-                    }
-                }, anchor);
+                    // темна підкладка тримає лінію читабельною і на світлому
+                    // лісі, і на темній заливці окупованої зони
+                    ctx.strokeStyle = 'rgba(8,11,16,.72)';
+                    ctx.lineWidth = caseW;
+                    ctx.stroke();
+                    ctx.strokeStyle = core;
+                    ctx.lineWidth = wCore;
+                    ctx.stroke();
+                });
             });
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
+
+        function mountBorders() {
+            if (bHost) { bDirty = true; return; }
+            if (!borderData()) return;
+            bHost = document.createElement('div');
+            bHost.id = 'lt-borders';
+            bHost.setAttribute('aria-hidden', 'true');
+            bCv = document.createElement('canvas');
+            bHost.appendChild(bCv);
+            // під полотном малювання: анотації лишаються зверху
+            const draw = document.getElementById('lt-draw-canvas');
+            if (draw && draw.parentNode) draw.parentNode.insertBefore(bHost, draw);
+            else document.body.appendChild(bHost);
+            bCtx = bCv.getContext('2d');
+            map.on('move', () => { bDirty = true; });
+            map.on('resize', () => { bDirty = true; });
+            // render приходить після кадру мапи: кордони лягають на той самий
+            // ракурс, що й підкладка, і не «відʼїжджають» на жесті
+            map.on('render', () => {
+                if (!bDirty) return;
+                bDirty = false;
+                paintBorders();
+            });
+            map.on('remove', () => { if (bHost) bHost.remove(); bHost = null; });
         }
 
         const syncRegionLang = () => {
@@ -193,9 +263,10 @@
             setBorder(id, on) {
                 if (!id) return;
                 borderVis[id] = !!on;
-                ['lt-b-' + id + '-case', 'lt-b-' + id].forEach(lid => {
-                    if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', on ? 'visible' : 'none');
-                });
+                bDirty = true;
+                // перемальовуємо одразу й на вимкнення: нерухома карта не
+                // шле подію render, інакше лінія висіла б до першого пану
+                paintBorders();
             }
         };
     }

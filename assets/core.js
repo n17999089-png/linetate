@@ -2517,6 +2517,15 @@
                 <rect width="60" height="40" fill="url(#ltf${id}Edge)"/>
             </g>
         </svg>`;
+    // спільні складки для прапорів-сусідів у перемикачі кордонів
+    const FLAG_FOLD = `<stop offset="0" stop-color="#000" stop-opacity=".3"/>
+             <stop offset=".1" stop-color="#000" stop-opacity=".06"/>
+             <stop offset=".25" stop-color="#fff" stop-opacity=".17"/>
+             <stop offset=".42" stop-color="#000" stop-opacity=".12"/>
+             <stop offset=".59" stop-color="#fff" stop-opacity=".14"/>
+             <stop offset=".75" stop-color="#000" stop-opacity=".14"/>
+             <stop offset=".9" stop-color="#fff" stop-opacity=".1"/>
+             <stop offset="1" stop-color="#000" stop-opacity=".26"/>`;
     const FLAG_SVG = {
         uk: flagSvg('Uk',
             `<rect width="60" height="20" fill="#0057b7"/><rect y="20" width="60" height="20" fill="#ffd700"/>
@@ -2555,7 +2564,41 @@
              <stop offset=".59" stop-color="#fff" stop-opacity=".14"/>
              <stop offset=".75" stop-color="#000" stop-opacity=".14"/>
              <stop offset=".9" stop-color="#fff" stop-opacity=".1"/>
-             <stop offset="1" stop-color="#000" stop-opacity=".26"/>`)
+             <stop offset="1" stop-color="#000" stop-opacity=".26"/>`),
+        by: flagSvg('By',
+            `<rect width="60" height="26.67" fill="#ce1720"/><rect y="26.67" width="60" height="13.33" fill="#007c30"/>
+             <rect width="6.7" height="40" fill="#ffffff"/>
+             <g fill="#ce1720">
+                 <path d="M3.35 1.2l1.5 2-1.5 2-1.5-2z"/><path d="M3.35 6.4l2.2 2.9-2.2 2.9-2.2-2.9z"/>
+                 <path d="M3.35 13.6l1.2 1.6-1.2 1.6-1.2-1.6z"/><path d="M3.35 18l2.4 3.2-2.4 3.2-2.4-3.2z"/>
+                 <path d="M3.35 25.6l1.2 1.6-1.2 1.6-1.2-1.6z"/><path d="M3.35 30l2.2 2.9-2.2 2.9-2.2-2.9z"/>
+                 <path d="M3.35 36.4l1.5 2-1.5 2-1.5-2z"/>
+             </g>`,
+            FLAG_FOLD),
+        pl: flagSvg('Pl',
+            `<rect width="60" height="20" fill="#ffffff"/><rect y="20" width="60" height="20" fill="#dc143c"/>`,
+            FLAG_FOLD),
+        sk: flagSvg('Sk',
+            `<rect width="60" height="13.33" fill="#ffffff"/><rect y="13.33" width="60" height="13.34" fill="#0b4ea2"/><rect y="26.67" width="60" height="13.33" fill="#ee1c25"/>
+             <path d="M13.5 7.5h15v12.5c0 5.5-7.5 9.5-7.5 9.5s-7.5-4-7.5-9.5z" fill="#ee1c25" stroke="#ffffff" stroke-width=".8"/>
+             <path d="M20 10.5h2v3h3.2v2H22v2.6h3.2v2H22v4.4h-2v-4.4h-3.2v-2H20v-2.6h-3.2v-2H20z" fill="#ffffff"/>
+             <path d="M15.2 27.5c1-2 2.4-2.6 3.6-1.4.7-1.4 1.5-2 2.2-2s1.5.6 2.2 2c1.2-1.2 2.6-.6 3.6 1.4-.8 2.4-3.4 4.2-5.8 4.2s-5-1.8-5.8-4.2z" fill="#0b4ea2"/>`,
+            FLAG_FOLD),
+        hu: flagSvg('Hu',
+            `<rect width="60" height="13.33" fill="#cd2a3e"/><rect y="13.33" width="60" height="13.34" fill="#ffffff"/><rect y="26.67" width="60" height="13.33" fill="#436f4d"/>`,
+            FLAG_FOLD),
+        ro: flagSvg('Ro',
+            `<rect width="20" height="40" fill="#002b7f"/><rect x="20" width="20" height="40" fill="#fcd116"/><rect x="40" width="20" height="40" fill="#ce1126"/>`,
+            FLAG_FOLD),
+        md: flagSvg('Md',
+            `<rect width="20" height="40" fill="#002b7f"/><rect x="20" width="20" height="40" fill="#fcd116"/><rect x="40" width="20" height="40" fill="#ce1126"/>
+             <g fill="#9a7b3f">
+                 <path d="M30 12.6c-.9 0-1.6.7-1.7 1.6l-6-2.6 2.9 4.3-4.4 1.3 4.6 2.2-1.8 3.9 4.5-1.6c.3 1.9 1 3.2 1.9 3.2s1.6-1.3 1.9-3.2l4.5 1.6-1.8-3.9 4.6-2.2-4.4-1.3 2.9-4.3-6 2.6c-.1-.9-.8-1.6-1.7-1.6z"/>
+                 <path d="M29 11.2l1-1.4 1 1.4-1 .9z"/>
+             </g>
+             <path d="M28.2 17.8h3.6v1.9h-3.6z" fill="#b3543f"/>
+             <path d="M28.2 19.7h3.6v2l-1.8 2-1.8-2z" fill="#3f6fb3"/>`,
+            FLAG_FOLD)
     };
 
     // MapLibre 3.6: Marker з увімкненим рельєфом на кожен «move» озброює
@@ -4378,7 +4421,10 @@
         if (!statsFlagUri[flag]) {
             statsFlagUri[flag] = "url('data:image/svg+xml," + encodeURIComponent(FLAG_SVG[flag] || FLAG_SVG.en) + "')";
         }
-        const cloth = flag === 'en'
+        // прапори з емблемами й діагоналями (UK, BY, SK, MD) не ріжемо на
+        // смуги: на стиках малюнок рветься, тому вони хитаються одним полотном
+        const single = flag === 'en' || flag === 'by' || flag === 'sk' || flag === 'md';
+        const cloth = single
             ? '<span class="lt-flag-cloth"></span>'
             : '<span class="lt-flag-strip"></span><span class="lt-flag-strip"></span><span class="lt-flag-strip"></span>';
         return `<span class="lt-flag lt-flag-${flag}${extra ? ' ' + extra : ''}" style="--flag:${statsFlagUri[flag]}" aria-hidden="true">
@@ -5914,7 +5960,7 @@
     // власні шари-оверлеї над підкладкою: рельєф вставляємо саме перед першим із
     // них, тож він опиняється над будь-якою базою (темна CARTO чи наш hybrid),
     // але під зонами й просуваннями
-    const OVERLAY_RE = /^(xb_|xs_|cs_|sh_|f_|p_|fe_|fr_|gw_|g_|ig_|xh_|l_|rh_|lt-adv)/;
+    const OVERLAY_RE = /^(xb_|xs_|cs_|f_|p_|fe_|fr_|gw_|g_|ig_|xh_|l_|rh_|lt-adv)/;
 
     // стіна зони на z=13 — це 307 м, а пагорби Донбасу до ~360 м: без згасання
     // блок просто тоне в рельєфі. тому підняття зменшуємо заздалегідь —
@@ -6516,11 +6562,6 @@
             paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.95 }
         });
         map.addLayer({
-            id: 'sh_' + l.id, type: 'line', source: srcId,
-            layout: { visibility: 'none' },
-            paint: { 'line-color': '#04060a', 'line-width': 14, 'line-blur': 9, 'line-opacity': 0.4, 'line-offset': 7 }
-        });
-        map.addLayer({
             id: 'f_' + l.id, type: 'fill', source: srcId,
             paint: { 'fill-color': s.color, 'fill-opacity': s.alpha, 'fill-outline-color': s.bcol }
         });
@@ -6592,7 +6633,7 @@
         if (fs) fs.run.delete(id);
         const z = zone3d.get(map);
         if (z) { z.byId.delete(id); z.fe.delete(id); }
-        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'fr_', 'fe_', 'f_', 'cs_', 'sh_', 'xs_', 'xb_'].forEach(p => {
+        ['l_', 'rh_', 'xh_', 'ig_', 'g_', 'gw_', 'p_', 'fr_', 'fe_', 'f_', 'cs_', 'xs_', 'xb_'].forEach(p => {
             if (map.getLayer(p + id)) map.removeLayer(p + id);
         });
         dropLayerLabel(map, id);
@@ -6690,6 +6731,11 @@
         // що тримається на ній (тінь, внутрішнє світло, блик по краю), інакше
         // на місці контуру лишається м'яке темне кільце
         const noLine = s.border === 'none';
+        // контур малюємо лише коли в нього задана товщина. інакше вся сімʼя
+        // декоративних ліній (обвід, світла кромка, внутрішнє світло, тінь)
+        // креслила кожен полігон окремо, і на зоні з кількох сусідніх шматків
+        // всередині заливки проступала ламана «низькополігональна» лінія
+        const hasLine = !noLine && Number(s.bw) > 0;
         const igo = Math.max(0, Math.min(100, s.iglow == null ? 0 : s.iglow)) / 100;
         const blended = s.blend && s.blend !== 'normal';
         const gradient = s.grad === true;
@@ -6726,19 +6772,16 @@
         }
         // обʼємний контур (fr_) і cast-тінь (cs_) прибрані: вони давали
         // z-fighting і коштували найдорожчого проходу геометрії на жест
-        map.setLayoutProperty('l_' + l.id, 'visibility', noLine ? 'none' : vis);
-        map.setLayoutProperty('g_' + l.id, 'visibility', glow ? vis : 'none');
-        map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && !noLine ? vis : 'none');
+        map.setLayoutProperty('l_' + l.id, 'visibility', hasLine ? vis : 'none');
+        map.setLayoutProperty('g_' + l.id, 'visibility', glow && hasLine ? vis : 'none');
+        map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && hasLine ? vis : 'none');
         const zone = l.kind === 'zone';
-        // у 3D зміщена плоска тінь не збігається з нахилом камери — лишаємо її
-        // лише на плоскій мапі, а в обʼємі тінь дає сам рельєф під зоною
-        map.setLayoutProperty('sh_' + l.id, 'visibility', zone && !noLine && !d3 ? vis : 'none');
-        map.setLayoutProperty('gw_' + l.id, 'visibility', glow ? vis : 'none');
-        map.setLayoutProperty('rh_' + l.id, 'visibility', zone && !noLine ? vis : 'none');
+        map.setLayoutProperty('gw_' + l.id, 'visibility', glow && hasLine ? vis : 'none');
+        map.setLayoutProperty('rh_' + l.id, 'visibility', zone && hasLine ? vis : 'none');
 
         map.setPaintProperty('f_' + l.id, 'fill-color', s.color);
         map.setPaintProperty('f_' + l.id, 'fill-opacity', s.alpha * k);
-        map.setPaintProperty('f_' + l.id, 'fill-outline-color', noLine ? 'rgba(0,0,0,0)' : s.bcol);
+        map.setPaintProperty('f_' + l.id, 'fill-outline-color', hasLine ? s.bcol : 'rgba(0,0,0,0)');
 
         if (pattern) {
             map.setPaintProperty('p_' + l.id, 'fill-pattern', ensurePattern(map, s.pattern, s.color, s.patternScale || 22));
@@ -6764,14 +6807,6 @@
         map.setPaintProperty('ig_' + l.id, 'line-opacity', Math.min(0.9, 0.25 + igo * 0.65) * k);
         // отрицательный сдвиг уходит внутрь контура при обходе CCW (см. rewindFC)
         map.setPaintProperty('ig_' + l.id, 'line-offset', -Math.max(2, igW * 0.34));
-
-        // тень снаружи контура — зона получает «вес» над подложкой
-        map.setPaintProperty('sh_' + l.id, 'line-color', '#04060a');
-        map.setPaintProperty('sh_' + l.id, 'line-width', Math.max(12, s.bw * 3.4));
-        map.setPaintProperty('sh_' + l.id, 'line-blur', Math.max(7, s.bw * 2.6));
-        // в 3D вагу дає кидана тінь, рівне кільце поверх неї лише бруднить підлогу
-        map.setPaintProperty('sh_' + l.id, 'line-opacity', Math.min(0.5, 0.22 + s.alpha * 0.3) * k * (d3 ? 0.45 : 1));
-        map.setPaintProperty('sh_' + l.id, 'line-offset', Math.max(3, s.bw * 1.7));
 
         // широкое гало под узким свечением: глубина свечения в два слоя
         map.setPaintProperty('gw_' + l.id, 'line-color', s.bcol);
@@ -6821,7 +6856,7 @@
                         map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height', wallStops(flat ? CAP_FLAT_PX : w));
                     }
                 }
-                ['xb_', 'xs_', 'cs_', 'sh_', 'f_', 'p_', 'fe_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
+                ['xb_', 'xs_', 'cs_', 'f_', 'p_', 'fe_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
                     if (map.getLayer(p + l.id)) map.moveLayer(p + l.id);
                 });
             });
@@ -7912,6 +7947,29 @@
             followOn = false;
         }
 
+        // тінь живе на самому полотні, а не окремим шаром мапи: браузер бере
+        // готову альфу заливки й обводить її мʼякою смугою. товщина смуги
+        // зменшується з наближенням, щоб на масштабі міста вона не «розповзалася»
+        let shadowKey = '';
+        function applyCanvasShadow() {
+            const low = lowEndDevice();
+            const z = map.getZoom();
+            const filter = low
+                ? 'drop-shadow(0 2px 5px rgba(0,0,0,.4))'
+                : z < 7 ? 'drop-shadow(0 4px 15px rgba(0,0,0,.52))'
+                    : z < 10 ? 'drop-shadow(0 3px 10px rgba(0,0,0,.46))'
+                        : 'drop-shadow(0 2px 6px rgba(0,0,0,.4))';
+            if (filter === shadowKey) return;
+            shadowKey = filter;
+            // filter створює власну групу й ламає mix-blend-mode, тому тінь
+            // отримують лише полотна зі звичайним змішуванням
+            const targets = flatOn ? [flat] : order;
+            targets.forEach(it => {
+                if (!it) return;
+                it.canvas.style.filter = blendOf(it.layer) === 'normal' ? filter : '';
+            });
+        }
+
         // подібність камер: M1(p) = R(Δθ)·k·M0(p) + b, де k = 2^(z1-z0).
         // b = project(центр відмальовки) - центр екрана; поворот навколо центру
         function followCamera() {
@@ -8225,6 +8283,12 @@
             // на середньому/далекому огляді: у русі й наблизько вона не
             // читається (контур там і так різкий), зате коштує другого проходу
             const rimWide = !isMobile() && !moving && zoom < 10.5;
+            // мʼяка зовнішня тінь полотна: drop-shadow бере альфу готової
+            // заливки, тому обводить увесь контур шару однією смугою. зміщена
+            // лінія тіні (була в шарі sh_) малювала кожен полігон окремо —
+            // уздовж стиків сусідніх шматків усередині зони лишалися темні
+            // смуги, а сама тінь «відривалася» від краю
+            applyCanvasShadow();
 
             items.forEach(it => {
                 const ctx = it.ctx;
@@ -8234,6 +8298,10 @@
 
                 const l = it.layer;
                 if (!l) return;
+                // кромка малюється лише в шару із заданою товщиною контуру:
+                // без неї stroke по контуру кожного полігона давав ту саму
+                // ламану лінію всередині заливки, що й шари l_/rh_/ig_
+                const hasRim = Number(l.style.bw) > 0 && l.style.border !== 'none';
                 // рамка — по висоті саме цього шару: блоки стоять на різній
                 // висоті за z-індексом, тож і заливка має лягати на його
                 // власну верхню грань, а не на середню по мапі. верхньою
@@ -8348,7 +8416,7 @@
                         }
                         try { ctx.fill(rec.p, 'evenodd'); } catch (e) { ctx.fill(rec.p); }
                         const rr = rects[vi];
-                        if (!rimOn || (rr && rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx)) continue;
+                        if (!rimOn || !hasRim || (rr && rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx)) continue;
                         ctx.globalCompositeOperation = 'lighter';
                         ctx.lineJoin = 'round';
                         if (rimWide) {
@@ -8428,7 +8496,7 @@
                     ctx.fillStyle = fillT;
                     try { ctx.fill('evenodd'); } catch (e) { ctx.fill(); }
                     const rr = rects[vi];
-                    if (!rimOn || (rr && rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx)) continue;
+                    if (!rimOn || !hasRim || (rr && rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx)) continue;
                     ctx.globalCompositeOperation = 'lighter';
                     ctx.lineJoin = 'round';
                     if (rimWide) {

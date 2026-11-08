@@ -5,9 +5,10 @@
  *                        країною межує ділянка кордону);
  *   assets/borders.js — точні лінії кордонів OSM (ODbL).
  *
- * Результат: assets/state-borders.js — три категорії (РФ, Білорусь, ЄС/
- * Молдова), кожна стиснена polyline з точністю 1e5. Переглядач лише декодує
- * готові лінії, жодних обчислень у кадрі.
+ * Результат: assets/state-borders.js — категорії за країнами-сусідами
+ * (РФ, Білорусь, Польща, Словаччина, Угорщина, Румунія, Молдова), кожна
+ * стиснена polyline з точністю 1e5. Переглядач лише декодує готові лінії,
+ * жодних обчислень у кадрі.
  *
  * Запуск: node scripts/build-state-borders.js
  */
@@ -139,9 +140,36 @@ function main() {
     });
 
     const uaGrid = makeGrid(ua);
-    const CAT_ID = { BLR: 'by', POL: 'eu', RUS: 'ru' };
+    const CAT_ID = { BLR: 'by', POL: 'pl', RUS: 'ru' };
     const grids = {};
     for (const c of Object.keys(byCountry)) grids[c] = makeGrid(byCountry[c]);
+
+    // області сусідів у regions.js є лише для BY/PL/RU. західні й південні
+    // ділянки (Словаччина, Угорщина, Румунія, Молдова) класифікуємо за
+    // географією: трикутники кордонів там відомі з точністю до десятків км
+    function westCat(p) {
+        const lng = p[0], lat = p[1];
+        if (lat < 45.55 && lng > 28.0) return 'ro';   // Дунай, південь Одещини
+        if (lng < 22.9 && lat < 48.42) return 'hu';   // Закарпаття, південь
+        if (lng < 22.58 && lat < 49.1) return 'sk';   // Закарпаття, захід
+        if (lng >= 26.55) return 'md';                // Дністер + Придністров'я
+        if (lat > 47.6 && lat < 48.6) return 'ro';    // Чернівеччина, північ
+        return 'pl';
+    }
+
+    // за трикутниками кордонів починаються ВНУТРІШНІ кордони сусідів
+    // (PL-SK, HU-SK, HU-RO). вони теж близькі до контуру України, тому
+    // потрапляли в набір як зайві «хвости». ріжемо їх за трикутниками
+    function keepWest(p) {
+        const lng = p[0], lat = p[1];
+        if (lat < 46.0) return lng > 28.0 && lng < 29.8; // Дунай: лише суходіл до моря
+        if (lng < 23.2 && lat < 49.4) {
+            if (lat < 47.94) return false;
+            if (lng < 22.13 && lat < 48.6) return false;
+            if (lng < 22.5 && lat > 49.05) return false;
+        }
+        return true;
+    }
 
     // до 20 км від контуру області: далі вже чужі кордони, які на карті не потрібні
     const NEAR_UA = 20;
@@ -160,7 +188,7 @@ function main() {
     // хорда довша за 12 км — це вже не кордон, а зріз через воду/пустелю
     const LONG_KM = 12;
 
-    const cats = { ru: [], by: [], eu: [] };
+    const cats = { ru: [], by: [], pl: [], sk: [], hu: [], ro: [], md: [] };
     let keptPts = 0, rawKept = 0;
 
     for (const enc of borders.land) {
@@ -177,7 +205,11 @@ function main() {
                         const d = grids[c].nearest(p, CAT_KM + 5);
                         if (d < best) { best = d; cat = CAT_ID[c]; }
                     }
-                    if (best > CAT_KM) cat = 'eu';
+                    if (best > CAT_KM) cat = westCat(p);
+                    // сітка польських областей ловить і верхню ділянку
+                    // кордону зі Словаччиною (вона за 40 км від Polish regions):
+                    // у закарпатському трикутнику географія точніша
+                    else if (p[0] < 22.9 && p[1] < 49.1) cat = westCat(p);
                     if (cat !== pieceCat && piece.length) { pieces.push([pieceCat, piece]); piece = []; }
                     pieceCat = cat;
                     piece.push(p);
@@ -192,9 +224,10 @@ function main() {
                 for (const [cat, arr] of pieces) {
                     if (arr.length < 2) continue;
                     const s = simplify(arr, SIMPLIFY_DEG);
-                    // обривки у 10–20 точок — це шум на стиках трійників,
-                    // на карті вони виглядають як випадкові риски
-                    if (s.length < 40) continue;
+                    // зовсім дрібні обривки (< 1.5 км) — шум на стиках.
+                    // короткі, але СПРАВЖНі ділянки (Дунай біля Рені) лишаємо:
+                    // інакше в кордоні з'являються дірки
+                    if (s.length < 12) continue;
                     cats[cat].push(s);
                     keptPts += s.length;
                 }
@@ -203,7 +236,11 @@ function main() {
         };
         for (const p of pts) {
             const nearUa = uaGrid.nearest(p, NEAR_UA) <= NEAR_UA;
-            const sea = p[0] > SEA_LNG && p[1] < SEA_LAT;
+            // Чорне море на схід від Криму + узбережжя Азову на захід від
+            // гирла Кальміусу (там кордон виходить до моря біля 38.2°):
+            // морські межі й берегові лінії — не державний кордон на суходолі
+            const sea = (p[0] > SEA_LNG && p[1] < SEA_LAT)
+                || (p[1] < 47.05 && p[0] > 32.4 && p[0] < 38.2);
             const sw = p[0] <= SW_LNG && p[1] >= SW_LAT;
             let nearForeign = false;
             if (nearUa && !sw) {
@@ -211,7 +248,7 @@ function main() {
                     if (grids[c].nearest(p, CAT_KM) <= CAT_KM) { nearForeign = true; break; }
                 }
             }
-            if (!nearUa || sea || (!sw && !nearForeign)) { flush(); continue; }
+            if (!nearUa || sea || !keepWest(p) || (!sw && !nearForeign)) { flush(); continue; }
             if (run.length) {
                 const a = run[run.length - 1];
                 const cos = Math.cos(a[1] * Math.PI / 180);
@@ -222,41 +259,57 @@ function main() {
         flush();
     }
 
-    // усі державні кордони — одного кольору: три відтінки читалися як три
-    // різні типи ліній, хоча це просто «кордон». товщина лишається різною,
-    // вона й показує категорію
-    const BORDER_COLOR = '#72d7ff';
+    // стандартний картографічний дизайн: одна тепла слонова лінія з темною
+    // підкладкою для всіх країн. колір не кодує країну — її показує прапор
+    // у перемикачі. товщина ледь різна: кордон РФ читається на червоній
+    // заливці окупованої зони, тому він трохи ширший
+    const BORDER_COLOR = '#e9e2d0';
     const meta = {
         ru: {
             name: { uk: 'Кордон з РФ', en: 'Border with Russia', ru: 'Граница с РФ' },
             short: { uk: 'РФ', en: 'RU', ru: 'РФ' },
-            // кордон РФ більшу частину довжини лежить на ЧЕРВОНІЙ заливці
-            // окупованої зони, тому йому потрібна світла підкладка, інакше
-            // лінія губиться на заливці
-            color: BORDER_COLOR, width: 3.6, caseColor: '#ffffff', caseOpacity: 0.45
+            color: BORDER_COLOR, width: 3.4
         },
         by: {
             name: { uk: 'Кордон з Білоруссю', en: 'Border with Belarus', ru: 'Граница с Беларусью' },
             short: { uk: 'Білорусь', en: 'Belarus', ru: 'Беларусь' },
-            color: BORDER_COLOR, width: 2.9, caseColor: '#ffffff', caseOpacity: 0.32
+            color: BORDER_COLOR, width: 2.8
         },
-        eu: {
-            name: { uk: 'Кордон з ЄС / Молдовою', en: 'Border with EU / Moldova', ru: 'Граница с ЕС / Молдовой' },
-            short: { uk: 'ЄС', en: 'EU', ru: 'ЕС' },
-            color: BORDER_COLOR, width: 2.9, caseColor: '#ffffff', caseOpacity: 0.32
+        pl: {
+            name: { uk: 'Кордон з Польщею', en: 'Border with Poland', ru: 'Граница с Польшей' },
+            short: { uk: 'Польща', en: 'Poland', ru: 'Польша' },
+            color: BORDER_COLOR, width: 2.8
+        },
+        sk: {
+            name: { uk: 'Кордон зі Словаччиною', en: 'Border with Slovakia', ru: 'Граница со Словакией' },
+            short: { uk: 'Словаччина', en: 'Slovakia', ru: 'Словакия' },
+            color: BORDER_COLOR, width: 2.6
+        },
+        hu: {
+            name: { uk: 'Кордон з Угорщиною', en: 'Border with Hungary', ru: 'Граница с Венгрией' },
+            short: { uk: 'Угорщина', en: 'Hungary', ru: 'Венгрия' },
+            color: BORDER_COLOR, width: 2.6
+        },
+        ro: {
+            name: { uk: 'Кордон з Румунією', en: 'Border with Romania', ru: 'Граница с Румынией' },
+            short: { uk: 'Румунія', en: 'Romania', ru: 'Румыния' },
+            color: BORDER_COLOR, width: 2.8
+        },
+        md: {
+            name: { uk: 'Кордон з Молдовою', en: 'Border with Moldova', ru: 'Граница с Молдовой' },
+            short: { uk: 'Молдова', en: 'Moldova', ru: 'Молдова' },
+            color: BORDER_COLOR, width: 2.8
         }
     };
 
     const out = {
-        v: 1,
+        v: 2,
         cats: Object.keys(cats).map(id => ({
             id,
             name: meta[id].name,
             short: meta[id].short,
             color: meta[id].color,
             width: meta[id].width,
-            caseColor: meta[id].caseColor,
-            caseOpacity: meta[id].caseOpacity,
             lines: cats[id].map(encodePolyline)
         }))
     };

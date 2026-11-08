@@ -11,7 +11,7 @@
         hidden: new Set(),
         savedAt: 0,
         base: 'hybrid',
-        regions: false,
+        regions: true,
         labels: true,
         advance: false,
         relief3d: true,
@@ -807,6 +807,19 @@
         anno.forEach(paintAnnoFeature);
         paintDraft();
         paintRuler();
+        paintSearchArea();
+    }
+
+    // територія знайденого міста — на DOM-полотні над заливками зон.
+    // шари lt-ps-* у мапі лежали ПІД полотном blend, тому під окупованою
+    // зоною контур міста зникав (скарга «пошук з отрисовкою не працює»)
+    function paintSearchArea() {
+        if (!searchPick || !searchPick.feature || map._lt3d) return;
+        const geo = searchPick.feature.geometry;
+        const g = drawCtx;
+        fillGeo(g, geo, '#ffcf4d', .1);
+        lineGeo(g, geo, '#ffcf4d', 9, .5, null, 0, 0, 8);
+        lineGeo(g, geo, '#fff1b8', 2, .95, [3, 2]);
     }
 
     function addSourceSafe(id) {
@@ -1770,14 +1783,15 @@
         if (!src) return;
         const fs = searchPick && searchPick.feature ? [searchPick.feature] : [];
         src.setData({ type: 'FeatureCollection', features: fs });
-        // у 3D плоску заливку й пунктир ховаємо: вони лягли б під рельєф і
-        // дублювали обʼємну пластину, яку малює ядро
-        const vis = fs.length && !map._lt3d ? 'visible' : 'none';
+        // плоский контур малює DOM-полотно поверх зон (paintSearchArea),
+        // а в 3D — обʼємна пластина ядра; шари мапи лишаються приховані,
+        // інакше вони дублювали б контур під заливками
         ['lt-ps-fill', 'lt-ps-glow', 'lt-ps-line'].forEach(id => {
-            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
         });
         LT.setSearch3D(map, fs.length ? searchPick.feature : null);
         restack();
+        scheduleDraw(true);
     }
 
     function clearSearchMarker() {
@@ -2046,6 +2060,7 @@
         });
         renderSearchRows();
         syncSearchHint();
+        scheduleDraw(true);
     }
 
     function toolClick(e) {
@@ -3117,7 +3132,7 @@
     state.date = clampDate(LT.todayIso());
 
     map = LT.createMap('map', { center: [37.6, 48.35], zoom: 7 });
-    const mapTools = LT.installMapTools(map);
+    const mapTools = LT.installMapTools(map, { regionLines: true, regionsOn: state.regions });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.addControl(LT.scaleBar(map), 'bottom-right');
     LT.smoothZoom(map);
@@ -3140,14 +3155,12 @@
             btn.type = 'button';
             btn.className = 'border-chip' + (on ? ' active' : '');
             btn.dataset.cat = c.id;
-            btn.style.setProperty('--bc', c.color);
-            btn.title = (c.name && (c.name[lang] || c.name.uk)) || c.id;
+            const label = (c.name && (c.name[lang] || c.name.uk)) || c.id;
+            btn.title = label;
+            btn.setAttribute('aria-label', label);
             btn.setAttribute('aria-pressed', String(on));
-            const dot = document.createElement('i');
-            dot.setAttribute('aria-hidden', 'true');
-            const txt = document.createElement('span');
-            txt.textContent = (c.short && (c.short[lang] || c.short.uk)) || c.id.toUpperCase();
-            btn.append(dot, txt);
+            // країну показує прапор, без текстових підписів у рейці
+            btn.innerHTML = LT.flagHtml(c.id, 'lt-flag-chip');
             btn.addEventListener('click', () => {
                 const next = borderOn[c.id] === false;
                 borderOn[c.id] = next;
