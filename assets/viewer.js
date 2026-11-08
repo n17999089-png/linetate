@@ -11,7 +11,7 @@
         hidden: new Set(),
         savedAt: 0,
         base: 'hybrid',
-        regions: true,
+        regions: false,
         labels: true,
         advance: false,
         relief3d: true,
@@ -2202,6 +2202,19 @@
         }
         return f ? String(f.format(Math.round(n || 0))).replace(/[\u00a0\u202f]/g, ' ') : String(Math.round(n || 0));
     }
+    // км² зі знаком і одним десятковим знаком — той самий формат, що й у
+    // розмітці (statsFmt/statsSigned), щоб докручування не стрибало іншим числом
+    function fmtKm(n) {
+        n = +n || 0;
+        const a = Math.abs(n);
+        const v = a < 100 ? Math.round(a * 10) / 10 : Math.round(a);
+        let s;
+        try { s = new Intl.NumberFormat(LT.locale(), { maximumFractionDigits: 1 }).format(v); }
+        catch (e) { s = String(v); }
+        s = s.replace(/[\u00a0\u202f]/g, ' ');
+        return n > 0.05 ? '+' + s : n < -0.05 ? '−' + s : '0';
+    }
+    function fmtCountEl(el, n) { return el.dataset.fmt === 'km' ? fmtKm(n) : fmtCount(n); }
     function stopCounts() {
         countRuns.forEach(r => cancelAnimationFrame(r.f));
         countRuns.clear();
@@ -2215,7 +2228,7 @@
         let reduce = false;
         try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { }
         if (reduce) {
-            for (const el of els) el.textContent = fmtCount(el.dataset.count);
+            for (const el of els) el.textContent = fmtCountEl(el, el.dataset.count);
             return;
         }
         // у розмітці вже стоїть підсумок — обнуляємо в тому ж кадрі, інакше
@@ -2229,7 +2242,7 @@
             // межі перший кадр дає відʼємні числа
             const p = Math.max(0, Math.min(1, (now - t0) / dur));
             const k = ease(p);
-            for (const el of els) el.textContent = fmtCount(p >= 1 ? el.dataset.count : (+el.dataset.count || 0) * k);
+            for (const el of els) el.textContent = fmtCountEl(el, p >= 1 ? el.dataset.count : (+el.dataset.count || 0) * k);
             if (p < 1) run.f = requestAnimationFrame(tick);
             else countRuns.delete(run);
         };
@@ -2294,7 +2307,7 @@
         stopCounts();
         const body = $('stats-body');
         if (!body) return;
-        for (const el of body.querySelectorAll('.lt-count[data-count]')) el.textContent = fmtCount(el.dataset.count);
+        for (const el of body.querySelectorAll('.lt-count[data-count]')) el.textContent = fmtCountEl(el, el.dataset.count);
     }
 
     function renderStats() {

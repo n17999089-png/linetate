@@ -949,6 +949,68 @@
         } catch (e) { return false; }
     }
 
+    // Сила пристрою одним числом: 0 — слабкий, 1 — середній, 2 — потужний.
+    // Рахується з GPU (WEBGL_debug_renderer_info), ядер і пам'яті, а не лише з
+    // ширини екрана: саме GPU тягне рельєф і екструзії, тож профіль рельєфу і
+    // щільність полотна мають залежати від нього. Кешується — probe створює
+    // WebGL-контекст, це не те, що варто робити щокадру
+    let gpuCache = null;
+    function gpuInfo() {
+        if (gpuCache) return gpuCache;
+        let renderer = 'unknown', tier = 1;
+        try {
+            const c = document.createElement('canvas');
+            const gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');
+            if (gl) {
+                const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+                renderer = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+                const r = renderer.toLowerCase();
+                // програмні растеризатори (SwiftShader/llvmpipe) — це CPU без
+                // GPU: середній рівень, щоб не ховати рельєф там, де його можна
+                // показати, і щоб QA йшло реальним шляхом
+                const soft = /swiftshader|llvmpipe|software|basic render/.test(r);
+                const weak = /mali-4|mali-t[0-6]|adreno\s*\(tm\)\s*[23]|adreno[- ]?[23]|powervr sgx|hd graphics [234]|geforce [6789]|gt [6789]|radeon hd [2345]|intel\(r\) hd graphics/.test(r);
+                const strong = /rtx|radeon rx [5679]|radeon pro|apple m[1-9]|apple gpu|adreno\s*\(tm\)\s*[678]|adreno[- ]?[678]|mali-g[789]|immortalis|geforce (gtx|rtx)|quadro|apple a1[5-9]|apple a[2-9][0-9]/.test(r);
+                tier = weak ? 0 : strong ? 2 : 1;
+                if (soft && tier === 0) tier = 1;
+                const lose = gl.getExtension('WEBGL_lose_context');
+                if (lose) try { lose.loseContext(); } catch (e) { }
+            } else { tier = 0; }
+        } catch (e) { }
+        gpuCache = { renderer, tier };
+        return gpuCache;
+    }
+
+    let tierCache = null;
+    function deviceTier() {
+        if (tierCache != null) return tierCache;
+        const dev = deviceState || detectDevice();
+        const cores = navigator.hardwareConcurrency || 4;
+        const mem = navigator.deviceMemory || 4;
+        let t = gpuInfo().tier;
+        if (cores <= 4 || mem <= 3) t = Math.min(t, 1) - 1;
+        else if (cores >= 8 && mem >= 6) t = Math.min(2, t + 1);
+        // телефон не тримає верхній рівень довго: термопакет душить GPU через
+        // кілька секунд жесту, тож стеля для мобільних — середній профіль
+        if (dev.mobile && t > 1) t = 1;
+        tierCache = Math.max(0, Math.min(2, t));
+        return tierCache;
+    }
+
+    function deviceInfo() {
+        const dev = deviceState || detectDevice();
+        return {
+            tier: deviceTier(), gpu: gpuInfo().renderer, gpuTier: gpuInfo().tier,
+            cores: navigator.hardwareConcurrency || 0, mem: navigator.deviceMemory || 0,
+            mobile: dev.mobile, lowEnd: lowEndDevice()
+        };
+    }
+
+    // лічильники кадру: «оптимізовано» має бути числом із браузера, а не
+    // словами. wallStops кешує вирази, applyReliefEx тротлиться — перф
+    // показує, скільки роботи реально зекономлено
+    const renderPerf = { wallBuilt: 0, wallHit: 0, reliefApplied: 0, reliefSkipped: 0, animLoops: 0 };
+
     // Чи полотно, відмальоване для попередньої камери, ще покриває екран після
     // подібності (зсув b, масштаб k). Додатковий запас — pad пікселів навколо кадру.
     // Зум-ін (k>1) нічого не оголює; зум-аут і панорама оголюють краї.
@@ -4213,9 +4275,13 @@
         catch (e) { return String(n); }
     }
 
-    function statsSigned(v) {
+    function statsSigned(v, anim) {
         const txt = v > 0.05 ? '+' + statsFmt(v) : v < -0.05 ? '−' + statsFmt(v) : '0';
         const cls = v > 0.05 ? 'pos' : v < -0.05 ? 'neg' : 'zero';
+        // anim — цифра докручується від нуля тим самим механізмом, що й у
+        // «Втратах»: у розмітці вже стоїть підсумок, тож без rAF (reduced
+        // motion) екран одразу показує фінал, а не нуль
+        if (anim) return `<span class="lt-stat-num lt-count ${cls}" data-count="${v}" data-fmt="km">${txt}</span>`;
         return `<span class="lt-stat-num ${cls}">${txt}</span>`;
     }
 
@@ -4251,7 +4317,7 @@
                     <span>${esc(t('stats.plus'))} <em>+${statsFmt(plus)}</em></span>
                     <span>${esc(t('stats.minus'))} <em>−${statsFmt(minus)}</em></span>
                 </small>
-                <strong class="lt-stats-net">${statsSigned(net)}<i>${esc(t('stats.km2'))}</i></strong>
+                <strong class="lt-stats-net">${statsSigned(net, true)}<i>${esc(t('stats.km2'))}</i></strong>
                 <div class="lt-stats-meter" style="--p:${share}%" aria-hidden="true"><i></i></div>
             </div>
         </article>`;
@@ -4726,12 +4792,12 @@
         const net = T.ukrNet;
         const hero = net > 0.05 ? 'pos' : net < -0.05 ? 'neg' : 'zero';
         const side = net > 0.05 ? t('stats.toUkr') : net < -0.05 ? t('stats.toRus') : t('stats.flat');
-        return `<div class="lt-stats-hero ${hero}">
+        return `<div class="lt-stats-hero ${hero}" data-anim="ov-hero">
             <span class="k">${esc(t('stats.period'))}</span>
-            <b>${statsSigned(net)}<i>${esc(t('stats.km2'))}</i></b>
+            <b>${statsSigned(net, true)}<i>${esc(t('stats.km2'))}</i></b>
             <span class="s">${esc(side)}<em>${esc(t('stats.daysN', { n: res.rows.length }))}</em></span>
         </div>
-        <div class="lt-stats-sides">
+        <div class="lt-stats-sides" data-anim="ov-sides">
             ${statsSide('ukr', 'uk', t('stats.ukr'), T.ukrPlus, T.ukrMinus, T.ukrNet)}
             ${statsSide('rus', 'ru', t('stats.rus'), T.rusPlus, T.rusMinus, T.rusNet)}
         </div>
@@ -4740,7 +4806,7 @@
             <span class="u">${esc(t('stats.ukrShort'))}</span>
             <span class="r">${esc(t('stats.rusShort'))}</span>
         </div>
-        <div class="lt-stats-days">${rows}</div>
+        <div class="lt-stats-days" data-anim="ov-days">${rows}</div>
         <div class="lt-stats-foot">${esc(t('stats.baseline', { date: res.baseline ? fmtShort(res.baseline) : '—' }))}</div>`;
     }
 
@@ -4951,9 +5017,20 @@
     const M_PER_PX_48 = 156543.03392 * Math.cos(48 * Math.PI / 180);
     const pxToM = (px, z) => px * M_PER_PX_48 / Math.pow(2, z);
 
+    const wallCache = new Map();
     function wallStops(px) {
+        // вираз залежить лише від висоти в px (зум-стопи сталі 5..19). під час
+        // фейду й перемикань одна й та сама висота питається багато разів —
+        // кешуємо за округленням до 0.01 px (непомітно оком), щоб не будувати
+        // 15-стоповий масив щокадру для кожного шару
+        const key = Math.round(px * 100) / 100;
+        const hit = wallCache.get(key);
+        if (hit) { renderPerf.wallHit++; return hit; }
         const stops = ['interpolate', ['linear'], ['zoom']];
-        for (let z = 5; z <= 19; z++) stops.push(z, Math.round(pxToM(px, z)));
+        for (let z = 5; z <= 19; z++) stops.push(z, Math.round(pxToM(key, z)));
+        if (wallCache.size > 1024) wallCache.clear();
+        wallCache.set(key, stops);
+        renderPerf.wallBuilt++;
         return stops;
     }
 
@@ -5552,8 +5629,16 @@
     // давало різницю в 32 відтінки — на супутнику це «нічого не видно»
     function reliefProfile() {
         const dev = deviceState || detectDevice();
-        if (!dev.mobile) return { maxzoom: 11, ex: 1.35, hill: 0.85, full: 11, zero: 13.2, floor: .9 };
-        if (lowEndDevice()) return { maxzoom: 7, ex: 0.8, hill: 0.45, full: 9.4, zero: 11.6, floor: .5 };
+        const tier = deviceTier();
+        if (!dev.mobile) {
+            // слабкий GPU (стара інтегрована графіка) не тягне повну сітку DEM:
+            // беремо легший профіль, щоб 3D не лагав. потужний — повний рельєф
+            // із виразнішим тінієванням хребтів (hill 1 замість 0.85)
+            if (tier === 0) return { maxzoom: 9, ex: 1, hill: 0.6, full: 10.2, zero: 12.4, floor: .7 };
+            return { maxzoom: 11, ex: 1.35, hill: tier >= 2 ? 1 : 0.85, full: 11, zero: 13.2, floor: .9 };
+        }
+        // телефон: слабкий GPU або мало пам'яті → найлегша сітка; інакше середня
+        if (tier === 0 || lowEndDevice()) return { maxzoom: 7, ex: 0.8, hill: 0.45, full: 9.4, zero: 11.6, floor: .5 };
         return { maxzoom: 8, ex: 1, hill: 0.6, full: 10.2, zero: 12, floor: .7 };
     }
 
@@ -5570,6 +5655,9 @@
         const dark = theme === 'dark';
         return {
             accent: dark ? '#8fa6cc' : '#e6effb',
+            // теплий бік сонця: хребет дістає молочний відблиск, а не чистий
+            // білий — на супутнику чистий білий випалює поля в плями
+            highlight: dark ? '#a9bcd9' : '#fbf3e4',
             shadow: dark ? '#02040a' : '#04070c'
         };
     }
@@ -5603,7 +5691,11 @@
             // не перебираючи шар: екстраполяція та армінг рельєфу лишаються як були
             try {
                 map.setPaintProperty('lt-relief', 'hillshade-accent-color', col.accent);
+                map.setPaintProperty('lt-relief', 'hillshade-highlight-color', col.highlight);
                 map.setPaintProperty('lt-relief', 'hillshade-shadow-color', col.shadow);
+                // профіль міг змінитися (інша підкладка, інший рівень пристрою):
+                // без цього шар лишався з глибиною тінієвання попереднього профілю
+                map.setPaintProperty('lt-relief', 'hillshade-exaggeration', p.hill);
             } catch (e) { }
         } else {
             // рельєф мусить лягти НАД підкладкою (і темна CARTO, і наш hybrid),
@@ -5618,6 +5710,7 @@
                 id: 'lt-relief', type: 'hillshade', source: 'lt-dem',
                 paint: {
                     'hillshade-accent-color': col.accent,
+                    'hillshade-highlight-color': col.highlight,
                     'hillshade-shadow-color': col.shadow,
                     'hillshade-illumination-anchor': 'map',
                     'hillshade-illumination-direction': 325,
@@ -5772,7 +5865,8 @@
         const p = s && s.relief;
         if (!p || !s.armed) return;
         const e = reliefEx(p, map.getZoom());
-        if (!force && Math.abs(e - s.ex) < 0.05) return;
+        if (!force && Math.abs(e - s.ex) < 0.05) { renderPerf.reliefSkipped++; return; }
+        renderPerf.reliefApplied++;
         s.ex = e;
         const tr = map.terrain;
         if (tr && tr.options && tr.options.source === 'lt-dem' && Number.isFinite(e)) {
@@ -8162,13 +8256,20 @@
         src.setData({ type: 'FeatureCollection', features });
     }
 
+    // один цикл анімацій на мапу: повторний виклик (перебудова стилю, повторний
+    // старт) не плодить другий rAF-ланцюг, який уже не зупинити
+    const animMaps = new WeakSet();
     function startAnimations(map, getLayers, isVisible) {
+        if (animMaps.has(map)) return;
+        animMaps.add(map);
+        renderPerf.animLoops++;
         let phase = 0;
         let lastFlow = 0;
         let tick = 0;
         let flowOn = false;
         let animOn = true;
         let last = 0;
+        let stopped = false;
 
         // раньше rAF крутился всегда и каждый кадр перекрашивал слои, даже когда
         // анимаций нет — карта рендерилась бесконечно и грела телефон.
@@ -8184,8 +8285,9 @@
         const gap = () => (docMobile() ? 40 : 20);
 
         const step = t => {
+            if (stopped) return;
             if (document.hidden || !animOn) {
-                setTimeout(() => requestAnimationFrame(step), 600);
+                setTimeout(() => { if (!stopped) requestAnimationFrame(step); }, 600);
                 return;
             }
             if (t - last < gap()) { requestAnimationFrame(step); return; }
@@ -8227,6 +8329,8 @@
         requestAnimationFrame(step);
 
         map.once('remove', () => {
+            stopped = true;
+            animMaps.delete(map);
             clearInterval(probeTimer);
             document.removeEventListener('visibilitychange', onVis);
         });
@@ -8358,7 +8462,7 @@
     window.LT = {
         PREFIX,
         DATE_RE, MIN_DATE, dateBounds,
-        device: () => deviceState || detectDevice(), initDevice,
+        device: () => deviceState || detectDevice(), initDevice, deviceTier, deviceInfo, renderPerf: () => renderPerf,
         isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger, warDays,
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,

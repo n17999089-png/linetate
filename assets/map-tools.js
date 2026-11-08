@@ -5,7 +5,10 @@
     const validImage = value => typeof value === 'string' && value.length <= 1500000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ? value : '';
 
     function installMapTools(map) {
-        let regions = true;
+        // межі областей неточні (прямі хорди ріжуть фронт), тому в переглядачі
+        // вони вимкнені за замовчуванням; тумблер «Області» лишається, адмінка
+        // вмикає їх сама через setRegions
+        let regions = false;
         const REGION_LAYERS = ['lt-region-casing', 'lt-region-line', 'lt-region-label', 'lt-region-lo-casing', 'lt-region-lo-line'];
         // за цим зумом показуємо грубшу геометрію: на дрібному масштабі деталі все одно не видно
         const LOD_Z = 7;
