@@ -2351,7 +2351,9 @@
 
     LT.initDevice();
     map = LT.createMap('map', { center: [37.6, 48.35], zoom: 7 });
-    mapTools = LT.installMapTools(map);
+    // в адмінці контури областей потрібні для орієнтування — переглядач
+    // їх більше не малює взагалі (низькополігонні хорди різали фронт)
+    mapTools = LT.installMapTools(map, { regionLines: true });
     objects = LT.mapObjects(map, {
         editable: true,
         onSelect: id => { selectLayer(id); selectTab('style'); },

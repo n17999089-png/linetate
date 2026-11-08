@@ -4,14 +4,19 @@
     const isObject = l => l.kind === 'point' || l.kind === 'image';
     const validImage = value => typeof value === 'string' && value.length <= 1500000 && /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ? value : '';
 
-    function installMapTools(map) {
-        // межі областей неточні (прямі хорди ріжуть фронт), тому в переглядачі
-        // вони вимкнені за замовчуванням; тумблер «Області» лишається, адмінка
-        // вмикає їх сама через setRegions
+    function installMapTools(map, options) {
+        const opts = options || {};
+        // контури областей низькополігонні: довгі хорди ріжуть фронт навпіл
+        // (скарга зі скріна під Запорізьким). У переглядачі їх більше немає
+        // взагалі — лишились тільки підписи областей. Адмінці лінії потрібні
+        // для орієнтування, тому вона вмикає їх окремим прапорцем.
+        const regionLines = !!opts.regionLines;
         let regions = false;
-        const REGION_LAYERS = ['lt-region-casing', 'lt-region-line', 'lt-region-label', 'lt-region-lo-casing', 'lt-region-lo-line'];
+        const REGION_LAYERS = ['lt-region-label']
+            .concat(regionLines ? ['lt-region-casing', 'lt-region-line', 'lt-region-lo-casing', 'lt-region-lo-line'] : []);
         // за цим зумом показуємо грубшу геометрію: на дрібному масштабі деталі все одно не видно
         const LOD_Z = 7;
+        const borderVis = {};
         const regionVis = () => (regions ? 'visible' : 'none');
         const regionField = () => {
             const lang = (window.LT && LT.lang()) || 'uk';
@@ -33,53 +38,55 @@
                 return { lines: uaOnly(all.lines), labels: uaOnly(all.labels) };
             })());
 
-            if (!map.getSource('lt-regions')) {
-                map.addSource('lt-regions', { type: 'geojson', data: regionData.lines, tolerance: 0.5 });
-                map.addSource('lt-regions-lo', { type: 'geojson', data: regionData.lines, tolerance: 2.2 });
+            if (!map.getSource('lt-region-labels')) {
                 map.addSource('lt-region-labels', { type: 'geojson', data: regionData.labels, tolerance: 0 });
                 const anchor = ((map.getStyle().layers || []).find(l => /^(?:f|p|l)_/.test(l.id)) || {}).id;
                 const vis = regionVis();
-                const dash = [4, 3];
-                [
-                    {
-                        id: 'lt-region-casing', type: 'line', source: 'lt-regions', minzoom: LOD_Z + 1,
-                        layout: { visibility: vis },
-                        paint: {
-                            'line-color': '#000000',
-                            'line-width': ['interpolate', ['linear'], ['zoom'], 5, 2.1, 8, 2.5, 11, 3],
-                            'line-opacity': 0.42, 'line-blur': 0.35, 'line-dasharray': dash
+                if (regionLines) {
+                    map.addSource('lt-regions', { type: 'geojson', data: regionData.lines, tolerance: 0.5 });
+                    map.addSource('lt-regions-lo', { type: 'geojson', data: regionData.lines, tolerance: 2.2 });
+                    const dash = [4, 3];
+                    [
+                        {
+                            id: 'lt-region-casing', type: 'line', source: 'lt-regions', minzoom: LOD_Z + 1,
+                            layout: { visibility: vis },
+                            paint: {
+                                'line-color': '#000000',
+                                'line-width': ['interpolate', ['linear'], ['zoom'], 5, 2.1, 8, 2.5, 11, 3],
+                                'line-opacity': 0.42, 'line-blur': 0.35, 'line-dasharray': dash
+                            }
+                        },
+                        {
+                            id: 'lt-region-line', type: 'line', source: 'lt-regions', minzoom: LOD_Z + 1,
+                            layout: { visibility: vis },
+                            paint: {
+                                'line-color': '#eef2f7',
+                                'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.1, 8, 1.15, 11, 1.4],
+                                'line-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.8, 8, 0.78, 11, 0.85],
+                                'line-dasharray': dash
+                            }
+                        },
+                        {
+                            id: 'lt-region-lo-casing', type: 'line', source: 'lt-regions-lo', maxzoom: LOD_Z + 1,
+                            layout: { visibility: vis },
+                            paint: {
+                                'line-color': '#000000',
+                                'line-width': ['interpolate', ['linear'], ['zoom'], 5, 2.1, 8, 2.5],
+                                'line-opacity': 0.42, 'line-dasharray': dash
+                            }
+                        },
+                        {
+                            id: 'lt-region-lo-line', type: 'line', source: 'lt-regions-lo', maxzoom: LOD_Z + 1,
+                            layout: { visibility: vis },
+                            paint: {
+                                'line-color': '#eef2f7',
+                                'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.1, 8, 1.15],
+                                'line-opacity': 0.78,
+                                'line-dasharray': dash
+                            }
                         }
-                    },
-                    {
-                        id: 'lt-region-line', type: 'line', source: 'lt-regions', minzoom: LOD_Z + 1,
-                        layout: { visibility: vis },
-                        paint: {
-                            'line-color': '#eef2f7',
-                            'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.1, 8, 1.15, 11, 1.4],
-                            'line-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.8, 8, 0.78, 11, 0.85],
-                            'line-dasharray': dash
-                        }
-                    },
-                    {
-                        id: 'lt-region-lo-casing', type: 'line', source: 'lt-regions-lo', maxzoom: LOD_Z + 1,
-                        layout: { visibility: vis },
-                        paint: {
-                            'line-color': '#000000',
-                            'line-width': ['interpolate', ['linear'], ['zoom'], 5, 2.1, 8, 2.5],
-                            'line-opacity': 0.42, 'line-dasharray': dash
-                        }
-                    },
-                    {
-                        id: 'lt-region-lo-line', type: 'line', source: 'lt-regions-lo', maxzoom: LOD_Z + 1,
-                        layout: { visibility: vis },
-                        paint: {
-                            'line-color': '#eef2f7',
-                            'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.1, 8, 1.15],
-                            'line-opacity': 0.78,
-                            'line-dasharray': dash
-                        }
-                    }
-                ].forEach(l => map.addLayer(l, anchor));
+                    ].forEach(l => map.addLayer(l, anchor));
+                }
                 map.addLayer({
                     id: 'lt-region-label', type: 'symbol', source: 'lt-region-labels',
                     layout: {
@@ -101,10 +108,71 @@
                     }
                 }, anchor);
             }
+            mountBorders();
             try {
                 map.setLight({ anchor: 'viewport', color: '#e5f6ff', intensity: 0.4, position: [1.4, 210, 40] });
             } catch (e) { }
         }
+
+        // державні кордони: точні лінії OSM, розкладені на категорії ще на
+        // етапі збірки (scripts/build-state-borders.js). У кадрі нічого не
+        // рахується — три статичні джерела й по два шари на кожне
+        function borderData() {
+            if (window.__ltBorderData) return window.__ltBorderData;
+            const raw = window.LT_STATE_BORDERS;
+            if (!raw || !raw.cats) return null;
+            const out = {};
+            raw.cats.forEach(c => {
+                out[c.id] = {
+                    meta: c,
+                    fc: {
+                        type: 'FeatureCollection',
+                        features: c.lines.map(line => ({
+                            type: 'Feature',
+                            properties: { cat: c.id },
+                            geometry: { type: 'LineString', coordinates: LT.decodePolyline(line) }
+                        }))
+                    }
+                };
+            });
+            window.__ltBorderData = out;
+            return out;
+        }
+
+        function mountBorders() {
+            if (map.getLayer('lt-b-ru')) return;
+            const data = borderData();
+            if (!data) return;
+            const layers = map.getStyle().layers || [];
+            const anchor = (layers.find(l => l.type === 'symbol') || {}).id;
+            Object.keys(data).forEach(id => {
+                const { meta, fc } = data[id];
+                if (!map.getSource('lt-b-' + id)) {
+                    map.addSource('lt-b-' + id, { type: 'geojson', data: fc, tolerance: 1.1, maxzoom: 14 });
+                }
+                const vis = borderVis[id] === false ? 'none' : 'visible';
+                const w = meta.width || 2.4;
+                map.addLayer({
+                    id: 'lt-b-' + id + '-case', type: 'line', source: 'lt-b-' + id,
+                    layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
+                    paint: {
+                        'line-color': meta.caseColor || '#05080d',
+                        'line-width': ['interpolate', ['linear'], ['zoom'], 4, w + 0.8, 8, w + 1.5, 11, w + 2.1],
+                        'line-opacity': meta.caseOpacity != null ? meta.caseOpacity : 0.62, 'line-blur': 0.4
+                    }
+                }, anchor);
+                map.addLayer({
+                    id: 'lt-b-' + id, type: 'line', source: 'lt-b-' + id,
+                    layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
+                    paint: {
+                        'line-color': meta.color,
+                        'line-width': ['interpolate', ['linear'], ['zoom'], 4, w * 0.62, 8, w, 11, w * 1.25],
+                        'line-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.85, 7, 0.95, 13, 1]
+                    }
+                }, anchor);
+            });
+        }
+
         const syncRegionLang = () => {
             if (!map.getLayer('lt-region-label')) return;
             try { map.setLayoutProperty('lt-region-label', 'text-field', regionField()); } catch (e) { }
@@ -120,6 +188,13 @@
                 regions = !!on;
                 REGION_LAYERS.forEach(id => {
                     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', regions ? 'visible' : 'none');
+                });
+            },
+            setBorder(id, on) {
+                if (!id) return;
+                borderVis[id] = !!on;
+                ['lt-b-' + id + '-case', 'lt-b-' + id].forEach(lid => {
+                    if (map.getLayer(lid)) map.setLayoutProperty(lid, 'visibility', on ? 'visible' : 'none');
                 });
             }
         };

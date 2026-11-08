@@ -255,7 +255,7 @@
             'cal.today': 'сьогодні', 'cal.jump': 'Перейти', 'cal.jumpTitle': 'Перейти до дати', 'cal.data': 'є дані',
             'status.ready': 'ГОТОВО', 'status.saved': 'ЗБЕРЕЖЕНО', 'status.draft': 'ЗАПИС…', 'status.error': 'ПОМИЛКА', 'status.newDate': 'НОВА ДАТА',
             'base.dark': 'Темна', 'base.hybrid': 'Гібрид',
-            'viewer.layers': 'Шари', 'viewer.empty': 'ПОРОЖНЬО', 'viewer.noData': 'НЕМАЄ ДАНИХ',
+            'viewer.layers': 'Шари', 'viewer.borders': 'КОРДОНИ', 'viewer.empty': 'ПОРОЖНЬО', 'viewer.noData': 'НЕМАЄ ДАНИХ',
             'viewer.noDataText': 'На вибрану дату карта не заповнена.<br>Виберіть інший день.',
             'viewer.updated': 'ОНОВЛЕНО', 'viewer.noLayers': 'ЗА ЦЮ ДАТУ ШАРІВ НЕМАЄ', 'viewer.zone': 'ЗОНА',
             'viewer.arrows': 'СТРІЛКИ', 'viewer.emptyVal': 'порожньо', 'viewer.km': 'км2',
@@ -482,7 +482,7 @@
             'cal.today': 'today', 'cal.jump': 'Jump', 'cal.jumpTitle': 'Go to date', 'cal.data': 'has data',
             'status.ready': 'READY', 'status.saved': 'SAVED', 'status.draft': 'SAVING…', 'status.error': 'ERROR', 'status.newDate': 'NEW DATE',
             'base.dark': 'Dark', 'base.hybrid': 'Hybrid',
-            'viewer.layers': 'Layers', 'viewer.empty': 'EMPTY', 'viewer.noData': 'NO DATA',
+            'viewer.layers': 'Layers', 'viewer.borders': 'BORDERS', 'viewer.empty': 'EMPTY', 'viewer.noData': 'NO DATA',
             'viewer.noDataText': 'The map for this date is empty.<br>Pick another day.',
             'viewer.updated': 'UPDATED', 'viewer.noLayers': 'NO LAYERS FOR THIS DATE', 'viewer.zone': 'ZONE',
             'viewer.arrows': 'ARROWS', 'viewer.emptyVal': 'empty', 'viewer.km': 'km2',
@@ -710,7 +710,7 @@
             'cal.today': 'сегодня', 'cal.jump': 'Перейти', 'cal.jumpTitle': 'Перейти к дате', 'cal.data': 'есть данные',
             'status.ready': 'ГОТОВО', 'status.saved': 'СОХРАНЕНО', 'status.draft': 'ЗАПИСЬ…', 'status.error': 'ОШИБКА', 'status.newDate': 'НОВАЯ ДАТА',
             'base.dark': 'Тёмная', 'base.hybrid': 'Гибрид',
-            'viewer.layers': 'Слои', 'viewer.empty': 'ПУСТО', 'viewer.noData': 'НЕТ ДАННЫХ',
+            'viewer.layers': 'Слои', 'viewer.borders': 'ГРАНИЦЫ', 'viewer.empty': 'ПУСТО', 'viewer.noData': 'НЕТ ДАННЫХ',
             'viewer.noDataText': 'На выбранную дату карта не заполнена.<br>Выберите другой день.',
             'viewer.updated': 'ОБНОВЛЕНО', 'viewer.noLayers': 'ЗА ЭТУ ДАТУ СЛОЁВ НЕТ', 'viewer.zone': 'ЗОНА',
             'viewer.arrows': 'СТРЕЛКИ', 'viewer.emptyVal': 'пусто', 'viewer.km': 'км2',
@@ -888,7 +888,7 @@
             setLang(target);
             if (el) el.classList.remove('lang-fade');
         };
-        if (!el || matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return; }
+        if (!el) { done(); return; }
         el.classList.add('lang-fade');
         setTimeout(done, 230);
     }
@@ -3758,10 +3758,10 @@
     function advancePulse(map) {
         const token = {};
         map._ltAdvAnim = token;
-        const reduce = typeof matchMedia === 'function'
-            && matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const dur = reduce ? 0 : (docMobile() ? 620 : 740);
-        const pulseDur = reduce ? 0 : 760;
+        // навіть якщо система просить reduced-motion, просування лишається
+        // анімованим: це робочий сигнал зміни лінії, а не декор
+        const dur = docMobile() ? 620 : 740;
+        const pulseDur = 760;
         const fillOp = ADV.fillOp;
         const bandOp = 0.95;
         const set = (fillK, lineOp, bandK) => {
@@ -6539,12 +6539,8 @@
     const THREE_D_PITCH = 55;
 
     // Нахил, висота стін і прозорість ідуть одним тактом: якщо камера вже
-    // стала, а блоки ще ростуть, на зламі видно шов. reduced-motion лишає
-    // миттєвий перехід — це системна вимога, а не смак.
+    // стала, а блоки ще ростуть, на зламі видно шов.
     function threeDMs() {
-        try {
-            if (matchMedia('(prefers-reduced-motion: reduce)').matches) return 0;
-        } catch (e) { }
         return docMobile() ? 720 : 880;
     }
 

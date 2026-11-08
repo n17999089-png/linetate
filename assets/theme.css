@@ -48,7 +48,9 @@ html, body {
     padding: 0;
     width: 100%;
     height: 100%;
+    height: 100dvh;
     overflow: hidden;
+    overscroll-behavior: none;
     background: var(--bg);
     color: var(--text);
     font-family: var(--font);
@@ -70,6 +72,10 @@ button:focus-visible, a:focus-visible, .tab:focus-visible, [tabindex]:focus-visi
 }
 input, textarea { user-select: text; }
 ::selection { background: var(--accent); color: var(--bg); }
+/* переглядач займає рівно екран: fixed не дає сторінці зʼїхати, коли
+   ховається адресний рядок або відкривається клавіатура пошуку */
+body.lt-viewer { position: fixed; inset: 0; }
+body.lt-viewer #map { position: fixed; inset: 0; }
 #map { position: absolute; inset: 0; z-index: 1; transition: opacity .24s ease, filter .24s ease, transform .24s ease; }
 #map.lang-fade { opacity: .3; filter: blur(2px) saturate(.6); transform: scale(1.006); }
 
@@ -1301,7 +1307,13 @@ html.lt-bg .pane.active .lt-flag-cloth {
     .lt-ua-col-k { width: 84px; }
 }
 
+/* Android із «прибрати анімації» (типово в MIUI) репортить reduced-motion,
+   а глобальний kill вбивав усі рухи інтерфейсу — на телефоні зникали
+   анімації статистики, меню й просувань. Тепер вимикаємо лише нескінченні
+   декоративні цикли; одноразові появи лишаються короткими */
 @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+    .lt-flag-strip, .lt-flag-strip::before, .boot-halo, .boot-float, .boot-spin,
+    .boot-sheen, .boot-pulse, .boot-shine, #ps-results .sr,
+    .search-marker .sm-in, .ps-ico { animation: none !important; }
     #map { transition: none; }
 }

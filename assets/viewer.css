@@ -194,6 +194,40 @@
     border-top: 1px solid var(--line);
     display: flex; flex-direction: column; gap: 9px;
 }
+/* ---------- державні кордони ---------- */
+
+.border-box {
+    display: flex; flex-direction: column; gap: 7px;
+    padding: 9px 10px 8px;
+    border: 1px solid var(--line-2); border-radius: 11px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .012));
+}
+.border-cap {
+    font-family: var(--pixel); font-size: 10.5px; font-weight: 700;
+    letter-spacing: 1.6px; color: var(--dim-2); text-transform: uppercase;
+}
+.border-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.border-chip {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-width: 0; min-height: 34px; padding: 0 6px;
+    border: 1px solid var(--line-2); border-radius: 8px;
+    background: rgba(255, 255, 255, .03);
+    color: var(--dim-2);
+    font-family: var(--pixel); font-size: 11px; font-weight: 700;
+    letter-spacing: .8px; text-transform: uppercase;
+    cursor: pointer; overflow: hidden;
+    transition: color .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+.border-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.border-chip i {
+    flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--bc, #72d7ff); opacity: .32;
+    transition: opacity .14s ease, box-shadow .14s ease;
+}
+.border-chip:hover { color: var(--text); background: rgba(255, 255, 255, .07); border-color: var(--line-3); }
+.border-chip.active { color: var(--text); background: rgba(255, 255, 255, .085); border-color: var(--bc, var(--line-3)); }
+.border-chip.active i { opacity: 1; box-shadow: 0 0 8px var(--bc, #72d7ff); }
+
 .mode-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
 .mode-btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -434,6 +468,8 @@
 .dev-mobile #legend .legend-foot { padding: 8px 10px 9px; gap: 7px; }
 .dev-mobile .lg-row { min-height: 48px; }
 .dev-mobile .legend-hint { display: none; }
+.dev-mobile .border-box { padding: 8px 9px 7px; gap: 6px; }
+.dev-mobile .border-chip { min-height: 40px; font-size: 10.5px; letter-spacing: .4px; }
 .dev-mobile #legend-backdrop { display: block; }
 .dev-mobile #legend.open ~ .tg-fab { opacity: 0; visibility: hidden; }
 

@@ -1654,11 +1654,10 @@
         if (text === hintLast) return;
         hintLast = text;
         hint.textContent = text;
-        // нова підказка проявляється зсувом; панель відкривається навіть тоді,
-        // коли анімації заборонені системою — текст уже стоїть на місці
+        // нова підказка проявляється зсувом; reduced-motion свідомо не
+        // перевіряємо — на Android він увімкнений системно й гасив анімацію
         if (!text || !hint.animate) return;
         try {
-            if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
             hint.animate([{ transform: 'translateY(5px)' }, { transform: 'none' }],
                 { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
         } catch (e) { }
@@ -2219,18 +2218,13 @@
         countRuns.forEach(r => cancelAnimationFrame(r.f));
         countRuns.clear();
     }
-    // цифри втрат докручуються від нуля: у розмітці вже стоїть фінальне
-    // число, тому без кадру (reduced motion) екран одразу показує підсумок
+    // цифри втрат докручуються від нуля; reduced-motion тут навмисно не
+    // перевіряється: Android із «прибрати анімації» репортить його завжди,
+    // і саме через це на телефоні не було жодного руху цифр
     function animateCounts(root) {
         if (!root) return;
         const els = Array.from(root.querySelectorAll('.lt-count[data-count]'));
         if (!els.length) return;
-        let reduce = false;
-        try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { }
-        if (reduce) {
-            for (const el of els) el.textContent = fmtCountEl(el, el.dataset.count);
-            return;
-        }
         // у розмітці вже стоїть підсумок — обнуляємо в тому ж кадрі, інакше
         // перший кадр показує фінальне число, а далі воно стрибає в нуль
         for (const el of els) el.textContent = '0';
@@ -2981,6 +2975,59 @@
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.addControl(LT.scaleBar(map), 'bottom-right');
     LT.smoothZoom(map);
+
+    // категорії державних кордонів: кожна вмикається окремо, стан живе
+    // в памʼяті сесії (жодних збережених прапорців зі старих версій)
+    const borderOn = {};
+    function buildBorderChips() {
+        const box = $('border-box');
+        const wrap = $('border-chips');
+        const raw = window.LT_STATE_BORDERS;
+        if (!box || !wrap) return;
+        if (!raw || !raw.cats || !raw.cats.length) { box.hidden = true; return; }
+        box.hidden = false;
+        const lang = LT.lang();
+        wrap.innerHTML = '';
+        raw.cats.forEach(c => {
+            const on = borderOn[c.id] !== false;
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'border-chip' + (on ? ' active' : '');
+            btn.dataset.cat = c.id;
+            btn.style.setProperty('--bc', c.color);
+            btn.title = (c.name && (c.name[lang] || c.name.uk)) || c.id;
+            btn.setAttribute('aria-pressed', String(on));
+            const dot = document.createElement('i');
+            dot.setAttribute('aria-hidden', 'true');
+            const txt = document.createElement('span');
+            txt.textContent = (c.short && (c.short[lang] || c.short.uk)) || c.id.toUpperCase();
+            btn.append(dot, txt);
+            btn.addEventListener('click', () => {
+                const next = borderOn[c.id] === false;
+                borderOn[c.id] = next;
+                btn.classList.toggle('active', next);
+                btn.setAttribute('aria-pressed', String(next));
+                if (mapTools) mapTools.setBorder(c.id, next);
+            });
+            wrap.appendChild(btn);
+        });
+    }
+    buildBorderChips();
+    document.addEventListener('linetate:lang', buildBorderChips);
+
+    // після повороту екрана або появи/зникнення клавіатури полотно мусить
+    // збігатися з вікном, інакше карта зсувається відносно екрана
+    function keepViewport() {
+        try { map.resize(); } catch (e) { }
+    }
+    window.addEventListener('orientationchange', () => setTimeout(keepViewport, 160));
+    if (window.visualViewport) {
+        let vvT = 0;
+        window.visualViewport.addEventListener('resize', () => {
+            clearTimeout(vvT);
+            vvT = setTimeout(keepViewport, 90);
+        });
+    }
 
     LT.setLayerLabelDrag(map, (id, pos) => {
         const l = state.layers[id];
