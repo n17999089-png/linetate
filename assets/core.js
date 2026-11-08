@@ -208,7 +208,24 @@
             'stats.uaLand': 'ПЛОЩА УКРАЇНИ', 'stats.uaCaptured': 'ЗАХОПИЛА РФ',
             'stats.uaLiberated': 'ЗВІЛЬНИЛА УКРАЇНА', 'stats.uaSince': 'ЗА ВЕСЬ ЧАС',
             'stats.uaChart': 'ЗМІНА ТЕРИТОРІЙ', 'stats.uaNoDays': 'ЩЕ НЕМАЄ ДНІВ ДЛЯ ПОРІВНЯННЯ',
-            'stats.tabLosses': 'ВТРАТИ',
+            'stats.tabLosses': 'ВТРАТИ', 'stats.tabNews': 'НОВИНИ',
+            'stats.newsTitle': 'ОНОВЛЕННЯ КАРТИ', 'stats.newsChanges': '{n} змін',
+            'stats.newsLoading': 'РАХУЄМО ЗМІНИ…', 'stats.newsEmpty': 'ЗМІН НА ФРОНТІ НЕ ЗАФІКСОВАНО',
+            'stats.newsEmptyHint': 'МІЖ ДАТАМИ НЕМАЄ РІЗНИЦІ В ЗОНАХ.',
+            'stats.newsZone': 'ПОКАЗАТИ ЗОНУ ПРОСУВАННЯ',
+            'news.rusNear': 'рф просунулась біля н.п. {place}',
+            'news.rusArea': 'рф просунулась у районі н.п. {place}',
+            'news.rusTake': 'рф окупувала район н.п. {place}',
+            'news.rusTakeArea': 'рф окупувала територію біля н.п. {place}',
+            'news.ukrNear': 'ЗСУ просунулись біля н.п. {place}',
+            'news.ukrArea': 'ЗСУ просунулись у районі н.п. {place}',
+            'news.ukrTake': 'ЗСУ звільнили район н.п. {place}',
+            'news.ukrTakeArea': 'ЗСУ звільнили територію біля н.п. {place}',
+            'news.dirE': 'східніше', 'news.dirNE': 'північно-східніше', 'news.dirN': 'північніше',
+            'news.dirNW': 'північно-західніше', 'news.dirW': 'західніше', 'news.dirSW': 'південно-західніше',
+            'news.dirS': 'південніше', 'news.dirSE': 'південно-східніше',
+            'news.srcOccupied': 'окупована', 'news.srcRus': 'під рф',
+            'news.srcGrey': 'сіра зона', 'news.srcFree': 'вільна земля',
             'stats.lossUpd': 'оновлено',
             'stats.lossRuCap': 'ВС РФ · ПІДТВЕРДЖЕНО ІМЕН', 'stats.lossUaCap': 'ЗСУ · ПІДТВЕРДЖЕНО ЗАГИБЛИХ',
             'stats.lossRu': 'РФ', 'stats.lossUa': 'ЗСУ', 'stats.lossPeople': 'осіб',
@@ -348,6 +365,8 @@
             'dock.zone': 'ЗОНА', 'dock.arrow': 'СТРІЛКА', 'dock.erase': 'ЛАСТИК', 'dock.pan': 'ПАНОРАМА',
             'search.placeholder': 'Місто, село, район, область', 'search.go': 'Знайти', 'search.add': 'До шару',
             'search.notFound': 'НІЧОГО НЕ ЗНАЙДЕНО', 'search.unavailable': 'ПОШУК НЕДОСТУПНИЙ',
+            'search.results': 'РЕЗУЛЬТАТИ',
+            'search.keysNav': 'ВИБІР', 'search.keysGo': 'ПЕРЕЙТИ', 'search.keysEsc': 'ЗАКРИТИ',
             'search.noContour': 'КОНТУР НЕ ЗНАЙДЕНО — ЛИШЕ ТОЧКА', 'search.added': 'КОНТУР ДОДАНО ДО ШАРУ',
             'search.noFeature': 'У ЦЬОГО ОБ’ЄКТА НЕМАЄ КОНТУРУ', 'search.badContour': 'НЕВІРНИЙ КОНТУР', 'search.contour': 'КОНТУР',
             'drop.title': 'GEOJSON', 'drop.hint': 'ВІДПУСТІТЬ ФАЙЛ — З’ЯВИТЬСЯ НОВИЙ ШАР',
@@ -435,7 +454,24 @@
             'stats.uaLand': 'UKRAINE AREA', 'stats.uaCaptured': 'RUSSIA CAPTURED',
             'stats.uaLiberated': 'UKRAINE LIBERATED', 'stats.uaSince': 'ALL TIME',
             'stats.uaChart': 'TERRITORY CHANGE', 'stats.uaNoDays': 'NO DAYS TO COMPARE YET',
-            'stats.tabLosses': 'LOSSES',
+            'stats.tabLosses': 'LOSSES', 'stats.tabNews': 'NEWS',
+            'stats.newsTitle': 'MAP UPDATES', 'stats.newsChanges': '{n} changes',
+            'stats.newsLoading': 'COUNTING CHANGES…', 'stats.newsEmpty': 'NO FRONT CHANGES RECORDED',
+            'stats.newsEmptyHint': 'THERE IS NO DIFFERENCE BETWEEN THE DATES.',
+            'stats.newsZone': 'SHOW ADVANCE ZONE',
+            'news.rusNear': 'ru advanced near {place}',
+            'news.rusArea': 'ru advanced around {place}',
+            'news.rusTake': 'ru occupied the area of {place}',
+            'news.rusTakeArea': 'ru occupied territory near {place}',
+            'news.ukrNear': 'AFU advanced near {place}',
+            'news.ukrArea': 'AFU advanced around {place}',
+            'news.ukrTake': 'AFU liberated the area of {place}',
+            'news.ukrTakeArea': 'AFU liberated territory near {place}',
+            'news.dirE': 'east of it', 'news.dirNE': 'north-east of it', 'news.dirN': 'north of it',
+            'news.dirNW': 'north-west of it', 'news.dirW': 'west of it', 'news.dirSW': 'south-west of it',
+            'news.dirS': 'south of it', 'news.dirSE': 'south-east of it',
+            'news.srcOccupied': 'occupied', 'news.srcRus': 'under ru',
+            'news.srcGrey': 'grey zone', 'news.srcFree': 'open land',
             'stats.lossUpd': 'updated',
             'stats.lossRuCap': 'RU ARMED FORCES · NAMED CONFIRMED', 'stats.lossUaCap': 'UKRAINIAN FORCES · CONFIRMED KILLED',
             'stats.lossRu': 'RU', 'stats.lossUa': 'UA', 'stats.lossPeople': 'people',
@@ -575,6 +611,8 @@
             'dock.zone': 'ZONE', 'dock.arrow': 'ARROW', 'dock.erase': 'ERASER', 'dock.pan': 'PAN',
             'search.placeholder': 'City, village, district, region', 'search.go': 'Search', 'search.add': 'To layer',
             'search.notFound': 'NOTHING FOUND', 'search.unavailable': 'SEARCH UNAVAILABLE',
+            'search.results': 'RESULTS',
+            'search.keysNav': 'SELECT', 'search.keysGo': 'GO', 'search.keysEsc': 'CLOSE',
             'search.noContour': 'NO CONTOUR — POINT ONLY', 'search.added': 'CONTOUR ADDED TO LAYER',
             'search.noFeature': 'THIS OBJECT HAS NO CONTOUR', 'search.badContour': 'INVALID CONTOUR', 'search.contour': 'CONTOUR',
             'drop.title': 'GEOJSON', 'drop.hint': 'DROP THE FILE — A NEW LAYER WILL APPEAR',
@@ -662,7 +700,24 @@
             'stats.uaLand': 'ПЛОЩАДЬ УКРАИНЫ', 'stats.uaCaptured': 'ЗАХВАТИЛА РФ',
             'stats.uaLiberated': 'ОСВОБОДИЛА УКРАИНА', 'stats.uaSince': 'ЗА ВСЁ ВРЕМЯ',
             'stats.uaChart': 'ИЗМЕНЕНИЕ ТЕРРИТОРИЙ', 'stats.uaNoDays': 'ПОКА НЕТ ДНЕЙ ДЛЯ СРАВНЕНИЯ',
-            'stats.tabLosses': 'ПОТЕРИ',
+            'stats.tabLosses': 'ПОТЕРИ', 'stats.tabNews': 'НОВОСТИ',
+            'stats.newsTitle': 'ОБНОВЛЕНИЯ КАРТЫ', 'stats.newsChanges': '{n} изменений',
+            'stats.newsLoading': 'СЧИТАЕМ ИЗМЕНЕНИЯ…', 'stats.newsEmpty': 'ИЗМЕНЕНИЙ НА ФРОНТЕ НЕТ',
+            'stats.newsEmptyHint': 'МЕЖДУ ДАТАМИ НЕТ РАЗНИЦЫ В ЗОНАХ.',
+            'stats.newsZone': 'ПОКАЗАТЬ ЗОНУ ПРОДВИЖЕНИЯ',
+            'news.rusNear': 'рф продвинулась возле н.п. {place}',
+            'news.rusArea': 'рф продвинулась в районе н.п. {place}',
+            'news.rusTake': 'рф оккупировала район н.п. {place}',
+            'news.rusTakeArea': 'рф оккупировала территорию возле н.п. {place}',
+            'news.ukrNear': 'ВСУ продвинулись возле н.п. {place}',
+            'news.ukrArea': 'ВСУ продвинулись в районе н.п. {place}',
+            'news.ukrTake': 'ВСУ освободили район н.п. {place}',
+            'news.ukrTakeArea': 'ВСУ освободили территорию возле н.п. {place}',
+            'news.dirE': 'восточнее', 'news.dirNE': 'северо-восточнее', 'news.dirN': 'севернее',
+            'news.dirNW': 'северо-западнее', 'news.dirW': 'западнее', 'news.dirSW': 'юго-западнее',
+            'news.dirS': 'южнее', 'news.dirSE': 'юго-восточнее',
+            'news.srcOccupied': 'оккупированная', 'news.srcRus': 'под рф',
+            'news.srcGrey': 'серая зона', 'news.srcFree': 'свободная земля',
             'stats.lossUpd': 'обновлено',
             'stats.lossRuCap': 'ВС РФ · ПОДТВЕРЖДЕНО ИМЁН', 'stats.lossUaCap': 'ВСУ · ПОДТВЕРЖДЕНО ПОГИБШИХ',
             'stats.lossRu': 'РФ', 'stats.lossUa': 'ВСУ', 'stats.lossPeople': 'человек',
@@ -803,6 +858,8 @@
             'dock.zone': 'ЗОНА', 'dock.arrow': 'СТРЕЛКА', 'dock.erase': 'ЛАСТИК', 'dock.pan': 'ПАНОРАМА',
             'search.placeholder': 'Город, село, район, область', 'search.go': 'Найти', 'search.add': 'В слой',
             'search.notFound': 'НИЧЕГО НЕ НАЙДЕНО', 'search.unavailable': 'ПОИСК НЕДОСТУПЕН',
+            'search.results': 'РЕЗУЛЬТАТЫ',
+            'search.keysNav': 'ВЫБОР', 'search.keysGo': 'ПЕРЕЙТИ', 'search.keysEsc': 'ЗАКРЫТЬ',
             'search.noContour': 'КОНТУР НЕ НАЙДЕН — ТОЛЬКО ТОЧКА', 'search.added': 'КОНТУР ДОБАВЛЕН В СЛОЙ',
             'search.noFeature': 'У ЭТОГО ОБЪЕКТА НЕТ КОНТУРА', 'search.badContour': 'НЕВЕРНЫЙ КОНТУР', 'search.contour': 'КОНТУР',
             'drop.title': 'GEOJSON', 'drop.hint': 'ОТПУСТИТЕ ФАЙЛ — ПОЯВИТСЯ НОВЫЙ СЛОЙ',
@@ -3214,6 +3271,10 @@
                 : Math.max(PLACE_MIN_LIMIT, Math.min(PLACE_MAX_LIMIT, Math.round(size.x * size.y / 2000)));
             const zoom = map.getZoom();
             const dotLimit = mob ? 90 : PLACE_DOT_LIMIT;
+            // міста не мають ділити бюджет крапок із селами: у щільному кадрі
+            // села з'їдали всі слоти, і частина міст не малювалась ані підписом,
+            // ані крапкою. для них окрема, вища стеля
+            const cityDotLimit = mob ? 150 : PLACE_DOT_LIMIT + 120;
             // набір відсортовано за важливістю (столиця, ранг, населення), тому
             // обрізання просто відкидає найдрібніше. без стелі на телефоні тут
             // перебираються тисячі сіл, і саме це вішає кадр
@@ -3223,7 +3284,20 @@
             const CELL = 76;
             const grid = new Map();
             const addDot = (it, x, y) => {
-                if (extraDots.length >= dotLimit) return;
+                const city = it.kind !== 'vil';
+                const cap = city ? cityDotLimit : dotLimit;
+                if (extraDots.length >= cap) {
+                    // місто відбирає місце в найменшого села; якщо села вже
+                    // скінчились, крапку міста все одно не викидаємо до його
+                    // власної (вищої) стелі
+                    if (!city) return;
+                    let k = -1;
+                    for (let i = extraDots.length - 1; i >= 0; i--) {
+                        if (extraDots[i].kind === 'vil') { k = i; break; }
+                    }
+                    if (k < 0) return;
+                    extraDots.splice(k, 1);
+                }
                 extraDots.push({
                     coord: it.coord, mx: it.mx, my: it.my, x: x, y: y,
                     cap: it.cap, kind: it.kind, rank: it.rank
@@ -3766,6 +3840,12 @@
         const bandOp = 0.95;
         const set = (fillK, lineOp, bandK) => {
             if (map._ltAdvAnim !== token) return;
+            // мітка кадру може бути раніше за performance.now(), а синус пульсу
+            // дає відʼємні значення: без затиску MapLibre сипле помилками про
+            // opacity поза діапазоном і кадр не малюється
+            fillK = Math.max(0, Math.min(1, fillK));
+            lineOp = Math.max(0, Math.min(1, lineOp));
+            bandK = Math.max(0, Math.min(1, bandK));
             try {
                 if (map.getLayer('lt-adv-fill')) map.setPaintProperty('lt-adv-fill', 'fill-opacity', fillOp * fillK);
                 if (map.getLayer('lt-adv-line')) map.setPaintProperty('lt-adv-line', 'line-opacity', lineOp);
@@ -3782,7 +3862,7 @@
         const t0 = performance.now();
         const enter = now => {
             if (map._ltAdvAnim !== token) return;
-            const p = Math.min(1, (now - t0) / dur);
+            const p = Math.max(0, Math.min(1, (now - t0) / dur));
             set(ease(p), ease(p), ease(p));
             if (p < 1) { requestAnimationFrame(enter); return; }
             // два пульси межі: 1 → 0.55 → 1. смуга в 3D замінює лінію, тож
@@ -3790,7 +3870,7 @@
             const tp = performance.now();
             const pulse = n => {
                 if (map._ltAdvAnim !== token) return;
-                const q = Math.min(1, (n - tp) / pulseDur);
+                const q = Math.max(0, Math.min(1, (n - tp) / pulseDur));
                 const w = Math.sin(q * Math.PI * 2) * 0.45;
                 set(1, 1 - w, 1 - Math.abs(w) * 0.35);
                 if (q < 1) requestAnimationFrame(pulse);
@@ -4126,7 +4206,7 @@
         const key = String(doc.date || '') + '|' + id + '|' + String(doc.savedAt || 0);
         if (statsUnionCache.has(key)) return statsUnionCache.get(key);
         const f = statsUnion(doc, id);
-        if (statsUnionCache.size > 32) statsUnionCache.clear();
+        if (statsUnionCache.size > 96) statsUnionCache.clear();
         statsUnionCache.set(key, f);
         return f;
     }
@@ -4775,8 +4855,9 @@
         return lossesPending;
     }
 
-    function statsRender(res, tab, loss, lossErr) {
+    function statsRender(res, tab, loss, lossErr, news) {
         if (tab === 'losses') return statsLosses(loss, lossErr);
+        if (tab === 'news') return newsRender(news);
         if (tab === 'ua') return statsUkraine(res);
         if (!res) return `<div class="lt-stats-loading">${esc(t('stats.loading'))}</div>`;
         if (res.empty || !res.rows.length) {
@@ -4808,6 +4889,219 @@
         </div>
         <div class="lt-stats-days" data-anim="ov-days">${rows}</div>
         <div class="lt-stats-foot">${esc(t('stats.baseline', { date: res.baseline ? fmtShort(res.baseline) : '—' }))}</div>`;
+    }
+
+    /* --------------------------- новини з фронту --------------------------- */
+
+    // кожна картка — справжня ділянка, яку одна сторона забрала за добу:
+    // ті самі різниці зон, що й у «Просуванні». Текст описує лише те, що є
+    // в геометрії — бік, джерело (звідки забрали) і найближчий населений пункт
+    const NEWS_MIN_KM2 = 0.5;
+    const NEWS_MAX_ITEMS = 6;
+    const NEWS_DIRS = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'];
+    const NEWS_SRC_KEY = { ukr: 'Occupied', rus: 'Rus', grey: 'Grey', empty: 'Free' };
+
+    // LT_PLACES містить ~39 тисяч записів по всьому світу — для підказки
+    // «біля н.п.» беремо лише український прямокутник
+    let newsPlacesCache = null;
+    function newsPlaces() {
+        if (newsPlacesCache) return newsPlacesCache;
+        const data = window.LT_PLACES || [];
+        const out = [];
+        for (let i = 0; i < data.length; i++) {
+            const e = data[i];
+            const lon = e[2] / 1e5, lat = e[3] / 1e5;
+            if (lon < 21.5 || lon > 41.5 || lat < 44 || lat > 52.6) continue;
+            out.push(e);
+        }
+        newsPlacesCache = out;
+        return out;
+    }
+
+    function newsPlaceName(e) {
+        if (!e) return '';
+        if (currentLang === 'en') return e[1] || e[0];
+        if (currentLang === 'ru') return placeRu(e[0], e[2], e[3]) || e[0];
+        return e[0];
+    }
+
+    function newsFindPlace(pt) {
+        const list = newsPlaces();
+        const x = pt.geometry.coordinates[0], y = pt.geometry.coordinates[1];
+        const cos = Math.cos(y * Math.PI / 180) || 1;
+        let best = null, bd = Infinity;
+        for (let i = 0; i < list.length; i++) {
+            const e = list[i];
+            const dx = (e[2] / 1e5 - x) * cos;
+            const dy = e[3] / 1e5 - y;
+            const d = dx * dx + dy * dy;
+            if (d < bd) { bd = d; best = e; }
+        }
+        return best ? { e: best, km: Math.sqrt(bd) * 111.32 } : null;
+    }
+
+    function newsDirKey(lon, lat, e) {
+        const dx = (lon - e[2] / 1e5) * Math.cos(lat * Math.PI / 180);
+        const dy = lat - e[3] / 1e5;
+        const deg = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+        return NEWS_DIRS[Math.round(deg / 45) % 8];
+    }
+
+    function newsPolys(f) {
+        if (!f || !f.geometry) return [];
+        const g = f.geometry;
+        if (g.type === 'Polygon') return [g.coordinates];
+        if (g.type === 'MultiPolygon') return g.coordinates;
+        return [];
+    }
+
+    function newsPolyFeat(ring) {
+        return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: ring } };
+    }
+
+    function newsPair(prev, cur, roles) {
+        const p = {}, c = {};
+        ['ukr', 'rus', 'grey'].forEach(r => {
+            p[r] = statsZone(prev, roles[r]);
+            c[r] = statsZone(cur, roles[r]);
+        });
+        const land = statsZone(cur, roles.land) || statsZone(prev, roles.land);
+        const items = [];
+        ['rus', 'ukr'].forEach(side => {
+            if (!p[side] || !c[side]) return;
+            let gain = statsDiff(c[side], p[side]);
+            if (gain && land) gain = statsCut(gain, land) || gain;
+            newsPolys(gain).forEach(ring => {
+                const poly = newsPolyFeat(ring);
+                const area = statsAreaKm2(poly);
+                if (area < NEWS_MIN_KM2) return;
+                let rest = poly;
+                const srcs = [];
+                ['ukr', 'rus', 'grey'].forEach(src => {
+                    if (src === side || !p[src] || !rest) return;
+                    const part = statsCut(rest, p[src]);
+                    if (!part) return;
+                    const a = statsAreaKm2(part);
+                    if (a > 0.005) srcs.push([src, a]);
+                    rest = statsDiff(rest, part);
+                });
+                if (rest) {
+                    const a = statsAreaKm2(rest);
+                    if (a > 0.005) srcs.push(['empty', a]);
+                }
+                srcs.sort((a, b) => b[1] - a[1]);
+                let pt = null;
+                try { pt = turf.pointOnFeature(poly); } catch (e) { pt = null; }
+                if (!pt) return;
+                const near = newsFindPlace(pt);
+                if (!near) return;
+                const lon = pt.geometry.coordinates[0], lat = pt.geometry.coordinates[1];
+                let inside = false;
+                try {
+                    inside = turf.booleanPointInPolygon(turf.point([near.e[2] / 1e5, near.e[3] / 1e5]), poly);
+                } catch (e) { inside = false; }
+                const src = srcs.length ? srcs[0][0] : 'empty';
+                const taking = (side === 'rus' && src === 'ukr') || (side === 'ukr' && src === 'rus');
+                const suffix = taking ? (inside ? 'Take' : 'TakeArea') : (inside ? 'Area' : 'Near');
+                const bbox = turf.bbox(poly);
+                items.push({
+                    side, src, inside,
+                    key: side + suffix,
+                    dir: inside || near.km < 1 ? '' : newsDirKey(lon, lat, near.e),
+                    area,
+                    name: newsPlaceName(near.e),
+                    bbox: [bbox[0], bbox[1], bbox[2], bbox[3]]
+                });
+            });
+        });
+        items.sort((a, b) => b.area - a.area);
+        return { date: cur.date, savedAt: cur.savedAt || 0, items: items.slice(0, NEWS_MAX_ITEMS) };
+    }
+
+    let newsMemo = null;
+    function frontNews(progress) {
+        const list = listDates().slice().sort((a, b) => a.date < b.date ? -1 : 1);
+        const sig = list.map(d => d.date + ':' + d.updatedAt).join(',') + '|' + JSON.stringify(statsStoredRoles());
+        if (newsMemo && newsMemo.sig === sig) {
+            if (progress) { try { progress(1, 1); } catch (e) { } }
+            return Promise.resolve(newsMemo.res);
+        }
+        return new Promise(resolve => {
+            if (list.length < 2) {
+                const res = { start: list.length ? list[0].date : null, groups: [], total: 0 };
+                newsMemo = { sig, res };
+                return resolve(res);
+            }
+            const latest = load(list[list.length - 1].date);
+            const roles = statsRoles(latest && latest.layers);
+            const groups = [];
+            let i = 1;
+            const step = () => {
+                if (i >= list.length) {
+                    const res = {
+                        start: list[0].date, groups,
+                        total: groups.reduce((n, g) => n + g.items.length, 0)
+                    };
+                    newsMemo = { sig, res };
+                    return resolve(res);
+                }
+                const cur = load(list[i].date);
+                const prev = load(list[i - 1].date);
+                if (cur && cur.layers && prev && prev.layers) {
+                    try {
+                        const g = newsPair(prev, cur, roles);
+                        if (g.items.length) groups.push(g);
+                    } catch (e) { }
+                }
+                i++;
+                if (progress) { try { progress(i, list.length); } catch (e) { } }
+                setTimeout(step, 0);
+            };
+            step();
+        });
+    }
+
+    function newsTime(ts) {
+        const n = Number(ts);
+        if (!n) return '';
+        try { return new Date(n).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }); }
+        catch (e) { return ''; }
+    }
+
+    function newsDateLabel(date) {
+        try {
+            return fromIso(date).toLocaleDateString(locale(), { weekday: 'short', day: 'numeric', month: 'long' });
+        } catch (e) { return date; }
+    }
+
+    function newsRender(news) {
+        if (!news) return `<div class="lt-stats-loading">${esc(t('stats.newsLoading'))}</div>`;
+        if (!news.groups.length) {
+            return `<div class="lt-stats-empty"><b>${esc(t('stats.newsEmpty'))}</b><span>${esc(t('stats.newsEmptyHint'))}</span></div>`;
+        }
+        const latest = news.groups[news.groups.length - 1];
+        const count = news.groups.reduce((n, g) => n + g.items.length, 0);
+        const hero = `<div class="lt-news-hero" data-anim="news-hero">
+            <span class="k">${esc(t('stats.newsTitle'))}</span>
+            <b>${esc(fmtFull(latest.date))}</b>
+            <span class="s">${esc(newsTime(latest.savedAt))}<em>${esc(t('stats.newsChanges', { n: count }))}</em></span>
+        </div>`;
+        const days = news.groups.slice().reverse().map(g => {
+            const items = g.items.map(it => {
+                const dir = it.dir ? `<i>${esc(t('news.dir' + it.dir))}</i>` : '';
+                const src = `<i>${esc(t('news.src' + NEWS_SRC_KEY[it.src]))}</i>`;
+                return `<button type="button" class="lt-news-item ${it.side}" data-news-date="${g.date}" data-news-bbox="${it.bbox.join(',')}" title="${esc(t('stats.newsZone'))}">
+                    <span class="lt-news-dot" aria-hidden="true"></span>
+                    <span class="lt-news-txt"><b>${esc(t('news.' + it.key, { place: it.name }))}</b><small>${dir}${src}</small></span>
+                    <span class="lt-news-km">${esc(statsFmt(it.area))}<i>${esc(t('stats.km2'))}</i></span>
+                </button>`;
+            }).join('');
+            return `<div class="lt-news-day" data-anim="news-${g.date}">
+                <div class="lt-news-day-h"><b>${esc(newsDateLabel(g.date))}</b><span>${esc(newsTime(g.savedAt))}</span></div>
+                ${items}
+            </div>`;
+        }).join('');
+        return hero + days;
     }
 
     /* ------------------------------ стрелки ------------------------------ */
@@ -5027,7 +5321,9 @@
         const hit = wallCache.get(key);
         if (hit) { renderPerf.wallHit++; return hit; }
         const stops = ['interpolate', ['linear'], ['zoom']];
-        for (let z = 5; z <= 19; z++) stops.push(z, Math.round(pxToM(key, z)));
+        // висота ніколи не округлюється до нуля: дах окупованої зони з
+        // висотою 0 провалювався під рельєф і «зникав» плямами (z-fighting)
+        for (let z = 5; z <= 19; z++) stops.push(z, Math.max(1, Math.round(pxToM(key, z))));
         if (wallCache.size > 1024) wallCache.clear();
         wallCache.set(key, stops);
         renderPerf.wallBuilt++;
@@ -5058,9 +5354,9 @@
     const RIM_PX = 3.2;
     const WALL_PX = 24;
     // щільність обʼєму зони у 3D. на 0.95 тіло було майже непрозоре й рельєф
-    // крізь нього не читався зовсім; 0.62 лишає колір шару впізнаваним, але
-    // хребти/тіні гілшейду просвічують крізь обʼєм
-    const ZONE_3D_OPACITY = 0.62;
+    // крізь нього не читався зовсім. 0.78 — компроміс: колір шару вже не
+    // «пливе» при зміні растрових тайлів під ним, а хребти гілшейду ще видно
+    const ZONE_3D_OPACITY = 0.78;
     // кожен наступний за z-індексом шар стоїть вище за попередній. без цього
     // дві верхні грані в одній площині мігають — те, що користувач називає
     // «битва з індексами»
@@ -5085,7 +5381,11 @@
     // ділянки, а її ступінчастий край на телефоні лежав поверх детального
     // контуру як «другий контур». дах лишається штрихованим — цього достатньо,
     // щоб окупація читалась окремо, без жодної стіни
-    const CAP_FLAT_PX = 0.02;
+    // 0.02 px давало рівно 0 м після округлення стопів: дах лягав у площину
+    // рельєфу, де на близькому зумі виграє то він, то DEM — зона «розсипалась».
+    // 1.5 px — це 1–2 м на z14–16: оком не видно, але від поверхні землі вже
+    // відірвано, тож штриховка лежить суцільним полем
+    const CAP_FLAT_PX = 1.5;
     function capFlat(l) { return zoneCaptured(l) ? CAP_FLAT_PX : null; }
 
     // штриховка живе в одній картинці: темна підкладка тримає колір зони,
@@ -6787,6 +7087,13 @@
         return 0.5 - 0.25 * Math.log((1 + s) / (1 - s)) / Math.PI;
     }
 
+    // обернене до mercY: під нахилом стабільну рамку градієнта доводиться
+    // проєктувати в екран через map.project, а він бере лише lng/lat
+    function mercToLngLat(mx, my) {
+        const u = 4 * Math.PI * (0.5 - my);
+        return [mx * 360 - 180, Math.atan(Math.sinh(u / 2)) * 180 / Math.PI];
+    }
+
     // рамка кадру: x = px0 + mercX(lng) * ws, y = py0 + mercY(lat) * ws.
     // Вісь y у меркатора росте вниз, тому південь дає більший y — як і на
     // екрані. Формула збігається з map.project до 1e-9 пікселя.
@@ -7360,6 +7667,10 @@
         const hit = fcBakes.get(fc);
         if (hit) return hit;
         const out = [];
+        // повна рамка геометрії в меркаторі: градієнт шару мусить стояти на
+        // місці. раніше її збирали лише з видимих полігонів, і колір під
+        // курсором мінявся від зуму та панорами
+        let gw = Infinity, gs = Infinity, ge = -Infinity, gn = -Infinity;
         (fc.features || []).forEach(f => {
             const g = f.geometry || {};
             const rings = [];
@@ -7396,6 +7707,11 @@
                         Math.min(mx0, mx1), Math.min(my0, my1),
                         Math.max(mx0, mx1), Math.max(my0, my1)
                     ];
+                    const mb = poly.mbox;
+                    if (mb[0] < gw) gw = mb[0];
+                    if (mb[1] < gs) gs = mb[1];
+                    if (mb[2] > ge) ge = mb[2];
+                    if (mb[3] > gn) gn = mb[3];
                 }
                 polys.push(poly);
                 prs.forEach(pr => rings.push(pr));
@@ -7407,6 +7723,9 @@
             }
             if (rings.length) out.push({ box: featBox(f), rings, polys });
         });
+        if (isFinite(gw) && isFinite(gs) && isFinite(ge) && isFinite(gn)) {
+            out.gradBox = [gw, gs, ge, gn];
+        }
         fcBakes.set(fc, out);
         return out;
     }
@@ -7956,21 +8275,16 @@
                 vis.length = 0;
                 rects.length = 0;
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                let mminX = Infinity, mminY = Infinity, mmaxX = -Infinity, mmaxY = -Infinity;
+                // рамку градієнта беремо з повної геометрії шару (кеш печіння),
+                // а не з видимих полігонів: інакше колір «дихав» при зумі й пані
+                const gb = parts.gradBox;
+                const mminX = gb ? gb[0] : Infinity, mminY = gb ? gb[1] : Infinity;
+                const mmaxX = gb ? gb[2] : -Infinity, mmaxY = gb ? gb[3] : -Infinity;
                 parts.forEach(part => {
                     // умная прорисовка: фича целиком вне экрана не проектируется
                     // и не попадает в путь — на фронте это половина слоёв
                     if (part.box && !onScreen(map, part.box, rx, ry, cv.width, cv.height, padC, offX, offY, fr)) return;
                     part.polys.forEach(poly => {
-                        // градієнт шару будуємо по всій геометрії, а не по
-                        // видимій частині: інакше при панорамі він «дихав» би
-                        if (poly.mbox) {
-                            const mb = poly.mbox;
-                            if (mb[0] < mminX) mminX = mb[0];
-                            if (mb[1] < mminY) mminY = mb[1];
-                            if (mb[2] > mmaxX) mmaxX = mb[2];
-                            if (mb[3] > mmaxY) mmaxY = mb[3];
-                        }
                         const rr = poly.box ? boxRect(map, poly.box, rx, ry, offX, offY, fr) : null;
                         if (rr) {
                             if (rr[2] < -padC || rr[0] > cv.width + padC || rr[3] < -padC || rr[1] > cv.height + padC) return;
@@ -8055,15 +8369,29 @@
                 // в екран, але шлях будується один раз на полігон — ним же йде
                 // і заливка, і кромка (раніше кромка будувала другий шлях).
                 let gradT = null;
-                if (l.style.grad === true && isFinite(minX) && isFinite(minY)) {
-                    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-                    const half = Math.abs((maxX - minX) * gdx) / 2 + Math.abs((maxY - minY) * gdy) / 2;
-                    if (half > 0.5) {
-                        gradT = ctx.createLinearGradient(cx - gdx * half, cy - gdy * half, cx + gdx * half, cy + gdy * half);
-                        gradT.addColorStop(0, gStop0);
-                        gradT.addColorStop(0.42, gStop1);
-                        gradT.addColorStop(0.74, gStop2);
-                        gradT.addColorStop(1, gStop3);
+                // під нахилом екран не афінний, тому кінці градієнта проєктуємо
+                // з тієї ж повної рамки шару: інакше при зумі вони повзли за
+                // видимою частиною й колір зони під курсором змінювався
+                const gbT = parts.gradBox;
+                if (l.style.grad === true && gbT) {
+                    const gcxT = (gbT[0] + gbT[2]) / 2, gcyT = (gbT[1] + gbT[3]) / 2;
+                    const halfT = Math.abs((gbT[2] - gbT[0]) * gdx) / 2 + Math.abs((gbT[3] - gbT[1]) * gdy) / 2;
+                    if (halfT > 0) {
+                        const a = map.project(mercToLngLat(gcxT - gdx * halfT, gcyT - gdy * halfT));
+                        const b2 = map.project(mercToLngLat(gcxT + gdx * halfT, gcyT + gdy * halfT));
+                        const pc = map.project(mercToLngLat(gcxT, gcyT));
+                        const vx = b2.x - a.x, vy = b2.y - a.y;
+                        const len2 = vx * vx + vy * vy;
+                        // кінець за спиною камери дає перевернутий градієнт:
+                        // тоді краще рівна заливка, ніж стрибок кольору
+                        const t = len2 > 0 ? ((pc.x - a.x) * vx + (pc.y - a.y) * vy) / len2 : -1;
+                        if (isFinite(a.x) && isFinite(a.y) && isFinite(b2.x) && isFinite(b2.y) && t > 0 && t < 1) {
+                            gradT = ctx.createLinearGradient(a.x, a.y, b2.x, b2.y);
+                            gradT.addColorStop(0, gStop0);
+                            gradT.addColorStop(0.42, gStop1);
+                            gradT.addColorStop(0.74, gStop2);
+                            gradT.addColorStop(1, gStop3);
+                        }
                     }
                 }
                 const fillT = gradT || flatSolid;
@@ -8476,6 +8804,7 @@
         showAdvance, clearAdvance, advanceToast,
         setSearch3D, clearSearch3D,
         statsCompute, statsRender, statsRoles, setStatsRoles, statsDetectRoles, statsDate: STATS_START, loadLosses,
+        frontNews,
         loadFX, saveFX, applyFX, initFX,
         views: { local: localViews, record: recordView, ask: askRemoteViews, cached: cachedRemoteViews, publicHost },
         parseGeoJSON, boundsOf,

@@ -104,13 +104,90 @@
         return ids;
     }
 
+    // Перетин масок у turf лишає в зонах внутрішні кільця там, де жодної
+    // іншої зони немає: це артефакт побудови, а не розрив території, і саме
+    // він читається як «зона зникла». Справжній виріз (під сусідню зону)
+    // завжди лежить на її межі, тому дірку прибираємо лише тоді, коли її
+    // вершини далі за HEAL_CELL від вершин усіх інших зон.
+    const HEAL_CELL = 0.05; // ~5.5 км: справжні вирізи ≤1.4 км, сміттєві ≥11.5 км
+    const HEAL_KX = Math.cos(50 * Math.PI / 180);
+
+    function zoneCells(l) {
+        if (l._ltCells && l._ltCells.data === l.data) return l._ltCells.cells;
+        const cells = new Set();
+        const ring = r => {
+            for (let i = 0; i < r.length; i++) {
+                cells.add(Math.floor(r[i][0] * HEAL_KX / HEAL_CELL) + ':' + Math.floor(r[i][1] / HEAL_CELL));
+            }
+        };
+        l.data.features.forEach(f => {
+            const g = f && f.geometry;
+            if (!g || !g.coordinates) return;
+            const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+            polys.forEach(p => p.forEach(ring));
+        });
+        l._ltCells = { data: l.data, cells };
+        return cells;
+    }
+
+    function healZoneHoles(l, fc, layers) {
+        if (l.kind !== 'zone' || !fc || !fc.features.length) return fc;
+        if (!l._ltHeal || l._ltHeal.layers !== layers) {
+            const cells = new Set();
+            Object.keys(layers).forEach(id => {
+                const o = layers[id];
+                if (id === l.id || !o || o.kind !== 'zone' || !o.data || !o.data.features.length) return;
+                zoneCells(o).forEach(c => cells.add(c));
+            });
+            l._ltHeal = { layers, cells };
+        }
+        const cells = l._ltHeal.cells;
+        if (!cells.size) return fc;
+
+        let changed = false;
+        const features = fc.features.map(f => {
+            const g = f && f.geometry;
+            if (!g || !g.coordinates) return f;
+            const isPoly = g.type === 'Polygon';
+            if (!isPoly && g.type !== 'MultiPolygon') return f;
+            const polys = isPoly ? [g.coordinates] : g.coordinates;
+            let touched = false;
+            const healed = polys.map(p => {
+                if (p.length < 2) return p;
+                const keep = p.filter((r, ri) => {
+                    if (!ri) return true;
+                    for (let i = 0; i < r.length; i++) {
+                        const cx = Math.floor(r[i][0] * HEAL_KX / HEAL_CELL);
+                        const cy = Math.floor(r[i][1] / HEAL_CELL);
+                        for (let dx = -1; dx <= 1; dx++) {
+                            for (let dy = -1; dy <= 1; dy++) {
+                                if (cells.has((cx + dx) + ':' + (cy + dy))) return true;
+                            }
+                        }
+                    }
+                    touched = true;
+                    return false;
+                });
+                return keep;
+            });
+            if (!touched) return f;
+            changed = true;
+            return {
+                type: 'Feature',
+                properties: f.properties || {},
+                geometry: { type: g.type, coordinates: isPoly ? healed[0] : healed }
+            };
+        });
+        return changed ? { type: 'FeatureCollection', features } : fc;
+    }
+
     function displayFC(l, layers) {
         const src = layers || state.layers;
         if (l._ltDfc && l._ltDfc.layers === src) return l._ltDfc.fc;
         const memo = fc => { l._ltDfc = { layers: src, fc }; return fc; };
 
         const ids = maskIds(l, src);
-        if (!ids.length) return memo(l.data);
+        if (!ids.length) return memo(healZoneHoles(l, l.data, src));
         if (!l.data.features.length) return memo(EMPTY_FC);
 
         const masks = [];
@@ -126,7 +203,7 @@
                 } catch (e) { }
             });
         });
-        return memo({ type: 'FeatureCollection', features: out });
+        return memo(healZoneHoles(l, { type: 'FeatureCollection', features: out }, src));
     }
 
     function areaKm2(feature) {
@@ -1562,14 +1639,30 @@
     // кружок. інші обʼєкти лишаються шпилькою, бо в них немає класу НП
     const SEARCH_PIN = '<path d="M12 21s6.4-5.7 6.4-11A6.4 6.4 0 1 0 5.6 10c0 5.3 6.4 11 6.4 11z"/><circle cx="12" cy="10" r="2.3"/>';
 
-    function searchIcon(res) {
+    function searchKind(res) {
         const t = res._local ? res.type : String(res.addresstype || res.type || '');
-        const kind = (t === 'city' || t === 'town') ? 'city'
+        return (t === 'city' || t === 'town') ? 'city'
             : (t === 'village' || t === 'hamlet' || t === 'isolated_dwelling' || t === 'locality') ? 'vil'
             : 'obj';
+    }
+
+    function searchIcon(res) {
+        const kind = searchKind(res);
         if (kind === 'city') return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2" fill="currentColor"/></svg>';
         if (kind === 'vil') return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4" fill="currentColor"/></svg>';
         return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SEARCH_PIN}</svg>`;
+    }
+
+    // підсвічуємо тільки те, що справді збіглося в назві; якщо нормалізація
+    // зсунула індекси (апострофи, подвійні пробіли) — краще без підсвітки,
+    // ніж обрізати слово не там
+    function markMatch(text, q) {
+        const t = String(text || '');
+        const needle = String(q || '').trim().toLowerCase();
+        if (!needle) return esc(t);
+        const i = t.toLowerCase().indexOf(needle);
+        if (i < 0 || !needle.length) return esc(t);
+        return esc(t.slice(0, i)) + '<mark>' + esc(t.slice(i, i + needle.length)) + '</mark>' + esc(t.slice(i + needle.length));
     }
 
     function shortName(res) {
@@ -1600,11 +1693,12 @@
     let rowsHtml = '';
 
     function searchRowsHtml() {
+        const q = String(($('ps-q') && $('ps-q').value) || '').trim();
         return searchRows.map((res, i) => {
             const dn = String(res.display_name || '').split(',').slice(1, 3).join(',').trim();
-            return `<button type="button" class="sr" data-i="${i}" role="option" style="--i:${i}">
+            return `<button type="button" class="sr" data-i="${i}" data-kind="${searchKind(res)}" role="option" style="--i:${i}">
                 <span class="sr-ico" aria-hidden="true">${searchIcon(res)}</span>
-                <span class="sr-txt"><b>${esc(shortName(res).toUpperCase())}</b><small><em>${esc(placeType(res))}</em>${dn ? ' · ' + esc(dn) : ''}</small></span>
+                <span class="sr-txt"><b>${markMatch(shortName(res).toUpperCase(), q)}</b><small><em>${esc(placeType(res))}</em>${dn ? ' · ' + esc(dn) : ''}</small></span>
                 <svg class="sr-go" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
             </button>`;
         }).join('');
@@ -1619,6 +1713,12 @@
         if (html !== rowsHtml) {
             box.innerHTML = html;
             rowsHtml = html;
+        }
+        const count = $('ps-count');
+        if (count) count.textContent = searchRows.length ? String(searchRows.length).padStart(2, '0') : '';
+        if (pop) {
+            pop.classList.toggle('has-rows', !!searchRows.length);
+            pop.classList.toggle('is-empty', !searchRows.length);
         }
         if (searchRows.length) markSearchActive();
         if (pop) pop.classList.toggle('show', searchRows.length ? true : !!emptyMsg);
@@ -2145,9 +2245,11 @@
     let statsLoss = null;
     let statsLossErr = false;
     let lossBusy = false;
+    let newsRes = null;
+    let newsBusy = false;
 
     function statsTabIndex(tab) {
-        const i = ['front', 'ua', 'losses'].indexOf(tab);
+        const i = ['front', 'ua', 'losses', 'news'].indexOf(tab);
         return i < 0 ? 0 : i;
     }
 
@@ -2181,12 +2283,33 @@
     }
 
     function setStatsTab(tab) {
-        tab = tab === 'ua' ? 'ua' : tab === 'losses' ? 'losses' : 'front';
+        tab = tab === 'ua' ? 'ua' : tab === 'losses' ? 'losses' : tab === 'news' ? 'news' : 'front';
         if (statsTab === tab) return;
         statsTab = tab;
         if (tab === 'losses') ensureLosses(false);
+        if (tab === 'news') ensureNews();
         // переписуємо вміст, щоб ріст стовпчиків діаграми стартував заново
         renderStats();
+    }
+
+    // новини рахуються з різниць зон між сусідніми датами: це важча операція,
+    // ніж огляд, тому вантажимо її лише коли вкладку справді відкрили
+    function ensureNews() {
+        if (newsBusy || newsRes) return;
+        newsBusy = true;
+        if (statsTab === 'news') renderStats();
+        LT.frontNews((i, n) => {
+            if (statsTab !== 'news') return;
+            const body = $('stats-body');
+            if (body) body.innerHTML = `<div class="lt-stats-loading">${LT.esc(LT.t('stats.newsLoading'))} ${n ? i + '/' + n : ''}</div>`;
+        }).then(res => {
+            newsBusy = false;
+            newsRes = res;
+            if (statsTab === 'news') renderStats();
+        }).catch(() => {
+            newsBusy = false;
+            if (statsTab === 'news') renderStats();
+        });
     }
 
     let countRuns = new Set();
@@ -2307,7 +2430,7 @@
     function renderStats() {
         const body = $('stats-body');
         if (body) {
-            body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr);
+            body.innerHTML = LT.statsRender(statsRes, statsTab, statsLoss, statsLossErr, newsRes);
             setupAnims(body);
         }
         // підзаголовок читається як «скільки триває війна», а не як дата
@@ -2595,6 +2718,24 @@
         if (!btn) return;
         btn.classList.toggle('active', state.advance);
         btn.setAttribute('aria-pressed', String(state.advance));
+    }
+
+    // картка новин веде на ту саму дату й вмикає «Просування»: людина бачить
+    // рівно ту ділянку, про яку прочитала
+    function focusNews(date, bbox) {
+        if (!date || !LT.DATE_RE.test(date)) return;
+        setStats(false);
+        if (date !== state.date) switchDate(date);
+        if (state.advance) refreshAdvance();
+        else setAdvance(true);
+        if (!bbox || bbox.length !== 4 || !bbox.every(Number.isFinite)) return;
+        const dev = LT.device();
+        map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {
+            padding: dev.mobile
+                ? { top: 90, bottom: 150, left: 24, right: 24 }
+                : { top: 80, bottom: 110, left: 40, right: 40 },
+            maxZoom: 12.5, duration: 750
+        });
     }
 
     function togglePlay() {
@@ -2959,7 +3100,12 @@
         store.onMirrorUpdate(() => {
             lastVer = store.version();
             refresh();
-            if (statsOpen) { statsRes = null; loadStats(); }
+            if (statsOpen) {
+                statsRes = null;
+                newsRes = null;
+                loadStats();
+                if (statsTab === 'news') ensureNews();
+            }
         });
     }
 
@@ -3431,7 +3577,11 @@
         });
         const statsBody = $('stats-body');
         if (statsBody) statsBody.addEventListener('click', e => {
-            if (e.target.closest('.lt-loss-retry')) ensureLosses(true);
+            if (e.target.closest('.lt-loss-retry')) { ensureLosses(true); return; }
+            const card = e.target.closest('[data-news-date]');
+            if (!card) return;
+            const bbox = String(card.dataset.newsBbox || '').split(',').map(Number);
+            focusNews(card.dataset.newsDate, bbox);
         });
         $('date-trigger').addEventListener('click', () => { setMenu(false); cal.toggle(state.date); });
 

@@ -222,24 +222,28 @@ function main() {
         flush();
     }
 
+    // усі державні кордони — одного кольору: три відтінки читалися як три
+    // різні типи ліній, хоча це просто «кордон». товщина лишається різною,
+    // вона й показує категорію
+    const BORDER_COLOR = '#72d7ff';
     const meta = {
         ru: {
             name: { uk: 'Кордон з РФ', en: 'Border with Russia', ru: 'Граница с РФ' },
             short: { uk: 'РФ', en: 'RU', ru: 'РФ' },
             // кордон РФ більшу частину довжини лежить на ЧЕРВОНІЙ заливці
             // окупованої зони, тому йому потрібна світла підкладка, інакше
-            // червоне на червоному не читається
-            color: '#ff5b6b', width: 3.6, caseColor: '#ffffff', caseOpacity: 0.45
+            // лінія губиться на заливці
+            color: BORDER_COLOR, width: 3.6, caseColor: '#ffffff', caseOpacity: 0.45
         },
         by: {
             name: { uk: 'Кордон з Білоруссю', en: 'Border with Belarus', ru: 'Граница с Беларусью' },
             short: { uk: 'Білорусь', en: 'Belarus', ru: 'Беларусь' },
-            color: '#ffc857', width: 2.9, caseColor: '#ffffff', caseOpacity: 0.32
+            color: BORDER_COLOR, width: 2.9, caseColor: '#ffffff', caseOpacity: 0.32
         },
         eu: {
             name: { uk: 'Кордон з ЄС / Молдовою', en: 'Border with EU / Moldova', ru: 'Граница с ЕС / Молдовой' },
             short: { uk: 'ЄС', en: 'EU', ru: 'ЕС' },
-            color: '#72d7ff', width: 2.9, caseColor: '#ffffff', caseOpacity: 0.32
+            color: BORDER_COLOR, width: 2.9, caseColor: '#ffffff', caseOpacity: 0.32
         }
     };
 

@@ -997,6 +997,25 @@
     transition: opacity .2s ease, transform .3s var(--ease-pop), visibility .3s;
 }
 
+.ps-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 13px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, .06);
+    font-family: var(--title); font-size: 10px; font-weight: 700; letter-spacing: 1.7px;
+    text-transform: uppercase; color: var(--dim);
+}
+.ps-head > span { position: relative; padding-left: 12px; }
+.ps-head > span::before {
+    content: ''; position: absolute; left: 0; top: 50%; width: 5px; height: 5px;
+    margin-top: -2.5px; border-radius: 50%;
+    background: #ffd45e; box-shadow: 0 0 8px rgba(255, 212, 94, .7);
+}
+.ps-head b {
+    font-family: var(--pixel); font-size: 11px; font-weight: 700; letter-spacing: .8px;
+    color: #ffd45e; text-align: right;
+}
+.ps-pop.is-empty .ps-head { display: none; }
+
 #ps-results {
     display: flex; flex-direction: column; gap: 2px;
     padding: 7px;
@@ -1038,6 +1057,13 @@
     transition: color .16s ease, background .16s ease, border-color .16s ease;
 }
 .sr-ico svg { width: 17px; height: 17px; }
+/* тип читається ще до тексту: місто — бурштинове, село — світле, інше — тьмяне */
+#ps-results .sr[data-kind="city"] .sr-ico {
+    color: #ffd45e;
+    background: rgba(255, 212, 94, .07); border-color: rgba(255, 212, 94, .18);
+}
+#ps-results .sr[data-kind="vil"] .sr-ico { color: #c9d4dc; }
+#ps-results .sr[data-kind="obj"] .sr-ico { color: var(--dim); }
 #ps-results .sr:hover .sr-ico, #ps-results .sr.active .sr-ico {
     color: #ffd45e; background: rgba(255, 212, 94, .1); border-color: rgba(255, 212, 94, .28);
 }
@@ -1046,18 +1072,25 @@
     font-family: var(--title); font-size: 13.5px; font-weight: 600; letter-spacing: .55px;
     color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.sr-txt b mark {
+    color: #ffd45e; background: transparent; font-weight: 800;
+    text-shadow: 0 0 12px rgba(255, 212, 94, .35);
+}
 .sr-txt small {
     font-size: 10px; color: var(--dim); letter-spacing: .1px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sr-txt small em { font-style: normal; font-weight: 700; color: var(--dim-2); letter-spacing: 1px; }
 .sr-go {
-    width: 15px; height: 15px; flex: 0 0 auto;
+    width: 26px; height: 26px; padding: 5px; flex: 0 0 auto;
     color: var(--dim-2); opacity: 0; transform: translateX(-4px);
-    transition: opacity .16s ease, transform .22s var(--ease-pop), color .16s ease;
+    background: rgba(255, 255, 255, .05);
+    border: 1px solid rgba(255, 255, 255, .08); border-radius: 50%;
+    transition: opacity .16s ease, transform .22s var(--ease-pop), color .16s ease, background .16s ease, border-color .16s ease;
 }
 #ps-results .sr:hover .sr-go, #ps-results .sr.active .sr-go {
-    opacity: 1; transform: none; color: #ffd45e;
+    opacity: 1; transform: none; color: #141006;
+    background: #ffd45e; border-color: #ffd45e;
 }
 .ps-empty {
     padding: 24px 14px; text-align: center;
@@ -1077,6 +1110,26 @@
     border-radius: 50%; background: #ffd45e; box-shadow: 0 0 8px rgba(255, 212, 94, .6);
     vertical-align: middle;
 }
+
+.ps-keys {
+    display: none; align-items: center; flex-wrap: wrap; gap: 6px 14px;
+    padding: 8px 13px 9px;
+    border-top: 1px solid rgba(255, 255, 255, .06);
+    background: linear-gradient(180deg, transparent, rgba(255, 255, 255, .022));
+    font-family: var(--pixel); font-size: 9px; letter-spacing: .7px;
+    text-transform: uppercase; color: var(--dim-2);
+}
+.ps-pop.has-rows .ps-keys { display: flex; }
+.pk { display: inline-flex; align-items: center; gap: 3px; }
+.ps-keys kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; padding: 0 4px;
+    font-family: var(--pixel); font-size: 9px; color: var(--text-2);
+    background: linear-gradient(180deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .03));
+    border: 1px solid rgba(255, 255, 255, .14); border-bottom-color: rgba(0, 0, 0, .6);
+    border-radius: 5px; box-shadow: 0 1px 0 rgba(0, 0, 0, .5);
+}
+.ps-keys em { font-style: normal; margin-left: 2px; }
 
 .search-marker {
     padding: 7px 10px; border-radius: 9px;
@@ -1234,6 +1287,9 @@
 .dev-mobile .sr-txt b { font-size: 14px; }
 .dev-mobile .sr-txt small { font-size: 11px; }
 .dev-mobile .sr-ico { width: 36px; height: 36px; }
+/* на телефоні клавіатури немає — підказки про стрілки тільки займають місце */
+.dev-mobile .ps-keys { display: none !important; }
+.dev-mobile .ps-head { padding: 8px 12px 7px; }
 
 /* ---------- ЗАВАНТАЖУВАЧ ---------- */
 /* завіса — повний кадр, а не картка: знак висить у темряві на теплому сяйві,
