@@ -88,9 +88,70 @@
                 }, anchor);
             }
             mountBorders();
+            mountRailways();
             try {
                 map.setLight({ anchor: 'viewport', color: '#e5f6ff', intensity: 0.4, position: [1.4, 210, 40] });
             } catch (e) { }
+        }
+
+        // залізниці: класичний картографічний знак — біла підкладка, темна
+        // основа, білий пунктир. Малює GPU шарами мапи, а не полотном: ліній
+        // 2609 і ~70 тис. вершин, у кадрі 2D-полотно коштувало б десятки мс
+        let railFC = null;
+        function railData() {
+            if (railFC !== null) return railFC;
+            const raw = window.LT_RAILWAYS;
+            if (!raw || !raw.lines || !LT.decodePolyline) return (railFC = false);
+            railFC = {
+                type: 'FeatureCollection',
+                features: raw.lines.map(l => ({
+                    type: 'Feature',
+                    properties: { c: l.c },
+                    geometry: { type: 'LineString', coordinates: LT.decodePolyline(l.p) }
+                }))
+            };
+            return railFC;
+        }
+
+        function mountRailways() {
+            if (map.getSource('lt-rail')) return;
+            const data = railData();
+            if (!data) return;
+            map.addSource('lt-rail', { type: 'geojson', data, tolerance: 0.5 });
+            const anchor = map.getLayer('lt-region-casing') ? 'lt-region-casing'
+                : (map.getLayer('lt-region-label') ? 'lt-region-label' : undefined);
+            // ширина залежить лише від зуму: MapLibre не дозволяє поєднати
+            // ["zoom"] з властивістю обʼєкта в одному виразі line-width, тому
+            // головні й другорядні лінії — окремі шари
+            const fade = ['interpolate', ['linear'], ['zoom'], 6.2, 0, 7.1, 0.92];
+            const width = arr => ['interpolate', ['linear'], ['zoom']].concat(arr);
+            // біло-чорне чергування: біла підкладка й темний пунктир поверх
+            const layers = [
+                { id: 'lt-rail-casing', color: '#f6f1e2', w: [5, 2.0, 8, 3.0, 11, 3.8, 14, 4.8], cap: 'round', dash: null },
+                { id: 'lt-rail-dash', color: '#151a20', w: [5, 1.1, 8, 1.75, 11, 2.3, 14, 3.0], cap: 'butt', dash: [2.0, 2.0] }
+            ];
+            layers.forEach(l => {
+                map.addLayer({
+                    id: l.id, type: 'line', source: 'lt-rail',
+                    filter: ['==', ['get', 'c'], 1],
+                    layout: { 'line-cap': l.cap, 'line-join': 'round' },
+                    paint: Object.assign({
+                        'line-color': l.color,
+                        'line-width': width(l.w),
+                        'line-opacity': fade
+                    }, l.dash ? { 'line-dasharray': l.dash } : {})
+                }, anchor);
+                map.addLayer({
+                    id: l.id + '-2', type: 'line', source: 'lt-rail', minzoom: 7,
+                    filter: ['!=', ['get', 'c'], 1],
+                    layout: { 'line-cap': l.cap, 'line-join': 'round' },
+                    paint: Object.assign({
+                        'line-color': l.color,
+                        'line-width': width(l.w.map((v, i) => i % 2 ? +(v * 0.72).toFixed(2) : v)),
+                        'line-opacity': fade
+                    }, l.dash ? { 'line-dasharray': l.dash } : {})
+                }, anchor);
+            });
         }
 
         // державні кордони: точні лінії OSM, розкладені на категорії ще на

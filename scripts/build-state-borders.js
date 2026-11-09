@@ -3,7 +3,10 @@
  * Джерела:
  *   assets/regions.js — області UA/BY/PL/RU (ними ж визначаємо, з якою
  *                        країною межує ділянка кордону);
- *   assets/borders.js — точні лінії кордонів OSM (ODbL).
+ *   assets/borders.js — точні лінії кордонів OSM (ODbL);
+ *   scripts/data/ua-border-ways.json — лінії кордону України з OSM
+ *                        (relation 60199): ними закриваємо дірки, яких
+ *                        немає в borders.js (Придністров'я, шов Дунаю).
  *
  * Результат: assets/state-borders.js — категорії за країнами-сусідами
  * (РФ, Білорусь, Польща, Словаччина, Угорщина, Румунія, Молдова), кожна
@@ -96,6 +99,33 @@ function makeGrid(pts) {
     return g;
 }
 
+// ребра контурів бувають довгими: точка посередині ребра далі за поріг від
+// будь-якої ВЕРШИНИ, хоча лежить на самій лінії. крок ~4 км робить відстань
+// до сітки фактично відстанню до контуру
+function densify(pts, stepDeg) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+        out.push(pts[i]);
+        const q = pts[i + 1];
+        if (!q) continue;
+        const d = Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1]);
+        const n = Math.floor(d / stepDeg);
+        for (let k = 1; k <= n; k++) {
+            out.push([pts[i][0] + (q[0] - pts[i][0]) * k / (n + 1), pts[i][1] + (q[1] - pts[i][1]) * k / (n + 1)]);
+        }
+    }
+    return out;
+}
+
+function lenKm(pts) {
+    let L = 0;
+    for (let i = 1; i < pts.length; i++) {
+        const cos = Math.cos(pts[i][1] * Math.PI / 180);
+        L += Math.sqrt(dist2(pts[i - 1], pts[i], cos));
+    }
+    return L;
+}
+
 // Дуглас–Пекер: лінія залишає форму, але без зайвих точок
 function simplify(pts, tol) {
     if (pts.length < 3) return pts.slice();
@@ -135,7 +165,7 @@ function main() {
     const byCountry = { BLR: [], POL: [], RUS: [] };
     regions.p.forEach((row, i) => {
         const pts = decodePolyline(regions.l[i]);
-        if (row[1] === 'UKR') ua.push(...pts);
+        if (row[1] === 'UKR') ua.push(...densify(pts, 0.04));
         else if (byCountry[row[1]]) byCountry[row[1]].push(...pts);
     });
 
@@ -150,6 +180,7 @@ function main() {
     function westCat(p) {
         const lng = p[0], lat = p[1];
         if (lat < 45.55 && lng > 28.0) return 'ro';   // Дунай, південь Одещини
+        if (lng < 28.25 && lat < 47.95) return 'ro';  // Прут: кордон з Румунією
         if (lng < 22.9 && lat < 48.42) return 'hu';   // Закарпаття, південь
         if (lng < 22.58 && lat < 49.1) return 'sk';   // Закарпаття, захід
         if (lng >= 26.55) return 'md';                // Дністер + Придністров'я
@@ -224,10 +255,10 @@ function main() {
                 for (const [cat, arr] of pieces) {
                     if (arr.length < 2) continue;
                     const s = simplify(arr, SIMPLIFY_DEG);
-                    // зовсім дрібні обривки (< 1.5 км) — шум на стиках.
-                    // короткі, але СПРАВЖНі ділянки (Дунай біля Рені) лишаємо:
-                    // інакше в кордоні з'являються дірки
-                    if (s.length < 12) continue;
+                    // зовсім дрібні обривки (< 1.2 км) — шум на стиках.
+                    // короткі, але СПРАВЖНі ділянки (Дунай біля Рені, край
+                    // молдовської петлі) лишаємо: інакше в кордоні дірки
+                    if (s.length < 2 || (s.length < 12 && lenKm(s) < 1.2)) continue;
                     cats[cat].push(s);
                     keptPts += s.length;
                 }
@@ -258,6 +289,75 @@ function main() {
         }
         flush();
     }
+
+    // borders.js місцями має дірки (Придністров'я, шов Дунаю): між сусідніми
+    // вершинами десятки кілометрів. Межа України з OSM (relation 60199,
+    // scripts/data/ua-border-ways.json) повна, тож беремо з неї ЛИШЕ ділянки,
+    // не покриті збереженими лініями — дірки закриваються, а подвійних
+    // ліній там, де геометрія вже є, не з'являється
+    const uaWays = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts/data/ua-border-ways.json'), 'utf8'));
+    const keptAll = [];
+    for (const id of Object.keys(cats)) cats[id].forEach(s => keptAll.push(...s));
+    const coverPts = [];
+    for (const id of Object.keys(cats)) cats[id].forEach(s => coverPts.push(...densify(s, 0.01)));
+    const cover = makeGrid(coverPts);
+    const COV_KM = 1.5;
+    const snapEnd = p => {
+        let best = null, bd = 36; // ^2, тобто ≤6 км
+        const cos = Math.cos(p[1] * Math.PI / 180);
+        for (const q of keptAll) {
+            const d = dist2(p, q, cos);
+            if (d < bd) { bd = d; best = q; }
+        }
+        return best || p;
+    };
+    let fillRuns = 0, fillPts = 0;
+    for (const pts of uaWays) {
+        let run = [];
+        const flushFill = () => {
+            if (run.length >= 2) {
+                // ділянка може перетинати межу категорій — ріжемо за країною
+                let piece = [], pieceCat = null;
+                const put = (cat, arr) => {
+                    if (!cats[cat] || arr.length < 2) return;
+                    const s = simplify(arr, SIMPLIFY_DEG);
+                    if (s.length < 2 || lenKm(s) < 0.6) return;
+                    // стик зі збереженими лініями: краї до найближчої вершини
+                    s[0] = snapEnd(s[0]);
+                    s[s.length - 1] = snapEnd(s[s.length - 1]);
+                    cats[cat].push(s);
+                    fillRuns++;
+                    fillPts += s.length;
+                };
+                for (const p of run) {
+                    let cat = null, best = Infinity;
+                    for (const c of Object.keys(grids)) {
+                        const d = grids[c].nearest(p, CAT_KM + 5);
+                        if (d < best) { best = d; cat = CAT_ID[c]; }
+                    }
+                    if (best > CAT_KM || (p[0] < 22.9 && p[1] < 49.1)) cat = westCat(p);
+                    if (cat !== pieceCat && piece.length) { put(pieceCat, piece); piece = []; }
+                    pieceCat = cat;
+                    piece.push(p);
+                }
+                if (piece.length) put(pieceCat, piece);
+            }
+            run = [];
+        };
+        for (let i = 0; i < pts.length; i++) {
+            const p = pts[i];
+            const sea = (p[0] > SEA_LNG && p[1] < SEA_LAT)
+                || (p[1] < 47.05 && p[0] > 32.4 && p[0] < 38.2);
+            const uncovered = !sea && keepWest(p) && cover.nearest(p, COV_KM + 2) > COV_KM;
+            if (uncovered) {
+                if (!run.length && i) run.push(pts[i - 1]);
+                run.push(p);
+            } else flushFill();
+        }
+        flushFill();
+    }
+    console.log('OSM gap fill: runs', fillRuns, 'pts', fillPts);
+
 
     // стандартний картографічний дизайн: одна тепла слонова лінія з темною
     // підкладкою для всіх країн. колір не кодує країну — її показує прапор

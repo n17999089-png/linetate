@@ -5413,54 +5413,6 @@
         return WALL_PX + Math.min(rank, RANK_MAX) * LIFT_PX;
     }
 
-    // окупована територія в 3D має читатися інакше за вільну: дах блока
-    // дістає косу штриховку кольору тривоги й світлу кромку по межі. назва
-    // шару — єдина ознака, яку бачить ядро: у даних він зветься «ЗС РФ»
-    const CAPTURE_NAME = /(^|[^а-яїієґ])рф|росс|росі|russ|orc|орк|окуп/i;
-    function zoneCaptured(l) {
-        return !!(l && l.kind === 'zone' && l.id !== 'zone_6d0bf'
-            && CAPTURE_NAME.test(String(l.name || '')));
-    }
-
-    // окупований блок у 3D свідомо плоский: стіна з косої штриховки на
-    // граничному куті зливалася в суцільну помаранчеву смугу навколо кожної
-    // ділянки, а її ступінчастий край на телефоні лежав поверх детального
-    // контуру як «другий контур». дах лишається штрихованим — цього достатньо,
-    // щоб окупація читалась окремо, без жодної стіни
-    // 0.02 px давало рівно 0 м після округлення стопів: дах лягав у площину
-    // рельєфу, де на близькому зумі виграє то він, то DEM — зона «розсипалась».
-    // 1.5 px — це 1–2 м на z14–16: оком не видно, але від поверхні землі вже
-    // відірвано, тож штриховка лежить суцільним полем
-    const CAP_FLAT_PX = 1.5;
-    function capFlat(l) { return zoneCaptured(l) ? CAP_FLAT_PX : null; }
-
-    // штриховка живе в одній картинці: темна підкладка тримає колір зони,
-    // крізь неї видно місто й рельєф, а діагональні смуги дають «заборонену
-    // зону» навіть тоді, коли межа блока за кадром
-    function capturePattern(map) {
-        const id = 'lt-cap-hatch';
-        if (!map.hasImage(id)) {
-            // крок має ділити розмір тайла націло: інакше смуга на шві
-            // обривається зі зсувом і на великому зумі видно прямокутну сітку
-            const size = 44, step = 22;
-            const c = document.createElement('canvas');
-            c.width = c.height = size;
-            const ctx = c.getContext('2d');
-            ctx.fillStyle = 'rgba(44,9,3,.44)';
-            ctx.fillRect(0, 0, size, size);
-            ctx.strokeStyle = 'rgba(255,88,54,.82)';
-            ctx.lineWidth = 3.2;
-            for (let i = -size; i <= size * 2; i += step) {
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.lineTo(i + size, size);
-                ctx.stroke();
-            }
-            map.addImage(id, ctx.getImageData(0, 0, size, size), { pixelRatio: 1 });
-        }
-        return id;
-    }
-
     function polyRings(geom) {
         const out = [];
         if (!geom) return out;
@@ -6753,10 +6705,6 @@
         map.setLayoutProperty('p_' + l.id, 'visibility', d3 ? 'none' : (pattern && !gradient ? vis : 'none'));
         if (map.getLayer('fe_' + l.id)) {
             map.setLayoutProperty('fe_' + l.id, 'visibility', d3 ? vis : 'none');
-            // окупований блок має читатися окремо навіть без межі в кадрі:
-            // коса штриховка на даху лишається єдиною підказкою належності
-            map.setPaintProperty('fe_' + l.id, 'fill-extrusion-pattern',
-                zoneCaptured(l) ? capturePattern(map) : null);
             if (d3) {
                 // mix — ступінь переходу 3D: під час перемикання стіни ростуть
                 // і гаснуть разом із нахилом камери, а не стрибають
@@ -6764,7 +6712,7 @@
                 const mix = s3 && s3.mix != null ? Math.max(0, Math.min(1, s3.mix)) : 1;
                 map.setPaintProperty('fe_' + l.id, 'fill-extrusion-opacity', ZONE_3D_OPACITY * k * mix);
                 if (mix < 1) {
-                    const wp = capFlat(l) != null ? CAP_FLAT_PX : (l._w3d || WALL_PX);
+                    const wp = l._w3d || WALL_PX;
                     map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height',
                         wallStops(Math.max(0.0001, wp * mix)));
                 }
@@ -6849,11 +6797,10 @@
             .sort((a, b) => a.z - b.z)
             .forEach(l => {
                 if (map.getLayer('fe_' + l.id)) {
-                    const flat = capFlat(l) != null;
                     const w = l.kind === 'zone' ? zoneWallPx(rank++) : WALL_PX;
-                    if (l._w3d !== w || flat) {
+                    if (l._w3d !== w) {
                         l._w3d = w;
-                        map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height', wallStops(flat ? CAP_FLAT_PX : w));
+                        map.setPaintProperty('fe_' + l.id, 'fill-extrusion-height', wallStops(w));
                     }
                 }
                 ['xb_', 'xs_', 'cs_', 'f_', 'p_', 'fe_', 'fr_', 'ig_', 'gw_', 'g_', 'xh_', 'l_', 'rh_'].forEach(p => {
@@ -6907,8 +6854,7 @@
         const mix = s.mix == null ? 1 : Math.max(0, Math.min(1, s.mix));
         s.fe.forEach((l, id) => {
             if (!map.getLayer('fe_' + id)) return;
-            const flat = capFlat(l) != null;
-            const w = Math.max(0.0001, (flat ? CAP_FLAT_PX : (l._w3d || WALL_PX)) * mix);
+            const w = Math.max(0.0001, (l._w3d || WALL_PX) * mix);
             const k = Math.max(0, Math.min(1, fxCurrent(map, id)));
             try {
                 map.setPaintProperty('fe_' + id, 'fill-extrusion-height', wallStops(w));
@@ -7944,57 +7890,112 @@
 
         function followReset() {
             applyFollow('');
+            if (shadowCv && followOn) shadowCv.style.transform = '';
             followOn = false;
         }
 
-        // тінь живе на самому полотні, а не окремим шаром мапи: браузер бере
-        // готову альфу заливки й обводить її мʼякою смугою. товщина смуги
-        // зменшується з наближенням, щоб на масштабі міста вона не «розповзалася»
-        let shadowKey = '';
-        function applyCanvasShadow() {
+        // тінь — окреме полотно ПІД зонами: запікається лише коли камера
+        // стала, а в жесті їде готовою текстурою за афінною трансформацією.
+        // CSS drop-shadow на живому полотні перераховував повноекранний blur
+        // щоразу, коли полотно фарбувалось — у русі це головний лаг телефона
+        let shadowCv = null, shadowCtx = null, shadowCam = null;
+        function shadowSpec() {
             const low = lowEndDevice();
             const z = map.getZoom();
-            const filter = low
-                ? 'drop-shadow(0 2px 5px rgba(0,0,0,.4))'
-                : z < 7 ? 'drop-shadow(0 4px 15px rgba(0,0,0,.52))'
-                    : z < 10 ? 'drop-shadow(0 3px 10px rgba(0,0,0,.46))'
-                        : 'drop-shadow(0 2px 6px rgba(0,0,0,.4))';
-            if (filter === shadowKey) return;
-            shadowKey = filter;
-            // filter створює власну групу й ламає mix-blend-mode, тому тінь
-            // отримують лише полотна зі звичайним змішуванням
-            const targets = flatOn ? [flat] : order;
-            targets.forEach(it => {
-                if (!it) return;
-                it.canvas.style.filter = blendOf(it.layer) === 'normal' ? filter : '';
-            });
+            return low ? { b: 5, dy: 2, a: 0.4 }
+                : z < 7 ? { b: 15, dy: 4, a: 0.52 }
+                    : z < 10 ? { b: 10, dy: 3, a: 0.46 }
+                        : { b: 6, dy: 2, a: 0.4 };
+        }
+        function ensureShadow(cssW, cssH, mw, mh, w, h) {
+            if (!shadowCv) {
+                shadowCv = document.createElement('canvas');
+                shadowCv.className = 'lt-blend-c';
+                shadowCtx = shadowCv.getContext('2d');
+            }
+            const st = shadowCv.style;
+            st.mixBlendMode = 'normal';
+            boxStyle(st, cssW, cssH, mw, mh);
+            if (shadowCv.width !== w || shadowCv.height !== h) {
+                shadowCv.width = w;
+                shadowCv.height = h;
+            }
+            if (host.firstChild !== shadowCv) host.insertBefore(shadowCv, host.firstChild);
+        }
+        function rebuildShadow() {
+            if (!shadowCv || !host) return;
+            const tilted = cameraTilted(map);
+            shadowCv.style.display = tilted ? 'none' : '';
+            shadowCv.style.transform = '';
+            shadowCam = null;
+            if (tilted) return;
+            const sources = flatOn && flat ? [flat] : order.filter(it => blendOf(it.layer) === 'normal');
+            const ctx = shadowCtx, cv = shadowCv;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.filter = 'none';
+            ctx.clearRect(0, 0, cv.width, cv.height);
+            if (!sources.length) return;
+            const spec = shadowSpec();
+            const cssW = cv.clientWidth || cv.width;
+            const rx = cv.width / cssW;
+            ctx.filter = 'blur(' + (spec.b * rx).toFixed(1) + 'px)';
+            ctx.translate(0, spec.dy * rx);
+            sources.forEach(it => ctx.drawImage(it.canvas, 0, 0));
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.filter = 'none';
+            ctx.globalCompositeOperation = 'source-in';
+            ctx.fillStyle = 'rgba(0,0,0,' + spec.a + ')';
+            ctx.fillRect(0, 0, cv.width, cv.height);
+            ctx.globalCompositeOperation = 'source-over';
+            const c = map.getCenter();
+            shadowCam = {
+                z: map.getZoom(), cx: c.lng, cy: c.lat,
+                br: map.getBearing ? map.getBearing() : 0,
+                w: cssW, h: cv.clientHeight || cv.height
+            };
+        }
+        function camTransform(cam) {
+            const cv = map.getCanvas();
+            const cssW = cv.clientWidth || cv.width || 1;
+            const cssH = cv.clientHeight || cv.height || 1;
+            if (cssW !== cam.w || cssH !== cam.h) return null;
+            const k = Math.pow(2, map.getZoom() - cam.z);
+            const dth = ((map.getBearing ? map.getBearing() : 0) - cam.br) * Math.PI / 180;
+            let pc;
+            try { pc = map.project([cam.cx, cam.cy]); } catch (e) { return null; }
+            if (!pc || !isFinite(pc.x) || !isFinite(pc.y) || Math.abs(pc.x) > 1e6 || Math.abs(pc.y) > 1e6) return null;
+            return 'translate(' + (pc.x - cssW / 2).toFixed(2) + 'px,' + (pc.y - cssH / 2).toFixed(2) + 'px)'
+                + ' rotate(' + (dth * 180 / Math.PI).toFixed(3) + 'deg)'
+                + ' scale(' + k.toFixed(4) + ')';
+        }
+        function followShadow() {
+            if (!shadowCv || !shadowCam || !moving || cameraTilted(map)) return;
+            const t = camTransform(shadowCam);
+            if (t) shadowCv.style.transform = t;
+            else rebuildShadow();
         }
 
         // подібність камер: M1(p) = R(Δθ)·k·M0(p) + b, де k = 2^(z1-z0).
         // b = project(центр відмальовки) - центр екрана; поворот навколо центру
         function followCamera() {
             if (!host || !paintCam || !moving) return;
-            let cv;
-            try { cv = map.getCanvas(); } catch (e) { return; }
-            const cssW = cv.clientWidth || cv.width || 1;
-            const cssH = cv.clientHeight || cv.height || 1;
-            if (cssW !== paintCam.w || cssH !== paintCam.h) {
-                moving = false; followReset(); forced = true; schedule(); return;
-            }
-            const zNow = map.getZoom();
-            const k = Math.pow(2, zNow - paintCam.z);
-            const dth = ((map.getBearing ? map.getBearing() : 0) - paintCam.br) * Math.PI / 180;
-            let pc;
-            try { pc = map.project([paintCam.cx, paintCam.cy]); } catch (e) { return; }
-            if (!pc || !isFinite(pc.x) || !isFinite(pc.y) || Math.abs(pc.x) > 1e6 || Math.abs(pc.y) > 1e6) return;
-            applyFollow('translate(' + (pc.x - cssW / 2).toFixed(2) + 'px,' + (pc.y - cssH / 2).toFixed(2) + 'px)'
-                + ' rotate(' + (dth * 180 / Math.PI).toFixed(3) + 'deg)'
-                + ' scale(' + k.toFixed(4) + ')');
+            const t = camTransform(paintCam);
+            if (!t) { moving = false; followReset(); forced = true; schedule(); return; }
+            applyFollow(t);
+            followShadow();
             followOn = true;
             // свіжа відмальовка тоді, коли запас полотна вичерпаний і край
             // починає оголюватися (coverGap), а не за таймером: так артефакт
             // обмежений кількома пікселями, а кадрів-перемальовок менше
+            const cv = map.getCanvas();
+            const cssW = cv.clientWidth || cv.width || 1;
+            const cssH = cv.clientHeight || cv.height || 1;
+            let pc;
+            try { pc = map.project([paintCam.cx, paintCam.cy]); } catch (e) { return; }
+            if (!pc) return;
             const bx = pc.x - cssW / 2, by = pc.y - cssH / 2;
+            const k = Math.pow(2, map.getZoom() - paintCam.z);
             const mob = isMobile();
             const now = performance.now();
             const since = now - lastPaint;
@@ -8233,6 +8234,7 @@
                 const i = order.indexOf(it);
                 if (i >= 0) order.splice(i, 1);
             });
+            ensureShadow(cssW, cssH, mw, mh, w, h);
             forced = true;
         }
 
@@ -8283,12 +8285,6 @@
             // на середньому/далекому огляді: у русі й наблизько вона не
             // читається (контур там і так різкий), зате коштує другого проходу
             const rimWide = !isMobile() && !moving && zoom < 10.5;
-            // мʼяка зовнішня тінь полотна: drop-shadow бере альфу готової
-            // заливки, тому обводить увесь контур шару однією смугою. зміщена
-            // лінія тіні (була в шарі sh_) малювала кожен полігон окремо —
-            // уздовж стиків сусідніх шматків усередині зони лишалися темні
-            // смуги, а сама тінь «відривалася» від краю
-            applyCanvasShadow();
 
             items.forEach(it => {
                 const ctx = it.ctx;
@@ -8526,6 +8522,10 @@
                 fc.clearRect(0, 0, flat.canvas.width, flat.canvas.height);
                 order.forEach(it => { fc.drawImage(it.canvas, 0, 0); });
             }
+            // тінь: у русі — готова текстура за трансформацією, на місці —
+            // свіже запікання з альфи щойно намальованих зон
+            if (moving) followShadow();
+            else rebuildShadow();
         }
 
         function schedule() {
