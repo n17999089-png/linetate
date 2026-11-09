@@ -984,6 +984,28 @@
     transform: scale(1.06);
 }
 
+/* на телефоні клавіатури немає, тож панель закривають окремою кнопкою:
+   маленький × у полі лишається «очистити запит» і не має прибирати
+   вибране НП, а цей закриває саму панель */
+.ps-close {
+    display: none;
+    align-items: center; justify-content: center;
+    flex: 0 0 auto; width: 34px; height: 34px; padding: 0;
+    color: var(--dim);
+    background: transparent;
+    border: 0; border-left: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 0 10px 10px 0;
+    font-size: 21px; line-height: 1; cursor: pointer;
+    transition: color .16s ease, background .16s ease, transform .18s var(--ease-pop);
+}
+.dev-mobile .ps-close { display: inline-flex; }
+.dev-mobile .ps-close {
+    width: 44px; height: 44px; margin-right: -7px;
+    font-size: 24px;
+}
+.ps-close:hover { color: var(--text); background: rgba(255, 255, 255, .07); }
+.ps-close:active { color: #fff; background: rgba(255, 255, 255, .13); transform: scale(.94); }
+
 .ps-pop {
     display: flex; flex-direction: column; min-height: 0; overflow: hidden;
     max-height: calc(100vh - 210px);

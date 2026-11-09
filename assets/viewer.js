@@ -1637,11 +1637,18 @@
     };
 
     function placeType(res) {
+        // локальна класифікація НП має пріоритет над Nominatim: там смт
+        // приходить як town, і Купʼянськ-Вузловий показувався «СМТ», хоч на
+        // мапі він уже місто
+        if (res._ltKind === 'city') return LT.t('place.city');
+        if (res._ltKind === 'village') return LT.t('place.village');
         const type = res.addresstype || res.type || '';
         const dn = String(res.display_name || '').toLowerCase();
         if (type === 'administrative') {
             if (dn.includes('область') || dn.includes('обл.') || dn.includes('oblast')) return LT.t('place.state');
             if (dn.includes('район') || dn.includes('raion') || dn.includes('district')) return LT.t('place.district');
+            // «Охтирська міська рада» — це громада, а не область
+            if (dn.includes('громада') || dn.includes('рада') || dn.includes('municipal')) return LT.t('place.municipality');
             return LT.t('place.territory');
         }
         if (PLACE_TYPES[type]) return LT.t(PLACE_TYPES[type]);
@@ -1650,12 +1657,12 @@
         return type ? String(type).toUpperCase() : LT.t('place.object');
     }
 
-    // іконка рядка повторює мову значків на мапі: місто — квадрат, село —
-    // кружок. інші обʼєкти лишаються шпилькою, бо в них немає класу НП
+    // іконка рядка: місто — квадрат, село — кружок, інші обʼєкти — шпилька,
+    // бо в них немає класу НП
     const SEARCH_PIN = '<path d="M12 21s6.4-5.7 6.4-11A6.4 6.4 0 1 0 5.6 10c0 5.3 6.4 11 6.4 11z"/><circle cx="12" cy="10" r="2.3"/>';
 
     function searchKind(res) {
-        const t = res._local ? res.type : String(res.addresstype || res.type || '');
+        const t = res._ltKind || (res._local ? res.type : String(res.addresstype || res.type || ''));
         return (t === 'city' || t === 'town') ? 'city'
             : (t === 'village' || t === 'hamlet' || t === 'isolated_dwelling' || t === 'locality') ? 'vil'
             : 'obj';
@@ -1700,6 +1707,11 @@
         }
         if (open) {
             setTimeout(() => { const q = $('ps-q'); if (q) q.focus(); }, 60);
+        } else {
+            // на телефоні фокус тримає клавіатуру відкритою навіть після
+            // приховування панелі — знімаємо його явно
+            const q = $('ps-q');
+            if (q && document.activeElement === q) q.blur();
         }
     }
 
@@ -1824,9 +1836,9 @@
     // підміняємо вибір, щоб камера стала по межі й зона намалювалася
     function upgradeLocalPick(rows) {
         if (!searchPick || !searchPick.res || !searchPick.res._local || searchPick.feature) return;
-        const key = searchPick.name.toLowerCase();
+        const key = foldSearchName(searchPick.name);
         const hit = rows.find(r => r.geojson
-            && String(r.name || shortName(r)).trim().toLowerCase() === key);
+            && foldSearchName(r.name || shortName(r)) === key);
         if (hit) pickSearch(hit, 0);
     }
 
@@ -1855,6 +1867,9 @@
         }
         if (res.lon && res.lat) setSearchMarker([+res.lon, +res.lat], searchPick.name.toUpperCase());
         if (!feature && !res._local) LT.toast(LT.t('search.noContour'));
+        // на телефоні після вибору ховаємо панель: результат уже на мапі,
+        // а лист із клавіатурою закривав би пів-екрана. маркер лишається
+        if (isMobileUI()) setSearch(false);
     }
 
     // локальный индекс городов: результаты есть сразу, даже если Nominatim
@@ -1862,7 +1877,10 @@
     function localSearchRows(q) {
         const data = window.LT_PLACES;
         if (!data || !data.length) return [];
-        const norm = s => String(s || '').toLowerCase().replace(/[’`']/g, "'");
+        // дані НП пишуть апострофи по-різному (Купянськ / Куп'янськ), тож
+        // для порівняння прибираємо їх і розділові знаки зовсім
+        const norm = s => String(s || '').toLowerCase()
+            .replace(/[’`'ʼʹ]/g, '').replace(/[\s\-–—.,]+/g, '');
         const needle = norm(q);
         if (!needle) return [];
         const hits = [];
@@ -1888,9 +1906,11 @@
             if (!name || seen.has(key)) continue;
             seen.add(key);
             const lon = e[2] / 1e5, lat = e[3] / 1e5;
-            // тип рахуємо тим самим правилом, що й значок на мапі (placeKind):
-            // інакше кожне село з рангом 4+ підписувалось як «МІСТО»
-            const city = !!e[5] || (+e[4] || 4) <= 2 || (+e[6] || 0) >= 20000;
+            // тип рахуємо тим самим правилом, що й клас на мапі: там місто
+            // починається з minZoom 7, а не з 5 — через це Куп'янськ-Вузловий
+            // (mz7, 8 тис. мешканців) і сотні таких сіл підписувались «СЕЛО»
+            const mz = +e[4] || 4;
+            const city = !!e[5] || mz <= 7 || (+e[6] || 0) >= 20000;
             rows.push({
                 _local: true,
                 name,
@@ -1908,6 +1928,11 @@
 
     const normSearchName = s => String(s || '').toLowerCase()
         .replace(/[’`'ʼ]/g, "'").replace(/\s+/g, ' ').trim();
+
+    // той самий ключ без апострофів і розділових знаків: у LT_PLACES місто
+    // записане «Купянськ», а Nominatim віддає «Куп'янськ» — інакше тип НП
+    // з локального індексу не переносився на мережевий рядок
+    const foldSearchName = s => normSearchName(s).replace(/['\s\-–—.,]+/g, '');
 
     const searchHasArea = res => {
         const g = res && res.geojson;
@@ -1967,18 +1992,28 @@
     }
 
     function mergeSearchRows(netRows, local, q) {
+        // тип НП беремо з локального індексу: він рахує клас тим самим
+        // правилом, що й мапа, а Nominatim для смт віддає addresstype=town
+        const kindOf = new Map();
+        local.forEach(x => {
+            if (x.type === 'city' || x.type === 'village') kindOf.set(foldSearchName(x.name), x.type);
+        });
         // локальний рядок викидаємо лише тоді, коли мережа знає такий самий
         // населений пункт або його полігон, а не однойменну річку чи область
         const merged = netRows.concat(local.filter(x => {
-            const n = normSearchName(x.name);
-            return !netRows.some(r => normSearchName(shortName(r)) === n && (searchHasArea(r) || searchIsSettlement(r)));
+            const n = foldSearchName(x.name);
+            return !netRows.some(r => foldSearchName(shortName(r)) === n && (searchHasArea(r) || searchIsSettlement(r)));
         }));
         merged.sort((a, b) => searchScore(b, q) - searchScore(a, q));
         const seen = new Set();
         const out = [];
-        for (const r of merged) {
+        for (let r of merged) {
+            if (!r._local) {
+                const k = kindOf.get(foldSearchName(shortName(r)));
+                if (k) r = Object.assign({}, r, { _ltKind: k });
+            }
             if (!searchInView(r)) continue;
-            const key = normSearchName(shortName(r)) + '|' + String((r.address && r.address.country_code) || '');
+            const key = foldSearchName(shortName(r)) + '|' + String((r.address && r.address.country_code) || '');
             if (seen.has(key)) continue;
             seen.add(key);
             out.push(r);
@@ -2465,7 +2500,10 @@
         statsBusy = true;
         renderStats();
         LT.statsCompute((i, n) => {
-            if (statsRes) return;
+            // прогрес «рахуємо площі» належить вкладці «Огляд»: без цієї
+            // перевірки він затирав «Втрати» й «Новини», які вже показали
+            // свої дані, поки площі ще довантажувались
+            if (statsRes || statsTab !== 'front') return;
             const body = $('stats-body');
             if (body) body.innerHTML = `<div class="lt-stats-loading">${LT.esc(LT.t('stats.loading'))} ${n ? i + '/' + n : ''}</div>`;
         }).then(res => {
@@ -3505,6 +3543,10 @@
                 if (performance.now() - s.time < 700 && e.point && Math.hypot(e.point.x - s.x, e.point.y - s.y) < 24) return;
             }
             if (menuOpen) setMenu(false);
+            if (isMobileUI()) {
+                const sp = $('place-search');
+                if (sp && sp.classList.contains('open')) setSearch(false);
+            }
             if (tool) { toolClick(e); return; }
             const id = pickLayer(e.point);
             if (!id) { clearSelection(); return; }
@@ -3659,6 +3701,8 @@
         $('search-btn').addEventListener('click', () => setSearch(!$('place-search').classList.contains('open')));
         const psQ = $('ps-q');
         const psClear = $('ps-clear');
+        const psClose = $('ps-close');
+        if (psClose) psClose.addEventListener('click', () => setSearch(false));
         if (psClear) psClear.addEventListener('click', () => {
             if (psQ) { psQ.value = ''; psQ.focus(); }
             psClear.hidden = true;

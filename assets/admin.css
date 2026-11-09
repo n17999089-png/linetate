@@ -141,7 +141,7 @@ textarea.input { width: 100%; height: auto; min-height: 72px; padding: 10px 11px
     .panel-top .brand small { font-size: 8px; letter-spacing: .75px; }
     .panel-top .status { max-width: 56px; font-size: 7px; letter-spacing: 0; gap: 4px; }
     .panel-top .lang-btn { width: 40px; padding: 0; }
-    .panel-top .lang-btn span { display: none; }
+    .panel-top .lang-btn > span:not(.lt-flag) { display: none; }
     .icon-btn { width: 40px; height: 44px; }
     .tab { min-height: 44px; padding: 13px 3px 11px; font-size: 10px; }
     .pane { padding: 13px; gap: 12px; }

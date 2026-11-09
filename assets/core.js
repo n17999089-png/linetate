@@ -188,7 +188,7 @@
             'stats.plus': 'ЗДОБУТО', 'stats.minus': 'ВТРАЧЕНО', 'stats.day': 'ДЕНЬ', 'stats.km2': 'КМ²',
             'stats.empty': 'НЕМАЄ ДАНИХ ДЛЯ СТАТИСТИКИ',
             'stats.emptyHint': 'ДОДАЙТЕ ДАТИ В РЕДАКТОРІ Й ПЕРЕРАХУЙТЕ.',
-            'stats.loading': 'РАХУЄМО ПЛОЩІ…', 'stats.baseline': 'БАЗА — {date}',
+            'stats.loading': 'РАХУЄМО ПЛОЩІ…', 'stats.lossLoading': 'ВАНТАЖИМО ВТРАТИ…', 'stats.baseline': 'БАЗА — {date}',
             'stats.period': 'ФРОНТ ЗА ПЕРІОД', 'stats.toUkr': 'на користь України',
             'stats.toRus': 'на користь Росії', 'stats.flat': 'без змін', 'stats.daysN': '{n} дн.',
             'stats.roles': 'ХТО Є ХТО',
@@ -436,7 +436,7 @@
             'stats.plus': 'GAINED', 'stats.minus': 'LOST', 'stats.day': 'DAY', 'stats.km2': 'KM²',
             'stats.empty': 'NO DATA FOR STATISTICS',
             'stats.emptyHint': 'ADD DATES IN THE EDITOR AND RECALCULATE.',
-            'stats.loading': 'MEASURING AREAS…', 'stats.baseline': 'BASE — {date}',
+            'stats.loading': 'MEASURING AREAS…', 'stats.lossLoading': 'LOADING LOSSES…', 'stats.baseline': 'BASE — {date}',
             'stats.period': 'FRONT FOR THE PERIOD', 'stats.toUkr': 'in Ukraine’s favour',
             'stats.toRus': 'in Russia’s favour', 'stats.flat': 'no change', 'stats.daysN': '{n} days',
             'stats.roles': 'WHO IS WHO',
@@ -684,7 +684,7 @@
             'stats.plus': 'ПРИОБРЕТЕНО', 'stats.minus': 'ПОТЕРЯНО', 'stats.day': 'ДЕНЬ', 'stats.km2': 'КМ²',
             'stats.empty': 'НЕТ ДАННЫХ ДЛЯ СТАТИСТИКИ',
             'stats.emptyHint': 'ДОБАВЬТЕ ДАТЫ В РЕДАКТОРЕ И ПЕРЕСЧИТАЙТЕ.',
-            'stats.loading': 'СЧИТАЕМ ПЛОЩАДИ…', 'stats.baseline': 'БАЗА — {date}',
+            'stats.loading': 'СЧИТАЕМ ПЛОЩАДИ…', 'stats.lossLoading': 'ЗАГРУЖАЕМ ПОТЕРИ…', 'stats.baseline': 'БАЗА — {date}',
             'stats.period': 'ФРОНТ ЗА ПЕРИОД', 'stats.toUkr': 'в пользу Украины',
             'stats.toRus': 'в пользу России', 'stats.flat': 'без изменений', 'stats.daysN': '{n} дн.',
             'stats.roles': 'КТО ЕСТЬ КТО',
@@ -2104,15 +2104,12 @@
         hybrid: {
             version: 8,
             glyphs: GLYPHS,
+            // растрова підкладка Esri «World_Transportation» прибрана: вона
+            // малює власні назви міст, підписи вулиць і ВСІ залізниці, тож
+            // поверх них дублювалися наші підписи НП, а мережа ЖД виглядала
+            // втричі густішою за реальні важливі лінії
             sources: {
-                sat: Object.assign({}, SATELLITE_SOURCE),
-                roads: {
-                    type: 'raster',
-                    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}'],
-                    tileSize: 256,
-                    maxzoom: TILES_MAXZOOM,
-                    attribution: 'Esri'
-                }
+                sat: Object.assign({}, SATELLITE_SOURCE)
             },
             layers: [
                 { id: 'lt-bg', type: 'background', paint: { 'background-color': '#070a0e' } },
@@ -2127,8 +2124,7 @@
                         'raster-brightness-min': 0.12,
                         'raster-opacity': 0.88
                     }
-                },
-                { id: 'hybrid-roads', type: 'raster', source: 'roads', paint: { 'raster-opacity': 0.42, 'raster-saturation': -0.4 } }
+                }
             ]
         }
     };
@@ -2778,65 +2774,31 @@
         return '700 ' + PLACE_SIZE[rank] + "px 'Handjet', 'Tektur', monospace";
     }
 
-    // Форма іконки = клас населеного пункту: столиця — ромб (квадрат навскіс),
-    // місто — квадратик, село — кружок. У базі LT_PLACES типу немає, тому клас
-    // збираємо з рангу (minZoom) і населення.
+    // Клас НП лишається тільки для кольору точки: столиця — золота. У базі
+    // LT_PLACES типу немає, тому клас збираємо з рангу (minZoom) і населення.
     function placeKind(rank, cap, pop) {
         if (cap) return 'cap';
         if (rank <= 2 || pop >= 20000) return 'city';
         return 'vil';
     }
 
-    // піврозмір фігури у CSS-пікселях: на телефоні менша, інакше дрібні назви
-    // зливаються в кашу, а крапка села перекриває сусідній підпис
+    // масштаб знаків: на телефоні менший, інакше крапки зливаються з підписами
     function iconScale(mob) {
         return mob ? (lowEndDevice() ? .74 : .86) : 1;
     }
 
-    function iconExtent(kind, rank, sc) {
-        if (kind === 'cap') return (rank <= 1 ? 5.4 : 4.6) * sc;
-        if (kind === 'city') return (rank <= 1 ? 3.7 : 3.1) * sc;
-        return (rank >= 4 ? 2.7 : 3.1) * sc;
+    // радіус точки під підписом: чим важливіший НП, тим більша кулька
+    function dotRadius(rank, sc) {
+        return (rank <= 1 ? 2.8 : rank <= 2 ? 2.5 : 2.15) * sc;
     }
 
-    function iconPath(k, kind, cx, cy, s) {
+    function drawDot(k, cx, cy, r, fill) {
         k.beginPath();
-        if (kind === 'vil') {
-            k.arc(cx, cy, s, 0, Math.PI * 2);
-            return;
-        }
-        if (kind === 'cap') {
-            k.moveTo(cx, cy - s);
-            k.lineTo(cx + s, cy);
-            k.lineTo(cx, cy + s);
-            k.lineTo(cx - s, cy);
-            k.closePath();
-            return;
-        }
-        const r = Math.min(1.5, s * .36);
-        k.moveTo(cx - s + r, cy - s);
-        k.lineTo(cx + s - r, cy - s);
-        k.arcTo(cx + s, cy - s, cx + s, cy - s + r, r);
-        k.lineTo(cx + s, cy + s - r);
-        k.arcTo(cx + s, cy + s, cx + s - r, cy + s, r);
-        k.lineTo(cx - s + r, cy + s);
-        k.arcTo(cx - s, cy + s, cx - s, cy + s - r, r);
-        k.lineTo(cx - s, cy - s + r);
-        k.arcTo(cx - s, cy - s, cx - s + r, cy - s, r);
-        k.closePath();
-    }
-
-    // тінь — та сама фігура, зміщена на піксель і трохи ширша: shadowBlur на
-    // сотнях спрайтів кладе кадр, а другий fillPath коштує мілісекунди
-    function drawIcon(k, kind, cx, cy, s, fill, mob) {
-        iconPath(k, kind, cx, cy + 1.35, s * 1.04);
-        k.fillStyle = 'rgba(0, 0, 0, .5)';
-        k.fill();
-        iconPath(k, kind, cx, cy, s);
+        k.arc(cx, cy, r, 0, Math.PI * 2);
         k.fillStyle = fill;
         k.fill();
         k.strokeStyle = PLACE_INK;
-        k.lineWidth = mob ? 1 : 1.25;
+        k.lineWidth = 1;
         k.stroke();
     }
 
@@ -3051,8 +3013,10 @@
             }
         }
 
-        // спрайт підпису: текст і іконка, намальовані відносно точної координати
-        // НП — це (0,0) спрайта. далі по кадрі лише drawImage
+        // спрайт підпису: текст і точка, намальовані відносно точної координати
+        // НП — це (0,0) спрайта. далі по кадрі лише drawImage. Стара манера:
+        // підпис висить НАД точкою, ромб столиці — над самим підписом. Міста
+        // без точки стоять центром на координаті, як на паперових картах
         function buildSprite(name, rank, cap, dot, dpr, kind, sc) {
             const fsz = PLACE_SIZE[rank];
             const big = rank <= 1;
@@ -3061,17 +3025,15 @@
             // запас лише під штрих обвідки: зайві 4 px зверху й знизу на сотнях
             // підписів — це сотні тисяч зайвих пікселів щокадру
             const padX = mob ? 4 : 5, padY = mob ? 3.5 : 5;
-            const mk = dot ? iconExtent(kind, rank, sc) : 0;
-            const ty = dot ? -(mk + 2.8) : 0;
+            const dr = dot ? dotRadius(rank, sc) : 0;
+            const ty = dot ? -(dr + 3.4) : 0;
+            const dia = cap ? (big ? 3.2 : 2.8) * sc : 0;
+            const dmy = ty - fsz / 2 - 6;
             let bottom = ty + fsz * 0.32 + padY;
             let top = ty - fsz - padY;
-            // іконка з тінню виступає за габарит тексту — без цього її края
-            // підрізаються, і квадрат виглядає обрізаним
-            if (dot) {
-                bottom = Math.max(bottom, mk + 2.2 + padY);
-                top = Math.min(top, -mk - padY);
-            }
-            const half = Math.max(tw / 2, dot ? mk + 2 : 0) + padX;
+            if (dot) bottom = Math.max(bottom, dr + 1.8 + padY);
+            if (cap) top = Math.min(top, dmy - dia - padY);
+            const half = Math.max(tw / 2, dot ? dr + 2.4 : 0) + padX;
             const left = -half, right = half;
             const w = Math.max(2, Math.ceil(right - left)), h = Math.max(2, Math.ceil(bottom - top));
             const c = document.createElement('canvas');
@@ -3087,19 +3049,18 @@
             try { k.letterSpacing = (big ? 0.9 : 0.5) + 'px'; } catch (e) { }
 
             if (dot) {
-                // іконка точно на координаті: клас НП читається формою, а підпис
-                // висить над нею і не ховає місце
-                drawIcon(k, kind, 0, 0, mk, kind === 'cap' ? PLACE_CAP : PLACE_FILL[rank], mob);
+                // точка точно на координаті, підпис над нею не ховає місце
+                drawDot(k, 0, 0, dr, kind === 'cap' ? PLACE_CAP : '#e8eef5');
             }
             // м'яке світіння широким штрихом: дешевше за shadowBlur на сотнях
             // підписів. навмисно на піксель нижче — воно ж дає тінь рядка
             if (!mob) {
-                k.strokeStyle = cap ? 'rgba(255, 186, 74, .26)' : 'rgba(0, 0, 0, .34)';
+                k.strokeStyle = cap ? 'rgba(255, 186, 74, .26)' : 'rgba(0, 0, 0, .40)';
                 k.lineWidth = (big ? 3.4 : 2.6) + 3.6;
                 k.strokeText(name, 0, ty + 1.1);
             } else {
                 // на телефоні світіння немає, тому тінь — окремий штрих
-                k.strokeStyle = 'rgba(0, 0, 0, .5)';
+                k.strokeStyle = 'rgba(0, 0, 0, .55)';
                 k.lineWidth = big ? 3.4 : 2.6;
                 k.strokeText(name, 0, ty + 1.3);
             }
@@ -3108,6 +3069,20 @@
             k.strokeText(name, 0, ty);
             k.fillStyle = cap ? PLACE_CAP : PLACE_FILL[rank];
             k.fillText(name, 0, ty);
+            if (cap) {
+                // ромб над столицею — картографічний маркер статусу
+                k.beginPath();
+                k.moveTo(0, dmy - dia);
+                k.lineTo(dia, dmy);
+                k.lineTo(0, dmy + dia);
+                k.lineTo(-dia, dmy);
+                k.closePath();
+                k.fillStyle = 'rgba(255, 212, 137, .96)';
+                k.fill();
+                k.strokeStyle = 'rgba(0, 0, 0, .8)';
+                k.lineWidth = 1;
+                k.stroke();
+            }
             try { k.letterSpacing = '0px'; } catch (e) { }
             return { cv: c, x: left, y: top, w: w, h: h };
         }
@@ -3146,9 +3121,8 @@
             return sp;
         }
 
-        // крапки сіл без підпису беруть той самий малюнок, що й іконка підпису:
-        // drawImage маленького полотна дешевший за fill+stroke на сотнях крапок,
-        // і тінь з контуром уже «запечені» в нього
+        // крапки сіл без підпису беруть той самий малюнок, що й точка підпису:
+        // drawImage маленького полотна дешевший за fill+stroke на сотнях крапок
         const bareIcons = new Map();
         let bareDpr = 0;
         function bareIcon(kind, rank) {
@@ -3159,15 +3133,14 @@
             const key = kind + rank;
             let b = bareIcons.get(key);
             if (b) return b;
-            const mob = iconSc < 1;
-            const s = iconExtent(kind, rank, iconSc);
-            const size = Math.ceil((s + 2.6) * 2);
+            const r = dotRadius(rank, iconSc) + .6;
+            const size = Math.ceil((r + 2) * 2);
             const c = document.createElement('canvas');
             c.width = Math.round(size * dprNow);
             c.height = Math.round(size * dprNow);
             const k = c.getContext('2d');
             k.setTransform(dprNow, 0, 0, dprNow, 0, 0);
-            drawIcon(k, kind, size / 2, size / 2, s, kind === 'cap' ? PLACE_CAP : PLACE_FILL[Math.min(rank, 4)], mob);
+            drawDot(k, size / 2, size / 2, r, kind === 'cap' ? PLACE_CAP : '#e8eef5');
             b = { cv: c, size: size };
             bareIcons.set(key, b);
             return b;
@@ -3401,10 +3374,10 @@
                 }
                 if (px < -80 || py < -50 || px > size.x + 80 || py > size.y + 50) continue;
                 it.px = px; it.py = py;
-                // місто й столицю завжди виводимо з іконкою на самій координаті;
-                // село отримує кружок лише коли масштаб вже дозволяє читати
-                // підпис над ним, інакше іконки зайняли б третину екрана
-                it.dot = it.kind !== 'vil' || zoom >= 9.6;
+                // стара манера: великі міста живуть самим підписом на координаті,
+                // а точка з'являється, коли масштаб дозволяє читати підпис над
+                // нею. інакше крапки на оглядовому зумі зайняли б пів карти
+                it.dot = it.rank >= 3 && zoom >= 9.6;
                 cand.push(it);
             }
             const shown = new Set();
@@ -3420,9 +3393,12 @@
                 if (items.length >= limit) { if (it.dot) addDot(it, px, py); continue; }
                 const w = measure(it.name, it.rank);
                 const h = PLACE_SIZE[it.rank] + 4;
-                const mk = it.dot ? iconExtent(it.kind, it.rank, iconSc) : 0;
+                const mk = it.dot ? dotRadius(it.rank, iconSc) : 0;
+                // ромб столиці стирчить над підписом — інакше він лягав би
+                // поверх сусідньої назви, а колізія його не бачила
+                const capPad = it.cap ? 7 : 0;
                 const halfBox = Math.max(w / 2, mk + 2);
-                const y0 = it.dot ? py - (mk + 2.8) - h : py - h / 2;
+                const y0 = (it.dot ? py - (mk + 3.4) - h : py - h / 2) - capPad;
                 const y1 = it.dot ? py + mk + 1.6 : py + h / 2;
                 const x0 = px - halfBox, x1 = px + halfBox;
                 // рамка, що зовсім не зачіпає полотна, нікому не видна: тож не
@@ -4836,7 +4812,7 @@
             </div>`;
         }
         if (!L || !L.ru || !L.ua || !L.ru.named) {
-            return `<div class="lt-stats-loading">${esc(t('stats.loading'))}</div>`;
+            return `<div class="lt-stats-loading">${esc(t('stats.lossLoading'))}</div>`;
         }
         const ru = L.ru, ua = L.ua;
         const years = [...new Set([...Object.keys(ru.yearly || {}), ...Object.keys(ua.yearly || {})])].sort();
@@ -5942,7 +5918,7 @@
     // terrarium: висота = червоний·256 + зелений + синій/256 − 32768 метрів.
     // джерело безкоштовне, глобальне, тайли 256 px
     const DEM_TILES = ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'];
-    const RELIEF_BASE = ['lt-bg', 'hybrid-sat', 'hybrid-roads'];
+    const RELIEF_BASE = ['lt-bg', 'hybrid-sat'];
     // власні шари-оверлеї над підкладкою: рельєф вставляємо саме перед першим із
     // них, тож він опиняється над будь-якою базою (темна CARTO чи наш hybrid),
     // але під зонами й просуваннями
@@ -5971,9 +5947,13 @@
             if (g < 2) return { maxzoom: 10, ex: 1.2, hill: 0.85, full: 10.6, zero: 12.8, floor: .8 };
             return { maxzoom: 11, ex: 1.35, hill: 1, full: 11, zero: 13.2, floor: .9 };
         }
-        // телефон: слабкий GPU або мало пам'яті → найлегша сітка; інакше середня
-        if (tier === 0 || lowEndDevice()) return { maxzoom: 7, ex: 0.8, hill: 0.45, full: 9.4, zero: 11.6, floor: .5 };
-        return { maxzoom: 8, ex: 1, hill: 0.6, full: 10.2, zero: 12, floor: .7 };
+        // телефон: слабкий GPU або мало пам'яті → найлегша сітка; інакше середня.
+        // сітка тут визначає не лише вагу кадру, а й те, чи видно гори: на
+        // maxzoom 7–8 висоти на міському масштабі розтягнуті у 8–16 разів, і
+        // рельєф перетворювався на пласку пляму. тінь від нахилу (hill) і
+        // підняття (ex) підняті до рівня ПК — саме вони й малюють хребти
+        if (tier === 0 || lowEndDevice()) return { maxzoom: 8, ex: 0.95, hill: 0.6, full: 9.4, zero: 11.6, floor: .5 };
+        return { maxzoom: 9, ex: 1.15, hill: 0.9, full: 10.2, zero: 12, floor: .7 };
     }
 
     function reliefEx(p, z) {

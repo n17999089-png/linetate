@@ -99,7 +99,8 @@
         // 2609 і ~70 тис. вершин, у кадрі 2D-полотно коштувало б десятки мс
         let railFC = null;
         let railsOn = true;
-        const RAIL_LAYERS = ['lt-rail-casing', 'lt-rail-dash', 'lt-rail-casing-2', 'lt-rail-dash-2'];
+        const RAIL_LAYERS = ['lt-rail-casing', 'lt-rail-dash', 'lt-rail-casing-1m', 'lt-rail-dash-1m',
+            'lt-rail-casing-1s', 'lt-rail-dash-1s', 'lt-rail-casing-2', 'lt-rail-dash-2'];
 
         function applyRailsVis() {
             RAIL_LAYERS.forEach(id => {
@@ -108,18 +109,36 @@
                 }
             });
         }
+
+        function railKm(coords) {
+            let s = 0;
+            for (let i = 1; i < coords.length; i++) {
+                const a = coords[i - 1], b = coords[i];
+                const dx = (b[0] - a[0]) * 111.32 * Math.cos((a[1] + b[1]) / 2 * Math.PI / 180);
+                const dy = (b[1] - a[1]) * 111.32;
+                s += Math.hypot(dx, dy);
+            }
+            return s;
+        }
+
         function railData() {
             if (railFC !== null) return railFC;
             const raw = window.LT_RAILWAYS;
             if (!raw || !raw.lines || !LT.decodePolyline) return (railFC = false);
-            railFC = {
-                type: 'FeatureCollection',
-                features: raw.lines.map(l => ({
+            const features = [];
+            for (const l of raw.lines) {
+                // третинні гілки — промислові тупики й під'їзні колії
+                if (l.c === 3) continue;
+                const coords = LT.decodePolyline(l.p);
+                features.push({
                     type: 'Feature',
-                    properties: { c: l.c },
-                    geometry: { type: 'LineString', coordinates: LT.decodePolyline(l.p) }
-                }))
-            };
+                    // len — довжина нитки в кілометрах: з огляду лишаємо тільки
+                    // довгі коридори, короткі обривки з'являються на міському зумі
+                    properties: { c: l.c, len: Math.round(railKm(coords)) },
+                    geometry: { type: 'LineString', coordinates: coords }
+                });
+            }
+            railFC = { type: 'FeatureCollection', features };
             return railFC;
         }
 
@@ -139,35 +158,42 @@
             const fade = ['interpolate', ['linear'], ['zoom'], 5.2, 0, 5.9, 1];
             const width = arr => ['interpolate', ['linear'], ['zoom']].concat(arr);
             // біло-чорне чергування: біла підкладка й темний пунктир поверх.
-            // з оглядового зуму головні лінії вже читаються, другорядні
-            // з'являються лише з z7, коли є місце для деталі. підкладка досить
-            // товста, щоб чорний пунктир усередині не зникав на висоті —
-            // інакше залізниця стає ще одним білим пунктиром замість нитки
+            // з огляду видно тільки довгі головні коридори — саме вони читаються
+            // як «залізниця країни». короткі обривки головних і всі другорядні
+            // нитки підключаються на міському зумі, де є місце для деталі
             const layers = [
                 { id: 'lt-rail-casing', color: '#fbf7ea', w: [5, 3.6, 7, 4.2, 10, 5.0, 14, 5.8], cap: 'round', dash: null },
                 { id: 'lt-rail-dash', color: '#10151b', w: [5, 1.9, 7, 2.3, 10, 2.8, 14, 3.6], cap: 'butt', dash: [2.0, 2.0] }
             ];
+            const tiers = [
+                // каркас країни: тільки довгі вузлові магістралі (90+ км). з огляду
+                // ці 60 ниток і є «залізниця країни»; усе коротше — вже міська сітка,
+                // яка на такому масштабі перетворювала карту на білу павутину
+                { suffix: '', filter: ['all', ['==', ['get', 'c'], 1], ['>=', ['get', 'len'], 90]], zoom: null, scale: 1 },
+                // регіональні магістралі — з обласного огляду
+                { suffix: '-1m', filter: ['all', ['==', ['get', 'c'], 1], ['>=', ['get', 'len'], 40], ['<', ['get', 'len'], 90]], zoom: 7.6, scale: 0.88 },
+                // короткі обривки головних — тільки на міському масштабі
+                { suffix: '-1s', filter: ['all', ['==', ['get', 'c'], 1], ['<', ['get', 'len'], 40]], zoom: 9.4, scale: 0.78 },
+                // другорядні нитки — під'їзні до промвузлів, лише з близького зуму
+                { suffix: '-2', filter: ['all', ['==', ['get', 'c'], 2], ['>=', ['get', 'len'], 40]], zoom: 9.8, scale: 0.62 }
+            ];
             layers.forEach(l => {
-                map.addLayer({
-                    id: l.id, type: 'line', source: 'lt-rail',
-                    filter: ['==', ['get', 'c'], 1],
-                    layout: { 'line-cap': l.cap, 'line-join': 'round' },
-                    paint: Object.assign({
+                tiers.forEach(t => {
+                    const paint = {
                         'line-color': l.color,
-                        'line-width': width(l.w),
-                        'line-opacity': fade
-                    }, l.dash ? { 'line-dasharray': l.dash } : {})
-                }, anchor);
-                map.addLayer({
-                    id: l.id + '-2', type: 'line', source: 'lt-rail', minzoom: 7,
-                    filter: ['!=', ['get', 'c'], 1],
-                    layout: { 'line-cap': l.cap, 'line-join': 'round' },
-                    paint: Object.assign({
-                        'line-color': l.color,
-                        'line-width': width(l.w.map((v, i) => i % 2 ? +(v * 0.72).toFixed(2) : v)),
-                        'line-opacity': fade
-                    }, l.dash ? { 'line-dasharray': l.dash } : {})
-                }, anchor);
+                        'line-width': width(l.w.map((v, i) => i % 2 ? +(v * t.scale).toFixed(2) : v)),
+                        'line-opacity': t.zoom
+                            ? ['interpolate', ['linear'], ['zoom'], t.zoom, 0, t.zoom + 0.6, 1]
+                            : fade
+                    };
+                    if (l.dash) paint['line-dasharray'] = l.dash;
+                    map.addLayer(Object.assign({
+                        id: l.id + t.suffix, type: 'line', source: 'lt-rail',
+                        filter: t.filter,
+                        layout: { 'line-cap': l.cap, 'line-join': 'round' },
+                        paint
+                    }, t.zoom ? { minzoom: t.zoom } : {}), anchor);
+                });
             });
             applyRailsVis();
         }
@@ -460,7 +486,10 @@
                     if (borderVis[id] === false) return;
                     const { meta, fc } = data[id];
                     const kind = meta.dash ? 'dash' : 'main';
-                    if (kind !== pass) return;
+                    // «thin» — окремий прохід для контурів сусідніх країн:
+                    // раніше умова нижче відсікала його цілком, тож кордони
+                    // МД–РО, HU–SK та інші не малювалися ніколи
+                    if (pass !== 'thin' && kind !== pass) return;
                     const thin = pass === 'thin';
                     const core = thin ? '#e6ddc9' : (meta.color || '#eae3d3');
                     const base = meta.width || 2.6;
@@ -528,6 +557,14 @@
             bCtx = bCv.getContext('2d');
             map.on('move', () => { bDirty = true; });
             map.on('resize', () => { bDirty = true; });
+            // DEM-тайл під нахилом зсуває точку по екрану: кордон, намальований
+            // до його завантаження, висів на пласкому профілі, поки камера
+            // не рухалась. мапа при цьому render не шле, бо камера стоїть
+            map.on('sourcedata', e => {
+                if (!e.tile || e.sourceId !== 'lt-dem' || !map.terrain) return;
+                if (e.tile.state !== 'loaded') return;
+                bDirty = true;
+            });
             // render приходить після кадру мапи: кордони лягають на той самий
             // ракурс, що й підкладка, і не «відʼїжджають» на жесті
             map.on('render', () => {

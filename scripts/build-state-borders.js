@@ -296,72 +296,125 @@ function main() {
     }
 
     // borders.js місцями має дірки (Придністров'я, шов Дунаю): між сусідніми
-    // вершинами десятки кілометрів. Межа України з OSM (relation 60199,
-    // scripts/data/ua-border-ways.json) повна, тож беремо з неї ЛИШЕ ділянки,
-    // не покриті збереженими лініями — дірки закриваються, а подвійних
-    // ліній там, де геометрія вже є, не з'являється
+    // вершинами десятки кілометрів. Закриваємо їх двома джерелами:
+    //   ua-border-ways.json — межа України з OSM (relation 60199), точна,
+    //                         але є лише для Молдови;
+    //   ne-boundary-lines.geojson — Natural Earth 10m, одна повна лінія на
+    //                         кожну пару країн (BY/PL/SK/HU/RO/MD/RU з UA).
+    // з кожного джерела беремо ЛИШЕ ділянки, не покриті вже наявною
+    // геометрією — дірки закриваються, а паралельних ліній не з'являється
     const uaWays = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts/data/ua-border-ways.json'), 'utf8'));
-    const keptAll = [];
-    for (const id of Object.keys(cats)) cats[id].forEach(s => keptAll.push(...s));
-    const coverPts = [];
-    for (const id of Object.keys(cats)) cats[id].forEach(s => coverPts.push(...densify(s, 0.01)));
-    const cover = makeGrid(coverPts);
-    const COV_KM = 1.5;
-    const snapEnd = p => {
-        let best = null, bd = 36; // ^2, тобто ≤6 км
-        const cos = Math.cos(p[1] * Math.PI / 180);
-        for (const q of keptAll) {
-            const d = dist2(p, q, cos);
-            if (d < bd) { bd = d; best = q; }
-        }
-        return best || p;
-    };
-    let fillRuns = 0, fillPts = 0;
-    for (const pts of uaWays) {
-        let run = [];
-        const flushFill = () => {
-            if (run.length >= 2) {
-                // ділянка може перетинати межу категорій — ріжемо за країною
-                let piece = [], pieceCat = null;
-                const put = (cat, arr) => {
-                    if (!cats[cat] || arr.length < 2) return;
-                    const s = simplify(arr, SIMPLIFY_DEG);
-                    if (s.length < 2 || lenKm(s) < 0.6) return;
-                    // стик зі збереженими лініями: краї до найближчої вершини
-                    s[0] = snapEnd(s[0]);
-                    s[s.length - 1] = snapEnd(s[s.length - 1]);
-                    cats[cat].push(s);
-                    fillRuns++;
-                    fillPts += s.length;
-                };
-                for (const p of run) {
-                    let cat = null, best = Infinity;
-                    for (const c of Object.keys(grids)) {
-                        const d = grids[c].nearest(p, CAT_KM + 5);
-                        if (d < best) { best = d; cat = CAT_ID[c]; }
-                    }
-                    if (best > CAT_KM || (p[0] < 22.9 && p[1] < 49.1)) cat = westCat(p);
-                    if (cat !== pieceCat && piece.length) { put(pieceCat, piece); piece = []; }
-                    pieceCat = cat;
-                    piece.push(p);
-                }
-                if (piece.length) put(pieceCat, piece);
+
+    const isSea = p => (p[0] > SEA_LNG && p[1] < SEA_LAT)
+        || (p[1] < 47.05 && p[0] > 32.4 && p[0] < 38.2);
+
+    function fillGaps(lines, forcedCat, label, opt) {
+        const o = Object.assign({ covKm: 1.5, minGapKm: 0.6, snapKm: 6, endsOnly: false }, opt);
+        const keptAll = [];
+        const coverPts = [];
+        const ends = [];
+        for (const id of Object.keys(cats)) {
+            for (const s of cats[id]) {
+                keptAll.push(...s);
+                coverPts.push(...densify(s, 0.01));
+                ends.push(s[0], s[s.length - 1]);
             }
-            run = [];
-        };
-        for (let i = 0; i < pts.length; i++) {
-            const p = pts[i];
-            const sea = (p[0] > SEA_LNG && p[1] < SEA_LAT)
-                || (p[1] < 47.05 && p[0] > 32.4 && p[0] < 38.2);
-            const uncovered = !sea && keepWest(p) && cover.nearest(p, COV_KM + 2) > COV_KM;
-            if (uncovered) {
-                if (!run.length && i) run.push(pts[i - 1]);
-                run.push(p);
-            } else flushFill();
         }
-        flushFill();
+        const cover = makeGrid(coverPts);
+        const endGrid = o.endsOnly ? makeGrid(ends) : null;
+        const snapEnd = p => {
+            let best = null, bd = o.snapKm * o.snapKm;
+            const cos = Math.cos(p[1] * Math.PI / 180);
+            for (const q of (o.endsOnly ? ends : keptAll)) {
+                const d = dist2(p, q, cos);
+                if (d < bd) { bd = d; best = q; }
+            }
+            return best || p;
+        };
+        const catAt = p => {
+            if (forcedCat) return forcedCat;
+            let cat = null, best = Infinity;
+            for (const c of Object.keys(grids)) {
+                const d = grids[c].nearest(p, CAT_KM + 5);
+                if (d < best) { best = d; cat = CAT_ID[c]; }
+            }
+            if (best > CAT_KM || (p[0] < 22.9 && p[1] < 49.1)) cat = westCat(p);
+            return cat;
+        };
+        let runs = 0, ptsN = 0, skipped = 0;
+        for (const src of lines) {
+            const pts = densify(src, 0.01);
+            let run = [];
+            const flush = () => {
+                // дрібні «хвости» NE, що просто звисають паралельно вже
+                // наявній лінії, — не дірка: довжина й обидва кінці
+                // мусять чіплятися за кінці наявних ліній
+                const hangA = o.endsOnly && run.length >= 2 ? endGrid.nearest(run[0], o.snapKm) : 0;
+                const hangB = o.endsOnly && run.length >= 2 ? endGrid.nearest(run[run.length - 1], o.snapKm) : 0;
+                const usable = run.length >= 2 && lenKm(run) >= o.minGapKm
+                    && (!o.endsOnly || (hangA <= o.snapKm && hangB <= o.snapKm));
+                if (usable) {
+                    // ділянка може перетинати межу категорій — ріжемо за країною
+                    let piece = [], pieceCat = null;
+                    const put = (cat, arr) => {
+                        if (!cats[cat] || arr.length < 2) return;
+                        const s = simplify(arr, SIMPLIFY_DEG);
+                        if (s.length < 2 || lenKm(s) < 0.6) return;
+                        // стик зі збереженими лініями: краї до найближчої вершини
+                        s[0] = snapEnd(s[0]);
+                        s[s.length - 1] = snapEnd(s[s.length - 1]);
+                        cats[cat].push(s);
+                        runs++;
+                        ptsN += s.length;
+                    };
+                    for (const p of run) {
+                        const cat = catAt(p);
+                        if (cat !== pieceCat && piece.length) { put(pieceCat, piece); piece = []; }
+                        pieceCat = cat;
+                        piece.push(p);
+                    }
+                    if (piece.length) put(pieceCat, piece);
+                } else if (run.length >= 2) skipped++;
+                run = [];
+            };
+            for (let i = 0; i < pts.length; i++) {
+                const p = pts[i];
+                const uncovered = !isSea(p) && keepWest(p) && cover.nearest(p, o.covKm + 2) > o.covKm;
+                if (uncovered) {
+                    if (!run.length && i) run.push(pts[i - 1]);
+                    run.push(p);
+                } else flush();
+            }
+            flush();
+        }
+        console.log(label + ' gap fill: runs', runs, 'pts', ptsN, 'skipped', skipped);
     }
-    console.log('OSM gap fill: runs', fillRuns, 'pts', fillPts);
+
+    fillGaps(uaWays, null, 'OSM');
+
+    // Natural Earth 10m: по одній повній лінії на пару країн. Категорію тут
+    // знаємо точно з пари ADM0_A3, тому не вгадуємо її за географією
+    const NE_CAT = { BLR: 'by', POL: 'pl', SVK: 'sk', HUN: 'hu', ROU: 'ro', MDA: 'md', RUS: 'ru' };
+    const nePath = path.join(ROOT, 'scripts/data/ne-boundary-lines.geojson');
+    if (fs.existsSync(nePath)) {
+        const ne = JSON.parse(fs.readFileSync(nePath, 'utf8'));
+        for (const id of Object.keys(NE_CAT)) {
+            const lines = [];
+            for (const f of ne.features) {
+                const pr = f.properties || {};
+                if (pr.TYPE !== 'Land') continue;
+                const a = pr.ADM0_A3_L, b = pr.ADM0_A3_R;
+                if (a !== 'UKR' && b !== 'UKR') continue;
+                if ((a === 'UKR' ? b : a) !== id) continue;
+                const geo = f.geometry;
+                const parts = geo.type === 'LineString' ? [geo.coordinates]
+                    : (geo.type === 'MultiLineString' ? geo.coordinates : []);
+                for (const ln of parts) if (ln && ln.length >= 2) lines.push(ln);
+            }
+            if (lines.length) fillGaps(lines, NE_CAT[id], 'NE ' + id,
+                { covKm: 2.5, minGapKm: 3, snapKm: 8, endsOnly: true });
+        }
+    }
 
 
     // повні контури сусідніх країн: тонкі лінії, які домалюють кордон
@@ -426,12 +479,13 @@ function main() {
             short: { uk: 'Молдова', en: 'Moldova', ru: 'Молдова' },
             color: BORDER_COLOR, width: 2.8
         },
-        // де-факто межа невизнаного утворення: пунктир тим самим кольором,
-        // щоб не читалась як міжнародний кордон
+        // Придністров'я малюємо як повноцінну межу, а не тонким пунктиром
+        // області: пунктир читався як внутрішній регіон, і здавалося, що
+        // кордон є лише в України
         pmr: {
             name: { uk: 'Придністров’я (де-факто)', en: 'Transnistria (de facto)', ru: 'Приднестровье (де-факто)' },
             short: { uk: 'Придністров’я', en: 'Transnistria', ru: 'Приднестровье' },
-            color: BORDER_COLOR, width: 1.8, dash: [5, 4]
+            color: BORDER_COLOR, width: 2.6
         }
     };
 
