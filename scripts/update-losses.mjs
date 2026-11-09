@@ -29,6 +29,8 @@ const ZONA_BUNDLE = 'https://s3.zona.media/infographics/bodycount/main.075985bf4
 // згортаємо у свої групи; добової історії джерело не віддає, тому приріст
 // рахуємо між власними знімками (history), які накопичуються з кожним прогоном.
 const ORYX_URL = 'https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-equipment.html';
+// та сама методика для української сторони: Oryx веде окремий список
+const ORYX_UA_URL = 'https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-ukrainian.html';
 const EQ_FIELDS = [
     'tanks', 'armoured_fighting_vehicles', 'artillery_systems', 'mlrs',
     'aa_warfare_systems', 'planes', 'helicopters', 'vehicles_fuel_tanks',
@@ -57,12 +59,13 @@ const ORYX_GROUPS = {
     planes: ['aircraft'],
     helicopters: ['helicopters'],
     vehicles_fuel_tanks: ['trucks and similar vehicles', 'infantry mobility vehicles'],
-    warships_cutters: ['naval ships and submarines'],
+    // на сторінці ЗСУ море названо «Naval Ships», а радари — довше
+    warships_cutters: ['naval ships and submarines', 'naval ships'],
     uav_systems: ['unmanned combat aerial vehicles'],
     special_military_equip: [
         'command posts and communications stations',
         'engineering vehicles and equipment',
-        'radars', 'jammers and deception systems'
+        'radars', 'jammers and deception systems', 'radars and communications equipment'
     ],
     atgm_srbm_systems: ['self-propelled anti-tank missile systems']
 };
@@ -360,8 +363,8 @@ function eqDays(rows) {
     return out.slice(-EQ_DAYS);
 }
 
-async function collectEquip(prev) {
-    const html = await get(ORYX_URL);
+async function collectEquip(prev, url = ORYX_URL, who = 'Russia') {
+    const html = await get(url);
     const rows = oryxRows(html);
     if (!rows.size) throw new Error('Oryx: не знайдено жодної категорії');
 
@@ -374,7 +377,7 @@ async function collectEquip(prev) {
         destroyed[f] = found.reduce((s, r) => s + r.destroyed, 0);
     }
     const overall = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
-        .match(/Russia\s*-\s*([\d,]+),\s*of which:\s*destroyed:\s*([\d,]+),\s*damaged:\s*([\d,]+),\s*abandoned:\s*([\d,]+),\s*captured:\s*([\d,]+)/);
+        .match(new RegExp(`${who}\\s*-\\s*([\\d,]+),\\s*of which:\\s*destroyed:\\s*([\\d,]+),\\s*damaged:\\s*([\\d,]+),\\s*abandoned:\\s*([\\d,]+),\\s*captured:\\s*([\\d,]+)`));
     const summary = overall ? {
         total: num(overall[1]), destroyed: num(overall[2]),
         damaged: num(overall[3]), abandoned: num(overall[4]), captured: num(overall[5])
@@ -384,12 +387,12 @@ async function collectEquip(prev) {
     const history = eqHistory(prev, asOf, totals);
     const days = eqDays(history);
     const increase = Object.fromEntries(EQ_FIELDS.map((f, i) => [f, days.length ? days[days.length - 1][i + 1] : 0]));
-    console.log(`  Oryx: ${rows.size} категорій, знімок ${asOf}, історія ${history.length}, приріст ${days.length ? 'є' : 'немає'}`);
+    console.log(`  Oryx ${who}: ${rows.size} категорій, знімок ${asOf}, історія ${history.length}, приріст ${days.length ? 'є' : 'немає'}`);
     return {
         asOf,
         day: Math.floor((Date.parse(asOf + 'T00:00:00Z') - Date.parse('2022-02-24T00:00:00Z')) / 864e5),
         source: 'Oryx',
-        url: ORYX_URL,
+        url,
         summary,
         fields: EQ_FIELDS,
         totals,
@@ -413,6 +416,7 @@ async function main() {
     let ua = prev.ua || {};
     let ru = prev.ru || {};
     let equip = prev.equip || null;
+    let equipUa = prev.equipUa || null;
     if (only !== 'equip' && only !== 'ru') {
         console.log('Втрати: тягну UALosses…');
         ua = await collectUA(prev);
@@ -424,8 +428,10 @@ async function main() {
     if (only !== 'ru' && only !== 'ua') {
         console.log('Втрати: рахую техніку за списком Oryx…');
         // якщо сайт недоступний, лишаємо попередній блок, а не ламаємо весь прогін
-        try { equip = await collectEquip(prev.equip); }
-        catch (e) { console.log(`  Oryx: ${e.message} — лишаю попередні дані`); }
+        try { equip = await collectEquip(prev.equip, ORYX_URL, 'Russia'); }
+        catch (e) { console.log(`  Oryx РФ: ${e.message} — лишаю попередні дані`); }
+        try { equipUa = await collectEquip(prev.equipUa, ORYX_UA_URL, 'Ukraine'); }
+        catch (e) { console.log(`  Oryx ЗСУ: ${e.message} — лишаю попередні дані`); }
     }
     if (!ua.killed || !ru.named) throw new Error('немає даних однієї зі сторін — файл не перезаписую');
 
@@ -435,10 +441,11 @@ async function main() {
         ua: { ...ua, source: 'UALosses', url: 'https://ualosses.org/en/statistics/' }
     };
     if (equip) doc.equip = equip;
+    if (equipUa) doc.equipUa = equipUa;
     // щоденний прогін без нових цифр не має плодити коміти: показуємо час,
     // коли дані справді змінилися, а не час останньої перевірки
-    if (prev.ru && prev.ua && JSON.stringify([prev.ru, prev.ua, prev.equip])
-        === JSON.stringify([doc.ru, doc.ua, doc.equip])) {
+    if (prev.ru && prev.ua && JSON.stringify([prev.ru, prev.ua, prev.equip, prev.equipUa])
+        === JSON.stringify([doc.ru, doc.ua, doc.equip, doc.equipUa])) {
         doc.updatedAt = prev.updatedAt || doc.updatedAt;
     }
     if (JSON.stringify(doc) === JSON.stringify(prev)) {

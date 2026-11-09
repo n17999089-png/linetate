@@ -233,6 +233,17 @@
                         m[(i << 1) + 1] = mercY(coords[i][1]);
                     }
                     f._mx = m;
+                    // меркаторська рамка: під нахилом екранну рамку лінії
+                    // рахуємо за 4 кутами, не проєктуючи тисячі вершин
+                    let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity;
+                    for (let i = 0; i < m.length; i += 2) {
+                        const u = m[i], v = m[i + 1];
+                        if (u < u0) u0 = u;
+                        if (u > u1) u1 = u;
+                        if (v < v0) v0 = v;
+                        if (v > v1) v1 = v;
+                    }
+                    f._mbb = [u0, v0, u1, v1];
                     if (thin) f._thin = true;
                     return f;
                 };
@@ -249,6 +260,11 @@
         // лежали під DOM-полотном blend, тому під окупованою територією лінія
         // кордону зникала — на карті це виглядало як «дірки» в кордоні
         let bHost = null, bCv = null, bCtx = null, bDirty = true;
+        // DEM-тайли під нахилом приходять пачкою після зупинки камери. поки
+        // вони течуть, точна проєкція бере висоти з неповного набору тайлів,
+        // і контур стрибає кілька разів підряд. тому точний прохід — лише
+        // після 140 мс затишшя, а під час підгрузки ведемо гомографією
+        let bDemBusy = false, bQuietT = 0;
 
         function mercX(lon) { return (lon + 180) / 360; }
         // та сама формула, що в MapLibre: y = (1 - ln(tan(π/4 + φ/2)) / π) / 2
@@ -377,6 +393,30 @@
             }
         }
 
+        // рамка всієї лінії на екрані за гомографією: якщо всі кути merc-
+        // рамки вийшли за один край кадру, лінію не проєктуємо взагалі.
+        // під нахилом getBounds() розтягується до горизонту, тож без цього
+        // відсікання в кадр потрапляли лінії за десятки кілометрів
+        function boxOffscreen(mbb, H, sw, sh) {
+            if (!mbb || !H) return false;
+            const a = H.a, b = H.b, c = H.c, d = H.d, e = H.e, f = H.f, g = H.g, h = H.h;
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (let i = 0; i < 4; i++) {
+                const u = i & 1 ? mbb[2] : mbb[0];
+                const v = i & 2 ? mbb[3] : mbb[1];
+                const w = g * u + h * v + 1;
+                if (w < 1e-6) return false;
+                const x = (a * u + b * v + c) / w, y = (d * u + e * v + f) / w;
+                if (!isFinite(x) || !isFinite(y)) return false;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+            const M = FRAME_M + 120;
+            return maxX < -M || minX > sw + M || maxY < -M || minY > sh + M;
+        }
+
         // під нахилом на близькому зумі map.project тягне DEM на кожну
         // вершину (~7 мкс), тож шлях будується за адаптивними опорними
         // точками: середина ділянки проєктується точно, і якщо лінійна
@@ -472,7 +512,16 @@
             const sw = srcCv.clientWidth || srcCv.width || 1280;
             const sh = srcCv.clientHeight || srcCv.height || 800;
             const flatP = pitched ? null : flatProjector();
-            const homog = pitched && zoom < 8.2 ? fitHomography(sw, sh) : null;
+            // під нахилом гомографія замінює по-вершинний map.project під час
+            // руху камери: перспектива плоского Меркатора дробово-лінійна,
+            // тож картинка та сама, а DEM-поправка (≤ пікселя на цих зумах)
+            // повертається точним проходом на moveend
+            const moving = (() => {
+                try { return !!(map.isMoving() || map.isZooming() || map.isRotating() || map.isPitching()); }
+                catch (e) { return false; }
+            })();
+            const homog = pitched ? fitHomography(sw, sh) : null;
+            const fastPitch = pitched && homog && (moving || bDemBusy || zoom < 8.2);
             const proj = pitched ? ((lon, lat) => map.project([lon, lat])) : null;
             const pen = makePen(ctx, sw, sh);
             ctx.setTransform(scale, 0, 0, scale, 0, 0);
@@ -501,13 +550,17 @@
                         if (!!f._thin !== thin) return;
                         const bb = f._bb;
                         if (bb && (bb[2] < vw || bb[0] > ve || bb[3] < vs || bb[1] > vn)) return;
+                        // під нахилом рамка getBounds() сягає горизонту: лінії за
+                        // десятки кілометрів проходили bbox-тест і проєктувалися
+                        // по-вершинно. екранна рамка за mercator-кутами відсікає їх
+                        if (pitched && boxOffscreen(f._mbb, homog, sw, sh)) return;
                         const pts = f.geometry.coordinates;
                         st.feats++;
                         st.pts += pts.length;
                         ctx.beginPath();
                         pen.cut();
                         if (pitched) {
-                            if (homog && f._mx) paintHomogPath(f._mx, homog, pen);
+                            if (fastPitch) paintHomogPath(f._mx, homog, pen);
                             else paintPitchedPath(pts, proj, st, pen, sw, sh);
                         } else if (flatP && f._mx) {
                             paintFlatPath(f._mx, flatP, pen);
@@ -559,11 +612,18 @@
             map.on('resize', () => { bDirty = true; });
             // DEM-тайл під нахилом зсуває точку по екрану: кордон, намальований
             // до його завантаження, висів на пласкому профілі, поки камера
-            // не рухалась. мапа при цьому render не шле, бо камера стоїть
+            // не рухалась. мапа при цьому render не шле, бо камера стоїть.
+            // пачка тайлів дає один перемальов на затишші, а не стрибок на кожен
             map.on('sourcedata', e => {
                 if (!e.tile || e.sourceId !== 'lt-dem' || !map.terrain) return;
                 if (e.tile.state !== 'loaded') return;
-                bDirty = true;
+                bDemBusy = true;
+                clearTimeout(bQuietT);
+                bQuietT = setTimeout(() => {
+                    bDemBusy = false;
+                    bDirty = true;
+                    try { map.triggerRepaint(); } catch (err) { }
+                }, 140);
             });
             // render приходить після кадру мапи: кордони лягають на той самий
             // ракурс, що й підкладка, і не «відʼїжджають» на жесті
@@ -572,7 +632,7 @@
                 bDirty = false;
                 paintBorders();
             });
-            map.on('remove', () => { if (bHost) bHost.remove(); bHost = null; });
+            map.on('remove', () => { clearTimeout(bQuietT); if (bHost) bHost.remove(); bHost = null; });
         }
 
         const syncRegionLang = () => {

@@ -175,7 +175,7 @@
             'object.hint': 'Клацніть карту, щоб поставити точку. Точки можна перетягувати; вони зберігаються разом із датою.',
             'map.regions': 'Області', 'map.volume': 'Об’єм шару', 'map.height': 'Висота',
             'map.overlays': 'ШАРИ КАРТИ', 'map.hint': 'Пунктирні межі областей малюються окремим шаром поверх підкладки й не потрапляють у дані карти.',
-            'viewer.menu': 'Шари', 'viewer.labels': 'Підписи', 'viewer.labelsHint': 'Увімкніть підписи й тягніть їх просто по карті. ◎ повертає підпис у центр шару.',
+            'viewer.menu': 'Шари', 'viewer.labelsHint': 'Підписи тягніть просто по карті. ◎ повертає підпис у центр шару.',
             'viewer.center': 'Підпис у центр шару', 'viewer.advance': 'Просування', 'viewer.advanceHint': 'Підсвітити зміни проти сусідньої дати',
             'viewer.relief': 'Рельєф', 'viewer.reliefHint': 'У 3D керує горами обʼємної карти, у площині — тініюванням',
             'viewer.places': 'НП', 'viewer.placesHint': 'Показувати назви населених пунктів',
@@ -251,7 +251,9 @@
             'stats.eqTypes': 'ВТРАТИ ЗА ТИПАМИ', 'stats.eqTypesSub': 'підтверджені одиниці',
             'stats.eqArtyChart': 'БРОНЯ Й АРТИЛЕРІЯ · 30 ДНІВ', 'stats.eqUavChart': 'УДАРНІ БПЛА · 30 ДНІВ',
             'stats.eqDaily': 'добові втрати', 'stats.eqNote': 'рахуємо лише техніку, підтверджену фото чи відео, тому цифри нижчі за зведення Генштабу; підтверджені імена — вище',
-            'stats.eqSrcLink': 'Джерело: Oryx · Attack On Europe',
+            'stats.eqSrcLink': 'Джерело: Oryx · Attack On Europe', 'stats.eqSrcLinkUa': 'Джерело: Oryx · Ukrainian Equipment Losses',
+            'stats.eqTitleUa': 'ВТРАТИ ТЕХНІКИ ЗСУ',
+            'stats.eqNoteUa': 'рахуємо лише техніку, підтверджену фото чи відео: Oryx веде окремий список втрат української сторони',
             'boot.map': 'БАЗА КАРТИ', 'boot.data': 'ДАНІ ФРОНТУ', 'boot.warm': 'ПІДГОТУВАННЯ ГЕОМЕТРІЇ', 'boot.render': 'ЗОНІ ТА ЛІНІЇ',
             'boot.stage.map': 'КАРТА', 'boot.stage.data': 'ДАНІ', 'boot.stage.warm': 'ГЕОМЕТРІЯ', 'boot.stage.render': 'ІНТЕРФЕЙС',
             'tools.rulerHint': 'Лінійка: кліки по точках, клік по першій точці або подвійний клік — завершити', 'tools.penHint': 'Олівець: малювати лінію від руки',
@@ -294,6 +296,8 @@
             'admin.mergeEmpty': 'У ЦЬОМУ ШАРІ НЕМАЄ ГЕОМЕТРІЇ',
             'admin.merged': 'ШАРИ ОБ’ЄДНАНО → {name}',
             'admin.up': 'Вище', 'admin.down': 'Нижче', 'admin.visibility': 'Видимість', 'admin.delete': 'Видалити',
+            'admin.layerAll': 'Шар на всі дати', 'admin.layerAllHint': 'Скопіювати шар «{name}» на кожну збережену дату',
+            'admin.copyAllNone': 'ІНШИХ ДАТ ЩЕ НЕМАЄ',
             'style.pick': 'ВИБЕРІТЬ ШАР У СПИСКУ', 'style.name': 'Позивний', 'style.fill': 'Заливка', 'style.stroke': 'Контур',
             'style.alpha': 'Прозорість', 'style.bw': 'Товщина', 'style.mask': 'Маски', 'style.none': 'НЕМАЄ',
             'style.maskHint': 'Можна вибрати кілька масок: шар обрізається об’єднанням їхніх контурів. Працює і для зон, і для стрілок.',
@@ -381,6 +385,7 @@
             'toast.geomCleared': 'ГЕОМЕТРІЮ «{name}» ОЧИЩЕНО', 'toast.geomEmpty': 'ШАР УЖЕ ПОРОЖНІЙ',
             'toast.noImported': 'НЕМАЄ ІМПОРТОВАНИХ ШАРІВ', 'toast.importedDeleted': 'ВИДАЛЕНО ІМПОРТОВАНИХ: {n}',
             'toast.copied': 'СКОПІЙОВАНО НА {date}', 'toast.mapDeleted': 'КАРТУ ВИДАЛЕНО', 'toast.allDeleted': 'УСІ КАРТИ ВИДАЛЕНО',
+            'toast.copiedAll': 'ШАР «{name}» СКОПІЙОВАНО НА {n} ДАТ',
             'toast.needTwo': 'ПОТРІБНО МІНІМУМ ДВІ ДАТИ', 'toast.imported': 'ЗАВАНТАЖЕНО ДАТ: {n}',
             'toast.badFile': 'НЕВІРНИЙ ФАЙЛ', 'toast.geoImported': 'ГЕОДЖЕЙСОН: {n} ОБЛ.{skipped}',
             'toast.geoSkipped': ' · ПРОПУЩЕНО: {n}', 'toast.exported': 'ФАЙЛ ЗБЕРЕЖЕНО',
@@ -389,6 +394,7 @@
             'toast.advanceGain': 'ПРОСУВАННЯ +{n} КМ2', 'toast.advanceLoss': 'ВІДХІД −{n} КМ2',
             'toast.advanceSame': 'ФРОНТ БЕЗ ЗМІН',
             'confirm.replaceDate': 'За {date} вже є дані. Замінити їх копією поточної карти?',
+            'confirm.copyLayerAll': 'Скопіювати шар «{name}» на всі дати ({n})? На датах, де цей шар уже є, його буде замінено; решта шарів лишиться як була.',
             'confirm.deleteMap': 'Видалити карту за {date} повністю?',
             'confirm.deleteLayer': 'Видалити шар «{name}»?',
             'confirm.delImported': 'Видалити всі імпортовані шари ({n})?',
@@ -423,7 +429,7 @@
             'object.hint': 'Click the map to place a point. Drag points to move them; they are saved with the date.',
             'map.regions': 'Regions', 'map.volume': 'Layer volume', 'map.height': 'Height',
             'map.overlays': 'MAP LAYERS', 'map.hint': 'Dashed region lines are drawn as a separate layer above the basemap and are never written into map data.',
-            'viewer.menu': 'Layers', 'viewer.labels': 'Labels', 'viewer.labelsHint': 'Turn labels on and drag them right on the map. ◎ snaps a label back to the layer centre.',
+            'viewer.menu': 'Layers', 'viewer.labelsHint': 'Drag labels right on the map. ◎ snaps a label back to the layer centre.',
             'viewer.center': 'Label to layer centre', 'viewer.advance': 'Advance', 'viewer.advanceHint': 'Highlight changes against the neighbouring date',
             'viewer.relief': 'Relief', 'viewer.reliefHint': 'Controls 3D hills on the volume map and shading on the flat map',
             'viewer.places': 'Places', 'viewer.placesHint': 'Show settlement names',
@@ -499,7 +505,9 @@
             'stats.eqTypes': 'LOSSES BY TYPE', 'stats.eqTypesSub': 'confirmed units',
             'stats.eqArtyChart': 'ARMOUR & ARTILLERY · 30 DAYS', 'stats.eqUavChart': 'COMBAT UAVs · 30 DAYS',
             'stats.eqDaily': 'daily losses', 'stats.eqNote': 'only photo- or video-confirmed equipment is counted, so the numbers stay below General Staff claims; named confirmed deaths are above',
-            'stats.eqSrcLink': 'Source: Oryx · Attack On Europe',
+            'stats.eqSrcLink': 'Source: Oryx · Attack On Europe', 'stats.eqSrcLinkUa': 'Source: Oryx · Ukrainian Equipment Losses',
+            'stats.eqTitleUa': 'UKRAINIAN EQUIPMENT LOSSES',
+            'stats.eqNoteUa': 'only photo- or video-confirmed equipment is counted: Oryx keeps a separate list for the Ukrainian side',
             'boot.map': 'BASE MAP', 'boot.data': 'FRONTLINE DATA', 'boot.warm': 'PREPARING GEOMETRY', 'boot.render': 'ZONES AND LINES',
             'boot.stage.map': 'MAP', 'boot.stage.data': 'DATA', 'boot.stage.warm': 'GEOMETRY', 'boot.stage.render': 'INTERFACE',
             'tools.rulerHint': 'Ruler: click points, click the first point or double-click to finish', 'tools.penHint': 'Pen: draw a line by hand',
@@ -542,6 +550,8 @@
             'admin.mergeEmpty': 'THIS LAYER HAS NO GEOMETRY',
             'admin.merged': 'LAYERS MERGED → {name}',
             'admin.up': 'Up', 'admin.down': 'Down', 'admin.visibility': 'Visibility', 'admin.delete': 'Delete',
+            'admin.layerAll': 'Layer to all dates', 'admin.layerAllHint': 'Copy the “{name}” layer to every saved date',
+            'admin.copyAllNone': 'NO OTHER DATES YET',
             'style.pick': 'SELECT A LAYER IN THE LIST', 'style.name': 'Callsign', 'style.fill': 'Fill', 'style.stroke': 'Outline',
             'style.alpha': 'Opacity', 'style.bw': 'Width', 'style.mask': 'Masks', 'style.none': 'NONE',
             'style.maskHint': 'Pick several masks: the layer is clipped to the union of their outlines. Works for zones and arrows.',
@@ -629,6 +639,7 @@
             'toast.geomCleared': 'GEOMETRY OF «{name}» CLEARED', 'toast.geomEmpty': 'LAYER IS ALREADY EMPTY',
             'toast.noImported': 'NO IMPORTED LAYERS', 'toast.importedDeleted': 'IMPORTED LAYERS DELETED: {n}',
             'toast.copied': 'COPIED TO {date}', 'toast.mapDeleted': 'MAP DELETED', 'toast.allDeleted': 'ALL MAPS DELETED',
+            'toast.copiedAll': 'LAYER «{name}» COPIED TO {n} DATES',
             'toast.needTwo': 'TWO DATES REQUIRED', 'toast.imported': 'DATES LOADED: {n}',
             'toast.badFile': 'INVALID FILE', 'toast.geoImported': 'GEOJSON: {n} AREAS.{skipped}',
             'toast.geoSkipped': ' · SKIPPED: {n}', 'toast.exported': 'FILE SAVED',
@@ -637,6 +648,7 @@
             'toast.advanceGain': 'ADVANCE +{n} KM2', 'toast.advanceLoss': 'WITHDRAWAL −{n} KM2',
             'toast.advanceSame': 'FRONT UNCHANGED',
             'confirm.replaceDate': '{date} already has data. Replace it with a copy of the current map?',
+            'confirm.copyLayerAll': 'Copy the «{name}» layer to all dates ({n})? On dates that already have this layer it will be replaced; every other layer stays untouched.',
             'confirm.deleteMap': 'Delete the map for {date} completely?',
             'confirm.deleteLayer': 'Delete layer «{name}»?',
             'confirm.delImported': 'Delete all imported layers ({n})?',
@@ -671,7 +683,7 @@
             'object.hint': 'Щёлкните карту, чтобы поставить точку. Точки можно перетаскивать; они сохраняются вместе с датой.',
             'map.regions': 'Области', 'map.volume': 'Объём слоя', 'map.height': 'Высота',
             'map.overlays': 'СЛОИ КАРТЫ', 'map.hint': 'Пунктирные границы областей рисуются отдельным слоем поверх подложки и не попадают в данные карты.',
-            'viewer.menu': 'Слои', 'viewer.labels': 'Подписи', 'viewer.labelsHint': 'Включите подписи и тяните их прямо по карте. ◎ возвращает подпись в центр слоя.',
+            'viewer.menu': 'Слои', 'viewer.labelsHint': 'Подписи тяните прямо по карте. ◎ возвращает подпись в центр слоя.',
             'viewer.center': 'Подпись в центр слоя', 'viewer.advance': 'Продвижение', 'viewer.advanceHint': 'Подсветить изменения против соседней даты',
             'viewer.relief': 'Рельеф', 'viewer.reliefHint': 'В 3D управляет горами объёмной карты, в плоскости — затенением',
             'viewer.places': 'НП', 'viewer.placesHint': 'Показывать названия населённых пунктов',
@@ -747,7 +759,9 @@
             'stats.eqTypes': 'ПОТЕРИ ПО ТИПАМ', 'stats.eqTypesSub': 'подтверждённые единицы',
             'stats.eqArtyChart': 'БРОНЯ И АРТИЛЛЕРИЯ · 30 ДНЕЙ', 'stats.eqUavChart': 'УДАРНЫЕ БПЛА · 30 ДНЕЙ',
             'stats.eqDaily': 'суточные потери', 'stats.eqNote': 'считаем только технику, подтверждённую фото или видео, поэтому цифры ниже сводок Генштаба; подтверждённые имена — выше',
-            'stats.eqSrcLink': 'Источник: Oryx · Attack On Europe',
+            'stats.eqSrcLink': 'Источник: Oryx · Attack On Europe', 'stats.eqSrcLinkUa': 'Источник: Oryx · Ukrainian Equipment Losses',
+            'stats.eqTitleUa': 'ПОТЕРИ ТЕХНИКИ ЗСУ',
+            'stats.eqNoteUa': 'считаем только технику, подтверждённую фото или видео: Oryx ведёт отдельный список потерь украинской стороны',
             'boot.map': 'БАЗА КАРТЫ', 'boot.data': 'ДАННЫЕ ФРОНТА', 'boot.warm': 'ПОДГОТОВКА ГЕОМЕТРИИ', 'boot.render': 'ЗОНЫ И ЛИНИИ',
             'boot.stage.map': 'КАРТА', 'boot.stage.data': 'ДАННЫЕ', 'boot.stage.warm': 'ГЕОМЕТРИЯ', 'boot.stage.render': 'ИНТЕРФЕЙС',
             'tools.rulerHint': 'Линейка: клики по точкам, клик по первой точке или двойной клик — завершить', 'tools.penHint': 'Карандаш: рисовать линию от руки',
@@ -791,6 +805,8 @@
             'admin.mergeEmpty': 'В ЭТОМ СЛОЕ НЕТ ГЕОМЕТРИИ',
             'admin.merged': 'СЛОИ ОБЪЕДИНЕНЫ → {name}',
             'admin.up': 'Выше', 'admin.down': 'Ниже', 'admin.visibility': 'Видимость', 'admin.delete': 'Удалить',
+            'admin.layerAll': 'Слой на все даты', 'admin.layerAllHint': 'Скопировать слой «{name}» на каждую сохранённую дату',
+            'admin.copyAllNone': 'ДРУГИХ ДАТ ЕЩЁ НЕТ',
             'style.pick': 'ВЫБЕРИТЕ СЛОЙ В СПИСКЕ', 'style.name': 'Позывной', 'style.fill': 'Заливка', 'style.stroke': 'Контур',
             'style.alpha': 'Прозрачность', 'style.bw': 'Толщина', 'style.mask': 'Маски', 'style.none': 'НЕТ',
             'style.maskHint': 'Можно выбрать несколько масок: слой обрезается объединением их контуров. Работает и для зон, и для стрелок.',
@@ -878,6 +894,7 @@
             'toast.geomCleared': 'ГЕОМЕТРИЯ «{name}» ОЧИЩЕНА', 'toast.geomEmpty': 'СЛОЙ УЖЕ ПУСТ',
             'toast.noImported': 'НЕТ ИМПОРТИРОВАННЫХ СЛОЁВ', 'toast.importedDeleted': 'УДАЛЕНО ИМПОРТИРОВАННЫХ: {n}',
             'toast.copied': 'СКОПИРОВАНО НА {date}', 'toast.mapDeleted': 'КАРТА УДАЛЕНА', 'toast.allDeleted': 'ВСЕ КАРТЫ УДАЛЕНЫ',
+            'toast.copiedAll': 'СЛОЙ «{name}» СКОПИРОВАН НА {n} ДАТ',
             'toast.needTwo': 'НУЖНО МИНИМУМ ДВЕ ДАТЫ', 'toast.imported': 'ЗАГРУЖЕНО ДАТ: {n}',
             'toast.badFile': 'НЕВЕРНЫЙ ФАЙЛ', 'toast.geoImported': 'ГЕОДЖЕЙСОН: {n} ОБЛ.{skipped}',
             'toast.geoSkipped': ' · ПРОПУЩЕНО: {n}', 'toast.exported': 'ФАЙЛ СОХРАНЁН',
@@ -886,6 +903,7 @@
             'toast.advanceGain': 'ПРОДВИЖЕНИЕ +{n} КМ2', 'toast.advanceLoss': 'ОТХОД −{n} КМ2',
             'toast.advanceSame': 'ФРОНТ БЕЗ ИЗМЕНЕНИЙ',
             'confirm.replaceDate': 'За {date} уже есть данные. Заменить их копией текущей карты?',
+            'confirm.copyLayerAll': 'Скопировать слой «{name}» на все даты ({n})? На датах, где этот слой уже есть, он будет заменён; остальные слои останутся как были.',
             'confirm.deleteMap': 'Удалить карту за {date} полностью?',
             'confirm.deleteLayer': 'Удалить слой «{name}»?',
             'confirm.delImported': 'Удалить все импортированные слои ({n})?',
@@ -2537,7 +2555,11 @@
              <stop offset="1" stop-color="#000" stop-opacity=".26"/>`;
     const FLAG_SVG = {
         uk: flagSvg('Uk',
-            `<rect width="60" height="20" fill="#0057b7"/><rect y="20" width="60" height="20" fill="#ffd700"/>
+            `<defs><linearGradient id="ltfUkBands" x1="0" y1="0" x2="0" y2="1">
+                 <stop offset="0" stop-color="#0057b7"/><stop offset=".46" stop-color="#0057b7"/>
+                 <stop offset=".54" stop-color="#ffd700"/><stop offset="1" stop-color="#ffd700"/>
+             </linearGradient></defs>
+             <rect width="60" height="40" fill="url(#ltfUkBands)"/>
              <path d="M21 0h.5v40H21z" fill="#000" opacity=".12"/><path d="M42 0h-1v40h1z" fill="#000" opacity=".1"/>`,
             `<stop offset="0" stop-color="#000" stop-opacity=".32"/>
              <stop offset=".1" stop-color="#000" stop-opacity=".06"/>
@@ -2547,8 +2569,15 @@
              <stop offset=".75" stop-color="#000" stop-opacity=".14"/>
              <stop offset=".9" stop-color="#fff" stop-opacity=".1"/>
              <stop offset="1" stop-color="#000" stop-opacity=".28"/>`),
+        // смуги зливаються м'яким градієнтом: різкі шви між шматками
+        // полотна на хвилі читались як темні лінії, а не як тканина
         ru: flagSvg('Ru',
-            `<rect width="60" height="13.34" fill="#ffffff"/><rect y="13.34" width="60" height="13.33" fill="#0039a6"/><rect y="26.67" width="60" height="13.33" fill="#d52b1e"/>
+            `<defs><linearGradient id="ltfRuBands" x1="0" y1="0" x2="0" y2="1">
+                 <stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#ffffff"/>
+                 <stop offset=".38" stop-color="#0039a6"/><stop offset=".62" stop-color="#0039a6"/>
+                 <stop offset=".7" stop-color="#d52b1e"/><stop offset="1" stop-color="#d52b1e"/>
+             </linearGradient></defs>
+             <rect width="60" height="40" fill="url(#ltfRuBands)"/>
              <path d="M20 0h.5v40H20z" fill="#000" opacity=".1"/><path d="M43 0h-1v40h1z" fill="#000" opacity=".08"/>`,
             `<stop offset="0" stop-color="#000" stop-opacity=".26"/>
              <stop offset=".11" stop-color="#000" stop-opacity=".05"/>
@@ -2889,14 +2918,135 @@
             return { x: w, y: h, dpr: dpr };
         }
 
+        // ширина слова рахується сумою ширин символів: у Handjet/Tektur метрики
+        // цілочисельні й адитивні (перевірено на 4000 назв: «КИЇВ» = 7+8+4+7),
+        // тож кернінг не додає нічого. measureText цілого слова — це шейпінг
+        // рядка, і на телефоні сотні нових назв з'їдали до чверті секунди кадру;
+        // таблиця символів міряється один раз, далі — лише додавання
+        const charW = [];
         function measure(text, rank) {
             const key = rank + '|' + text;
-            if (widths.has(key)) return widths.get(key);
-            ctx.font = placeFont(rank);
-            try { ctx.letterSpacing = '0px'; } catch (e) { }
-            const w = Math.ceil(ctx.measureText(text).width) + Math.ceil(text.length * PLACE_TRACK[rank]) + 6;
+            const hit = widths.get(key);
+            if (hit !== undefined) return hit;
+            let table = charW[rank];
+            if (!table) {
+                table = charW[rank] = new Map();
+                ctx.font = placeFont(rank);
+                try { ctx.letterSpacing = '0px'; } catch (e) { }
+            }
+            let sum = 0;
+            for (let i = 0; i < text.length; i++) {
+                const ch = text[i];
+                let cw = table.get(ch);
+                if (cw === undefined) {
+                    ctx.font = placeFont(rank);
+                    try { ctx.letterSpacing = '0px'; } catch (e) { }
+                    cw = ctx.measureText(ch).width;
+                    table.set(ch, cw);
+                }
+                sum += cw;
+            }
+            const w = Math.ceil(sum) + Math.ceil(text.length * PLACE_TRACK[rank]) + 6;
             widths.set(key, w);
             return w;
+        }
+
+        // Перший measureText гліфа на новому кеглі — це шейпінг і растеризація:
+        // у Chrome під 4× сповільненням CPU 3.5–7.7 мс на символ, тобто 60–70
+        // нових знаків блокували кадр на 180–740 мс (вимір 390×844) і це саме
+        // те «лаг під час підгрузки НП». Тому алфавіт українських назв (кирилиця
+        // + латиниця en + цифри + пунктуація) міряємо заздалегідь, дрібними
+        // порціями в простої. База LT_PLACES глобальна — 39k назв і 661 знак,
+        // тому перебирати її заради алфавіту марно; рідкісні іноземні знаки
+        // міряються ліниво, як і раніше. Під час жесту прогрів спиняємо:
+        // кадри належать мапі. Після підміни шрифта таблиці стерто —
+        // прогрів перезапускається з dropFontCaches.
+        const WARM_RANKS = [4, 3, 2, 1, 0];
+        const WARM_ALPHABET =
+            'АБВГҐДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЬЮЯЁЪЫЭ' +
+            'ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
+            '0123456789' +
+            " -'’ʼ.()№/";
+        const warmQueue = [];
+        {
+            const seen = new Set();
+            const up = WARM_ALPHABET.toUpperCase();
+            for (let i = 0; i < up.length; i++) {
+                if (seen.has(up[i])) continue;
+                seen.add(up[i]);
+                warmQueue.push(up[i]);
+            }
+        }
+        let warmT = 0, warmRank = 0, warmQi = 0, warmDone = true, warmArmed = false;
+
+        function warmSchedule(delay) {
+            if (warmT || warmDone || hidden) return;
+            warmT = setTimeout(() => { warmT = 0; warmStep(); }, delay);
+        }
+
+        function warmStep() {
+            warmT = 0;
+            if (hidden || warmDone) return;
+            if (map.isMoving && (map.isMoving() || map.isEasing())) { warmSchedule(180); return; }
+            // під завісою мапа ще не потрібна — можна брати ширші порції,
+            // після неї прогрів поступається кадрам майже повністю
+            const booting = !!document.getElementById('boot');
+            const budget = booting ? 12 : (docMobile() ? 3 : 4);
+            const gap = booting ? 8 : (docMobile() ? 24 : 16);
+            warmSlice(performance.now() + budget);
+            if (warmRank >= WARM_RANKS.length) { warmDone = true; return; }
+            warmSchedule(gap);
+        }
+
+        // порція мірки до дедлайну; кеглі йдуть по одному, щоб перший же
+        // завершений ранг уже був готовий до найближчого зуму
+        function warmSlice(deadline) {
+            while (warmRank < WARM_RANKS.length) {
+                const rank = WARM_RANKS[warmRank];
+                let table = charW[rank];
+                if (!table) table = charW[rank] = new Map();
+                ctx.font = placeFont(rank);
+                try { ctx.letterSpacing = '0px'; } catch (e) { }
+                while (warmQi < warmQueue.length) {
+                    if (performance.now() >= deadline) return;
+                    const ch = warmQueue[warmQi++];
+                    if (table.has(ch)) continue;
+                    table.set(ch, ctx.measureText(ch).width);
+                }
+                warmRank++;
+                warmQi = 0;
+            }
+        }
+
+        function warmReset(delay, fromRank) {
+            if (warmT) clearTimeout(warmT);
+            warmT = 0;
+            warmDone = false;
+            warmRank = fromRank || 0;
+            warmQi = 0;
+            warmSchedule(delay);
+        }
+
+        // стартуємо, коли справжня гарнітура вже застосована: fallback-метрики
+        // все одно будуть стерті на fonts.ready, і синхронна порція під завісою
+        // пропала б удвічі. під завісою порція широка — ця робота нікому не
+        // видна, зате найважчий кегль гарантовано готовий до першого жесту
+        function armWarm(delay) {
+            if (warmArmed) return;
+            warmArmed = true;
+            if (document.getElementById('boot')) {
+                warmSlice(performance.now() + 3000);
+                if (warmRank >= WARM_RANKS.length) warmDone = true;
+                else warmReset(200, warmRank);
+            } else {
+                warmReset(delay == null ? 600 : delay);
+            }
+        }
+
+        if (window.__ltWarmDebug !== undefined) {
+            window.__ltWarm = () => ({
+                done: warmDone, rank: warmRank, qi: warmQi, n: warmQueue.length
+            });
         }
 
         // індекс: групи за мінімальним зумом, усередині відсортовано за широтою —
@@ -2932,9 +3082,43 @@
         }
 
         // набір назв збираємо у один і той самий масив, а компаратор тримаємо
-        // сталим: на кожну перебудову інакше народжується тисячі рядків
+        // сталим: на кожну перебудову інакше народжується тисячі рядків.
+        // сортуємо СИРІ записи бази (числа) за важливістю, а опис назви
+        // народжуємо лише для тих, хто справді піде в кадр
         const collectScratch = [];
-        const sortPlaces = (a, b) => (b.cap - a.cap) || (a.mz - b.mz) || (b.pop - a.pop) || (a.rank - b.rank);
+        const sortPlaces = (a, b) => ((b[5] === 1 ? 1 : 0) - (a[5] === 1 ? 1 : 0)) || (a[4] - b[4]) || ((b[6] || 0) - (a[6] || 0));
+
+        // опис назви рахуємо ОДИН раз на місто й тримаємо прямо на записи
+        // бази: на кожен зум це тисячі рядків, координат і порівнянь, які
+        // раніше народжувались заново і вбивали збір сміття
+        function materialize(e) {
+            let p = e._p;
+            if (p && p.lang === lang) return p;
+            const nm = lang === 'en' ? (e[1] || e[0]) : lang === 'ru' ? placeRu(e[0], e[2], e[3]) : e[0];
+            if (!nm) return null;
+            const mz = e[4];
+            const cap = e[5] === 1;
+            const pop = e[6] || 0;
+            const rank = mz <= 3 ? 0 : mz <= 5 ? 1 : mz <= 7 ? 2 : mz <= 9 ? 3 : 4;
+            const name = String(nm).toUpperCase();
+            const lng = e[2] / PLACE_SCALE, lat = e[3] / PLACE_SCALE;
+            return e._p = {
+                lang: lang,
+                name: name,
+                coord: [lng, lat],
+                lng: lng,
+                // меркатор рахуємо один раз на місто: це log-tan на
+                // кожну з тисячі назв у кожному кадрі перебудови
+                mx: mercX(lng),
+                my: mercY(lat),
+                rank: rank,
+                mz: mz,
+                cap: cap,
+                pop: pop,
+                kind: placeKind(rank, cap, pop),
+                key: name + '@' + e[2] + ',' + e[3]
+            };
+        }
 
         function collect() {
             try {
@@ -2960,11 +3144,10 @@
                 // відсіюються колізіями. велике місто з'явиться все одно,
                 // мале — коли наблизять
                 const maxMz = docMobile() ? zoom + 0.5 : zoom + 2;
+                // координати бази лежать у PLACE_SCALE: межі теж переводимо в
+                // ці числа один раз, щоб не ділити на кожному кандидаті
+                const westMs = Math.round(west * PLACE_SCALE), eastMs = Math.round(east * PLACE_SCALE);
                 const southMs = Math.round(south * PLACE_SCALE), northMs = Math.round(north * PLACE_SCALE);
-                const seen = new Set();
-                // опис назви рахуємо ОДИН раз на місто й тримаємо прямо на записи
-                // бази: на кожен зум це тисячі рядків, координат і порівнянь, які
-                // раніше народжувались заново і вбивали збір сміття
                 const out = collectScratch;
                 out.length = 0;
                 for (let g = 0; g < idx.groups.length; g++) {
@@ -2974,36 +3157,11 @@
                     for (let i = lowerLat(arr, southMs); i < arr.length; i++) {
                         const e = arr[i];
                         if (e[3] > northMs) break;
-                        let p = e._p;
-                        if (!p || p.lang !== lang) {
-                            const nm = lang === 'en' ? (e[1] || e[0]) : lang === 'ru' ? placeRu(e[0], e[2], e[3]) : e[0];
-                            if (!nm) continue;
-                            const rank = grp.mz <= 3 ? 0 : grp.mz <= 5 ? 1 : grp.mz <= 7 ? 2 : grp.mz <= 9 ? 3 : 4;
-                            const cap = e[5] === 1;
-                            const pop = e[6] || 0;
-                            const name = String(nm).toUpperCase();
-                            const lng = e[2] / PLACE_SCALE, lat = e[3] / PLACE_SCALE;
-                            p = e._p = {
-                                lang: lang,
-                                name: name,
-                                coord: [lng, lat],
-                                lng: lng,
-                                // меркатор рахуємо один раз на місто: це log-tan на
-                                // кожну з тисячі назв у кожному кадрі перебудови
-                                mx: mercX(lng),
-                                my: mercY(lat),
-                                rank: rank,
-                                mz: grp.mz,
-                                cap: cap,
-                                pop: pop,
-                                kind: placeKind(rank, cap, pop),
-                                key: name + '@' + e[2] + ',' + e[3]
-                            };
-                        }
-                        if (wrap ? (p.lng < west && p.lng > east) : (p.lng < west || p.lng > east)) continue;
-                        if (seen.has(p.key)) continue;
-                        seen.add(p.key);
-                        out.push(p);
+                        // довготу відсіюємо ДО створення опису: у смузі широти
+                        // на оглядовому зумі лежать тисячі сіл за межами екрана
+                        // по довготі, і саме їхні меркатори з рядками вішали кадр
+                        if (wrap ? (e[2] < westMs && e[2] > eastMs) : (e[2] < westMs || e[2] > eastMs)) continue;
+                        out.push(e);
                     }
                 }
                 out.sort(sortPlaces);
@@ -3058,12 +3216,14 @@
             k.shadowColor = cap ? 'rgba(255, 170, 40, .38)' : 'rgba(0, 0, 0, .62)';
             k.shadowBlur = (big ? 4.6 : 3.4) * (mob ? .85 : 1);
             k.shadowOffsetY = 1;
+            // товщина обводки — стара: тонший штрих губився на світлих зонах,
+            // і назви міст читались як незахищений текст
             k.strokeStyle = PLACE_INK;
-            k.lineWidth = big ? 3.2 : 2.4;
+            k.lineWidth = big ? 3.4 : 2.6;
             k.strokeText(name, 0, ty);
             k.restore();
             k.strokeStyle = PLACE_INK;
-            k.lineWidth = big ? 3.2 : 2.4;
+            k.lineWidth = big ? 3.4 : 2.6;
             k.strokeText(name, 0, ty);
             k.fillStyle = cap ? PLACE_CAP : PLACE_FILL[rank];
             k.fillText(name, 0, ty);
@@ -3179,14 +3339,17 @@
                 bakeRaf = 0;
                 const t0 = performance.now();
                 const budget = docMobile() ? 5 : 7;
+                // на телефоні гарантія «вісім за кадр» перекривала бюджет часу:
+                // вісім полотен із тінню — це понад 16 мс, і саме цей кадр
+                // читався як лаг під час підгрузки назв. тепер низ — чотири,
+                // решта доїдає наступні кадри
+                const floor = docMobile() ? 4 : 8;
                 let done = 0;
                 while (bakeAt < pending.length) {
                     const it = pending[bakeAt++];
                     if (!it.sp) it.sp = bakeSprite(it);
                     done++;
-                    // вісім за кадр гарантовано, далі — до витрати часу кадру.
-                    // інакше на швидкій машині назви прилітали б поштучно
-                    if (done >= 8 && (performance.now() - t0 > budget || done >= 120)) break;
+                    if (done >= floor && (performance.now() - t0 > budget || done >= 120)) break;
                 }
                 paint();
                 if (bakeAt < pending.length) kickBake();
@@ -3298,9 +3461,12 @@
             extraDots = [];
             pending = [];
             bakeAt = 0;
+            const tCollect = performance.now();
             const list = collect();
+            const msCollect = performance.now() - tCollect;
             const size = size0;
             const mob = docMobile();
+            const tScan = performance.now();
             // телефон тягне кадр із підписів: кожен — окремий drawImage, тому
             // стеля тут удвічі нижча за десктопну. решта міст лишається крапками
             const limit = mob
@@ -3364,9 +3530,14 @@
             };
             iconSc = iconScale(mob);
             const cand = [];
+            const seenNow = new Set();
             const n = Math.min(list.length, maxScan);
             for (let s = 0; s < n; s++) {
-                const it = list[s];
+                // опис народжуємо тільки тут, після відсіву за межами кадру:
+                // сирий запис дешевший за об'єкт із меркатором і ключем
+                const it = materialize(list[s]);
+                if (!it || seenNow.has(it.key)) continue;
+                seenNow.add(it.key);
                 let px, py;
                 if (fr) {
                     px = fr.px0 + it.mx * fr.ws;
@@ -3386,15 +3557,20 @@
             const shown = new Set();
             for (let i = 0; i < prevItems.length; i++) shown.add(prevItems[i].key);
             // друкуємо не більше кадру за раз: решта назв наздожене у наступних
-            // кадрах, а сам жест зуму залишається рівним
-            const bakeCap = mob ? 20 : 40;
+            // кадрах, а сам жест зуму залишається рівним. на телефоні перша
+            // партія менша — 8 полотен із тінню вже коштують помітного кадру
+            const bakeCap = mob ? 8 : 40;
             let bakes = 0;
+            let bakeMs = 0;
+            let measureMs = 0;
             let fresh = 0;
             for (let s = 0; s < cand.length; s++) {
                 const it = cand[s];
                 const px = it.px, py = it.py;
                 if (items.length >= limit) { if (it.dot) addDot(it, px, py); continue; }
+                const tm = performance.now();
                 const w = measure(it.name, it.rank);
+                measureMs += performance.now() - tm;
                 const h = PLACE_SIZE[it.rank] + 4;
                 const mk = it.dot ? dotRadius(it.rank, iconSc) : 0;
                 // ромб столиці стирчить над підписом — інакше він лягав би
@@ -3449,7 +3625,12 @@
                 item.an = an;
                 item.sp = peekSprite(item);
                 if (!item.sp) {
-                    if (bakes < bakeCap) { item.sp = bakeSprite(item); bakes++; }
+                    if (bakes < bakeCap) {
+                        const tb = performance.now();
+                        item.sp = bakeSprite(item);
+                        bakeMs += performance.now() - tb;
+                        bakes++;
+                    }
                     else pending.push(item);
                 }
                 items.push(item);
@@ -3486,7 +3667,8 @@
             // у продакшні такої глобальної змінної немає, тому рядок коштує один
             // пошук властивості
             if (window.__ltPlacesDebug) window.__ltPlacesDebug(items, extraDots, {
-                fading: fading.length, anim: anim.size, fresh: fresh, mobile: mob
+                fading: fading.length, anim: anim.size, fresh: fresh, mobile: mob,
+                ms: { collect: Math.round(msCollect), scan: Math.round(performance.now() - tScan), bake: Math.round(bakeMs), measure: Math.round(measureMs) }
             });
             paint();
         }
@@ -3588,6 +3770,7 @@
         // скидаємо все виміряне й надруковане й перебудовуємо набір наново
         function dropFontCaches() {
             widths.clear();
+            charW.length = 0;
             placeSprites.clear();
             spritePx = 0;
             lastSig = '';
@@ -3598,6 +3781,20 @@
                 dropFontCaches();
                 scheduleBuild(0);
             });
+        }
+        // мірка починається лише зі справжньою гарнітурою: скидання кешів на
+        // fonts.ready з'їло б усе, заміряне fallback-шрифтом. шрифт просимо
+        // явно — сам він з'явиться лише з першим strokeText
+        if (!document.fonts || !document.fonts.load) {
+            armWarm(docMobile() ? 900 : 700);
+        } else if (document.fonts.status === 'loaded') {
+            armWarm(docMobile() ? 900 : 700);
+        } else {
+            try {
+                document.fonts.load(placeFont(0)).then(() => armWarm(0), () => armWarm(0));
+            } catch (e) {
+                armWarm(docMobile() ? 900 : 700);
+            }
         }
 
         return {
@@ -3614,6 +3811,7 @@
                     try { paint(); } catch (e) { }
                 } else {
                     scheduleBuild(0);
+                    if (!warmDone) warmSchedule(300);
                 }
             },
             refresh() {
@@ -3635,6 +3833,8 @@
                 clearInterval(watchdog);
                 clearTimeout(timer);
                 clearTimeout(settleT);
+                clearTimeout(warmT);
+                warmDone = true;
                 if (bakeRaf) cancelAnimationFrame(bakeRaf);
                 if (animRaf) cancelAnimationFrame(animRaf);
                 if (cv.parentNode) cv.parentNode.removeChild(cv);
@@ -4444,7 +4644,7 @@
             ${cloth}
         </span>`;
     }
-    function statsFlag(flag) { return flagHtml(flag); }
+    function statsFlag(flag, extra) { return flagHtml(flag, extra); }
 
     function statsSide(side, flag, name, plus, minus, net) {
         const share = plus + minus > 0 ? Math.round(plus / (plus + minus) * 100) : 50;
@@ -4694,8 +4894,11 @@
         return `<svg class="lt-loss-svg lt-eq-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t('stats.eqUavChart'))}"><g class="grid">${grid}</g>${bars}${xs}</svg>`;
     }
 
-    function statsEquip(E) {
+    // flag: 'ru' — втрати РФ, 'uk' — втрати ЗСУ (той самий підрахунок Oryx,
+    // лише інший список; заголовок і джерело міняються разом із прапором)
+    function statsEquip(E, flag) {
         if (!E || !E.totals) return '';
+        const side = flag === 'uk' ? 'Ua' : '';
         const keys = eqKeys(E);
         const sum = keys.reduce((s, k) => s + E.totals[k], 0);
         const sm = E.summary || null;
@@ -4704,9 +4907,9 @@
         const keysA = ['tanks', 'armoured_fighting_vehicles', 'artillery_systems', 'mlrs', 'aa_warfare_systems'];
         const legendA = keysA.map(k => `<span class="eq-${({ tanks: 't', armoured_fighting_vehicles: 'a', artillery_systems: 'r', mlrs: 'm', aa_warfare_systems: 'd' })[k]}">${esc(t(EQ_META[k][0]))}</span>`).join('');
         const lastUav = days.length ? eqDay(E, days[days.length - 1], 'uav_systems') : 0;
-        return `<section class="lt-eq">
+        return `<section class="lt-eq${side ? ' lt-eq-' + side.toLowerCase() : ''}">
             <div class="lt-eq-head">
-                <div class="lt-loss-head"><span>${esc(t('stats.eqTitle'))}</span><em>${esc(t('stats.eqOwn'))}</em></div>
+                <div class="lt-loss-head"><span class="lt-eq-title">${statsFlag(flag || 'ru', 'lt-flag-chip')}<span>${esc(t('stats.eqTitle' + side))}</span></span><em>${esc(t('stats.eqOwn'))}</em></div>
                 <div class="lt-eq-cap">${esc(t('stats.eqSrc'))}${E.asOf ? ' · ' + esc(lossDate(E.asOf)) : ''}</div>
             </div>
             <div class="lt-eq-sum" data-anim="eq-sum">
@@ -4732,8 +4935,8 @@
                 <div class="lt-loss-head"><span>${esc(t('stats.eqUavChart'))}</span><em>${esc(t('stats.eqDaily'))} · ${lossNum(lastUav)}</em></div>
                 ${eqBarSVG(E, days, 'uav_systems')}
             </div>` : ''}
-            <div class="lt-loss-foot"><span>${esc(t('stats.eqNote'))}</span></div>
-            <div class="lt-loss-src"><a href="${esc(E.url || 'https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-equipment.html')}" target="_blank" rel="noopener">${esc(t('stats.eqSrcLink'))}</a></div>
+            <div class="lt-loss-foot"><span>${esc(t('stats.eqNote' + side))}</span></div>
+            <div class="lt-loss-src"><a href="${esc(E.url || 'https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-equipment.html')}" target="_blank" rel="noopener">${esc(t('stats.eqSrcLink' + side))}</a></div>
         </section>`;
     }
 
@@ -4887,7 +5090,8 @@
             ${lossCumSVG(ru, ua)}
             <div class="lt-loss-foot"><span>${esc(t('stats.lossCumNote', { n: lossNum(ua.killed) }))}</span></div>
         </div>
-        ${statsEquip(L.equip)}
+        ${statsEquip(L.equip, 'ru')}
+        ${statsEquip(L.equipUa, 'uk')}
         <div class="lt-loss-src">
             <a href="${esc(ru.url)}" target="_blank" rel="noopener">${esc(t('stats.lossSrcRu'))}</a>
             <a href="${esc(ua.url)}" target="_blank" rel="noopener">${esc(t('stats.lossSrcUa'))}</a>
@@ -5149,14 +5353,15 @@
             const items = g.items.map(it => {
                 const dir = it.dir ? `<i>${esc(t('news.dir' + it.dir))}</i>` : '';
                 const src = `<i>${esc(t('news.src' + NEWS_SRC_KEY[it.src]))}</i>`;
+                const flag = statsFlag(it.side === 'ukr' ? 'uk' : 'ru', 'lt-flag-chip');
                 return `<button type="button" class="lt-news-item ${it.side}" data-news-date="${g.date}" data-news-bbox="${it.bbox.join(',')}" title="${esc(t('stats.newsZone'))}">
-                    <span class="lt-news-dot" aria-hidden="true"></span>
+                    <span class="lt-news-flag" aria-hidden="true">${flag}</span>
                     <span class="lt-news-txt"><b>${esc(t('news.' + it.key, { place: it.name }))}</b><small>${dir}${src}</small></span>
                     <span class="lt-news-km">${esc(statsFmt(it.area))}<i>${esc(t('stats.km2'))}</i></span>
                 </button>`;
             }).join('');
             return `<div class="lt-news-day" data-anim="news-${g.date}">
-                <div class="lt-news-day-h"><b>${esc(newsDateLabel(g.date))}</b><span>${esc(newsTime(g.savedAt))}</span></div>
+                <div class="lt-news-day-h"><b>${esc(newsDateLabel(g.date))}</b><span class="lt-news-day-n">${g.items.length}</span><span>${esc(newsTime(g.savedAt))}</span></div>
                 ${items}
             </div>`;
         }).join('');
@@ -5992,6 +6197,7 @@
         }
         const th = theme || map._ltBase || 'hybrid';
         s.reliefTheme = th;
+        gateReliefGestures(map);
         const col = reliefThemeColors(th);
         const p = reliefProfile();
         s.relief = p;
@@ -6097,6 +6303,37 @@
         // бо подія ще лежить у черзі, і terrain не вмикався б ніколи
         if (moving()) { map.on('moveend', go); return; }
         go();
+    }
+
+    // hillshade — найважче полотно в 3D: тіні перераховуються на кожен
+    // кадр руху нахиленої камери. замір q241 у телефонному профілі:
+    // 2.4 → 5.3 fps, коли шар прихований, і 10 fps без terrain. тому під
+    // час жесту тіні ховаємо, а на паузі повертаємо: висоти, зони й
+    // кордони залишаються на місці, тіні встигають за камерою на зупинці
+    function gateReliefGestures(map) {
+        if (map._ltReliefGate) return;
+        map._ltReliefGate = true;
+        let hidden = false;
+        const hide = () => {
+            if (!map._lt3d || hidden || !map.getLayer('lt-relief')) return;
+            try {
+                if (map.getLayoutProperty('lt-relief', 'visibility') === 'none') return;
+                map.setLayoutProperty('lt-relief', 'visibility', 'none');
+                hidden = true;
+            } catch (e) { }
+        };
+        const show = () => {
+            if (!hidden) return;
+            hidden = false;
+            if (!map.getLayer('lt-relief')) return;
+            try { map.setLayoutProperty('lt-relief', 'visibility', 'visible'); } catch (e) { }
+        };
+        map.on('movestart', hide);
+        map.on('zoomstart', hide);
+        map.on('rotatestart', hide);
+        map.on('pitchstart', hide);
+        map.on('moveend', show);
+        map.on('idle', show);
     }
 
     // перегляд починає кадри без гір: їх просить переглядач, щойно завіса впала.
@@ -8864,11 +9101,22 @@
         if (!raw) return { lines: { type: 'FeatureCollection', features: [] }, labels: { type: 'FeatureCollection', features: [] } };
         const names = {};
         (raw.p || []).forEach(p => { names[p[0]] = { 'name:uk': p[2], 'name:en': p[3], 'name:ru': REGION_RU[p[0]] || p[2] }; });
-        const lines = (raw.l || []).map((str, i) => ({
-            type: 'Feature',
-            properties: { iso: raw.p[i][0], c: raw.p[i][1], 'name:uk': raw.p[i][2], 'name:en': raw.p[i][3], 'name:ru': REGION_RU[raw.p[i][0]] || raw.p[i][2] },
-            geometry: { type: 'LineString', coordinates: decodePolyline(str) }
-        }));
+        // контур області може прийти кількома шматками: морські ділянки
+        // адмінмеж вирізано (scripts/clip-regions-sea.js), тож область,
+        // яку вони розривали, стала MultiLineString
+        const lines = [];
+        (raw.l || []).forEach((v, i) => {
+            const p = raw.p[i];
+            const segs = (Array.isArray(v) ? v : [v]).map(decodePolyline).filter(a => a.length > 1);
+            if (!segs.length) return;
+            lines.push({
+                type: 'Feature',
+                properties: { iso: p[0], c: p[1], 'name:uk': p[2], 'name:en': p[3], 'name:ru': REGION_RU[p[0]] || p[2] },
+                geometry: segs.length === 1
+                    ? { type: 'LineString', coordinates: segs[0] }
+                    : { type: 'MultiLineString', coordinates: segs }
+            });
+        });
         const labels = (raw.t || []).map(t => ({
             type: 'Feature',
             properties: Object.assign({ iso: t[2], c: t[3] }, names[t[2]] || {}),

@@ -169,7 +169,8 @@ function main() {
     const ua = [];
     const byCountry = { BLR: [], POL: [], RUS: [] };
     regions.p.forEach((row, i) => {
-        const pts = decodePolyline(regions.l[i]);
+        const v = regions.l[i];
+        const pts = (Array.isArray(v) ? v : [v]).flatMap(decodePolyline);
         if (row[1] === 'UKR') ua.push(...densify(pts, 0.04));
         else if (byCountry[row[1]]) byCountry[row[1]].push(...pts);
     });
@@ -221,6 +222,11 @@ function main() {
     // На оперативній карті це не кордон — лінія йшла б по воді поруч із
     // окупованим півостровом, тому такі точки відкидаємо.
     const SEA_LNG = 32.4, SEA_LAT = 46.15;
+    // Одеська затока: relation 60199 тягне морську базову лінію від гирла
+    // Дністра на південний схід (30.77–31.05 × 46.00–46.38). Це не кордон
+    // на суходолі, але за географією вона потрапляла в категорію «Молдова»
+    // і малювалася товстою слоновою лінією просто в морі біля Одеси.
+    const ODESA_SEA_LNG = 30.55, ODESA_SEA_LAT = 46.45;
     // хорда довша за 12 км — це вже не кордон, а зріз через воду/пустелю
     const LONG_KM = 12;
 
@@ -276,7 +282,8 @@ function main() {
             // гирла Кальміусу (там кордон виходить до моря біля 38.2°):
             // морські межі й берегові лінії — не державний кордон на суходолі
             const sea = (p[0] > SEA_LNG && p[1] < SEA_LAT)
-                || (p[1] < 47.05 && p[0] > 32.4 && p[0] < 38.2);
+                || (p[1] < 47.05 && p[0] > 32.4 && p[0] < 38.2)
+                || (p[0] > ODESA_SEA_LNG && p[1] < ODESA_SEA_LAT);
             const sw = p[0] <= SW_LNG && p[1] >= SW_LAT;
             let nearForeign = false;
             if (nearUa && !sw) {
@@ -306,7 +313,8 @@ function main() {
     const uaWays = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts/data/ua-border-ways.json'), 'utf8'));
 
     const isSea = p => (p[0] > SEA_LNG && p[1] < SEA_LAT)
-        || (p[1] < 47.05 && p[0] > 32.4 && p[0] < 38.2);
+        || (p[1] < 47.05 && p[0] > 32.4 && p[0] < 38.2)
+        || (p[0] > ODESA_SEA_LNG && p[1] < ODESA_SEA_LAT);
 
     function fillGaps(lines, forcedCat, label, opt) {
         const o = Object.assign({ covKm: 1.5, minGapKm: 0.6, snapKm: 6, endsOnly: false }, opt);

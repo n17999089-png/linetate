@@ -837,8 +837,43 @@
         toast(t('toast.copied', { date: LT.fmtTrigger(iso) }));
     }
 
-    function deleteCurrentMap() {
-        if (!confirm(t('confirm.deleteMap', { date: LT.fmtFull(state.date) }))) return;
+    // «шар на всі дати»: копіюємо ЛИШЕ вибраний шар, решта шарів кожної дати
+    // лишається на місці; на датах, де вже є шар з тим самим id, замінюємо його.
+    // Маски на різних датах мають різні id, тож посилання перекидаємо на
+    // однойменний шар цієї дати — інакше шар лишився б без обрізання.
+    function copyLayerToAllDates() {
+        const src = currentLayer();
+        if (!src) return;
+        flushSave();
+
+        const dates = store.listDates().map(d => d.date).filter(d => d !== state.date);
+        if (!dates.length) { toast(t('admin.copyAllNone')); return; }
+        if (!confirm(t('confirm.copyLayerAll', { name: src.name, n: dates.length }))) return;
+
+        dates.forEach(iso => {
+            const doc = store.load(iso);
+            const layers = doc && doc.layers ? LT.clone(doc.layers) : {};
+            const copy = LT.clone(src);
+            if (layers[copy.id]) copy.z = layers[copy.id].z;
+            if (Array.isArray(copy.style.maskTargets)) {
+                copy.style.maskTargets = copy.style.maskTargets.map(id => {
+                    if (layers[id]) return id;
+                    const name = state.layers[id] && state.layers[id].name;
+                    const same = name && Object.keys(layers)
+                        .find(k => layers[k] && layers[k].name === name);
+                    return same || '';
+                }).filter(Boolean);
+            }
+            layers[copy.id] = copy;
+            store.save(iso, layers);
+        });
+
+        if (cal) cal.refresh();
+        uiUsage();
+        toast(t('toast.copiedAll', { name: src.name, n: dates.length }));
+    }
+
+    function deleteCurrentMap() {        if (!confirm(t('confirm.deleteMap', { date: LT.fmtFull(state.date) }))) return;
 
         clearTimeout(saveTimer);
         saveTimer = null;
@@ -948,10 +983,19 @@
         });
     }
 
+    function uiLayerAll() {
+        const b = $('btn-layer-all');
+        if (!b) return;
+        const l = currentLayer();
+        b.disabled = !l;
+        b.title = l ? t('admin.layerAllHint', { name: l.name }) : '';
+    }
+
     function uiLayers() {
         const box = $('layer-list');
         const list = Object.values(state.layers).sort((a, b) => b.z - a.z);
         syncGeoDelete();
+        uiLayerAll();
 
         if (!list.length) {
             box.innerHTML = '<div class="hint">' + t('admin.noLayers') + '</div>';
@@ -1980,6 +2024,8 @@
             syncMapLayers();
             autoSave();
         });
+
+        $('btn-layer-all').addEventListener('click', copyLayerToAllDates);
 
         const styleChange = fn => e => {
             const l = currentLayer();

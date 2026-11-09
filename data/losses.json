@@ -1,5 +1,5 @@
 {
- "updatedAt": "2026-11-09T16:34:56.292Z",
+ "updatedAt": "2026-11-09T19:15:46.259Z",
  "ru": {
   "named": 282993,
   "asOf": "2026-10-23",
@@ -776,6 +776,103 @@
     26,
     1313,
     47,
+    null
+   ]
+  ]
+ },
+ "equipUa": {
+  "asOf": "2026-11-09",
+  "day": 1719,
+  "source": "Oryx",
+  "url": "https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-ukrainian.html",
+  "summary": {
+   "total": 12346,
+   "destroyed": 9736,
+   "damaged": 719,
+   "abandoned": 693,
+   "captured": 1198
+  },
+  "fields": [
+   "tanks",
+   "armoured_fighting_vehicles",
+   "artillery_systems",
+   "mlrs",
+   "aa_warfare_systems",
+   "planes",
+   "helicopters",
+   "vehicles_fuel_tanks",
+   "warships_cutters",
+   "cruise_missiles",
+   "uav_systems",
+   "special_military_equip",
+   "atgm_srbm_systems",
+   "submarines"
+  ],
+  "totals": {
+   "tanks": 1473,
+   "armoured_fighting_vehicles": 4687,
+   "artillery_systems": 1345,
+   "mlrs": 137,
+   "aa_warfare_systems": 238,
+   "planes": 122,
+   "helicopters": 59,
+   "vehicles_fuel_tanks": 3622,
+   "warships_cutters": 44,
+   "cruise_missiles": null,
+   "uav_systems": 29,
+   "special_military_equip": 571,
+   "atgm_srbm_systems": 19,
+   "submarines": null
+  },
+  "destroyed": {
+   "tanks": 1133,
+   "armoured_fighting_vehicles": 3621,
+   "artillery_systems": 1059,
+   "mlrs": 106,
+   "aa_warfare_systems": 194,
+   "planes": 117,
+   "helicopters": 53,
+   "vehicles_fuel_tanks": 2991,
+   "warships_cutters": 17,
+   "cruise_missiles": null,
+   "uav_systems": 28,
+   "special_military_equip": 410,
+   "atgm_srbm_systems": 7,
+   "submarines": null
+  },
+  "increase": {
+   "tanks": 0,
+   "armoured_fighting_vehicles": 0,
+   "artillery_systems": 0,
+   "mlrs": 0,
+   "aa_warfare_systems": 0,
+   "planes": 0,
+   "helicopters": 0,
+   "vehicles_fuel_tanks": 0,
+   "warships_cutters": 0,
+   "cruise_missiles": 0,
+   "uav_systems": 0,
+   "special_military_equip": 0,
+   "atgm_srbm_systems": 0,
+   "submarines": 0
+  },
+  "days": [],
+  "history": [
+   [
+    "2026-11-09",
+    1473,
+    4687,
+    1345,
+    137,
+    238,
+    122,
+    59,
+    3622,
+    44,
+    null,
+    29,
+    571,
+    19,
     null
    ]
   ]

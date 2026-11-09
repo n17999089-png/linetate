@@ -1831,18 +1831,40 @@
         });
     }
 
+    // той самий НП чи лише однойменний? у Nominatim «Кривий Ріг» — це і місто
+    // на Дніпропетровщині, і село на Херсонщині: без перевірки координат
+    // справжній контур села перетягував камеру за сотні кілометрів
+    function samePlace(res, lon, lat) {
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) return true;
+        let x = Number(res.lon), y = Number(res.lat);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            if (!res.geojson) return true;
+            const b = LT.boundsOf([{ type: 'Feature', properties: {}, geometry: res.geojson }]);
+            if (!b) return true;
+            x = (b[0] + b[2]) / 2;
+            y = (b[1] + b[3]) / 2;
+        }
+        const dx = (x - lon) * Math.cos(lat * Math.PI / 180), dy = y - lat;
+        return Math.hypot(dx, dy) <= 0.55;
+    }
+
     // локальний індекс знає лише точку, тож перший клік може статися до
     // відповіді Nominatim. коли приходить справжній контур того ж міста —
-    // підміняємо вибір, щоб камера стала по межі й зона намалювалася
+    // підміняємо вибір, щоб зона намалювалася. камеру при цьому не чіпаємо:
+    // людина вже обрала місце, і повторний політ до центру контуру читався
+    // як «кинуло на інший НП»
     function upgradeLocalPick(rows) {
         if (!searchPick || !searchPick.res || !searchPick.res._local || searchPick.feature) return;
         const key = foldSearchName(searchPick.name);
+        const lon = Number(searchPick.res.lon), lat = Number(searchPick.res.lat);
         const hit = rows.find(r => r.geojson
-            && foldSearchName(r.name || shortName(r)) === key);
-        if (hit) pickSearch(hit, 0);
+            && foldSearchName(r.name || shortName(r)) === key
+            && samePlace(r, lon, lat));
+        if (hit) pickSearch(hit, 0, { keepCamera: true });
     }
 
-    function pickSearch(res, index) {
+    function pickSearch(res, index, opts) {
+        const keepCamera = !!(opts && opts.keepCamera);
         searchActive = index;
         const geom = res.geojson;
         const feature = geom && (geom.type === 'Polygon' || geom.type === 'MultiPolygon')
@@ -1858,7 +1880,9 @@
         if (!b && !res._local && res.boundingbox) {
             b = [+res.boundingbox[2], +res.boundingbox[0], +res.boundingbox[3], +res.boundingbox[1]];
         }
-        if (b && b.every(Number.isFinite)) {
+        if (keepCamera) {
+            // контур уже намальовано; камера лишається там, куди її поставив вибір
+        } else if (b && b.every(Number.isFinite)) {
             map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 70, duration: 700, maxZoom: 12 });
         } else if (res.lon && res.lat) {
             // локальний індекс знає лише точку: синтетична рамка давала
@@ -1991,13 +2015,31 @@
             && lat >= mb.getSouth() - pad && lat <= mb.getNorth() + pad;
     }
 
+    // тип НП беремо з локального індексу: він рахує клас тим самим
+    // правилом, що й мапа, а Nominatim для смт віддає addresstype=town.
+    // одноіменних сіл буває кілька, тож тип шукаємо не за назвою, а за
+    // найближчим локальним записом — інакше село в іншій області
+    // переписувало місто в «СЕЛО»
+    function localKind(local, res) {
+        const key = foldSearchName(shortName(res));
+        let lon = Number(res.lon), lat = Number(res.lat);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+            const bb = res.boundingbox;
+            if (!bb || bb.length !== 4) return '';
+            lon = (+bb[2] + +bb[3]) / 2;
+            lat = (+bb[0] + +bb[1]) / 2;
+        }
+        let kind = '', best = 0.45;
+        for (const x of local) {
+            if (x.type !== 'city' && x.type !== 'village') continue;
+            if (foldSearchName(x.name) !== key) continue;
+            const d = Math.hypot((x.lon - lon) * Math.cos(lat * Math.PI / 180), x.lat - lat);
+            if (d < best) { best = d; kind = x.type; }
+        }
+        return kind;
+    }
+
     function mergeSearchRows(netRows, local, q) {
-        // тип НП беремо з локального індексу: він рахує клас тим самим
-        // правилом, що й мапа, а Nominatim для смт віддає addresstype=town
-        const kindOf = new Map();
-        local.forEach(x => {
-            if (x.type === 'city' || x.type === 'village') kindOf.set(foldSearchName(x.name), x.type);
-        });
         // локальний рядок викидаємо лише тоді, коли мережа знає такий самий
         // населений пункт або його полігон, а не однойменну річку чи область
         const merged = netRows.concat(local.filter(x => {
@@ -2009,7 +2051,7 @@
         const out = [];
         for (let r of merged) {
             if (!r._local) {
-                const k = kindOf.get(foldSearchName(shortName(r)));
+                const k = localKind(local, r);
                 if (k) r = Object.assign({}, r, { _ltKind: k });
             }
             if (!searchInView(r)) continue;
@@ -2081,6 +2123,63 @@
         } finally {
             if (seq === searchSeq && wrap) wrap.classList.remove('ps-busy');
         }
+    }
+
+    // на телефоні аркуш результатів закриває майже весь екран: два пальці на
+    // ньому скролили список, і масштаб карти не змінювався взагалі.
+    // перекидаємо двопальцевий жест на полотно карти; скрол списку одним
+    // пальцем лишається як був
+    function forwardSearchPinch() {
+        if (!isMobileUI() || !map) return;
+        const panel = $('place-search');
+        const host = map.getCanvasContainer && map.getCanvasContainer();
+        if (!panel || !host || !window.Touch || !window.TouchEvent) return;
+        try {
+            new Touch({ identifier: 1, target: host, clientX: 0, clientY: 0 });
+        } catch (e) {
+            // Safari без конструктора Touch: лишаємо стандартну поведінку
+            return;
+        }
+        let on = false;
+        const touchesOf = e => Array.from(e.touches || [], t => new Touch({
+            identifier: t.identifier, target: host,
+            clientX: t.clientX, clientY: t.clientY,
+            screenX: t.screenX, screenY: t.screenY,
+            pageX: t.pageX, pageY: t.pageY,
+            radiusX: t.radiusX || 1, radiusY: t.radiusY || 1,
+            rotationAngle: t.rotationAngle || 0, force: t.force || 1
+        }));
+        const send = (type, e) => {
+            try {
+                const touches = touchesOf(e);
+                host.dispatchEvent(new TouchEvent(type, {
+                    touches, targetTouches: touches, changedTouches: touches,
+                    bubbles: true, cancelable: true
+                }));
+            } catch (err) { }
+        };
+        panel.addEventListener('touchstart', e => {
+            if (e.touches.length !== 2) return;
+            on = true;
+            e.preventDefault();
+            send('touchstart', e);
+        }, { passive: false });
+        panel.addEventListener('touchmove', e => {
+            if (!on) return;
+            e.preventDefault();
+            send('touchmove', e);
+        }, { passive: false });
+        const end = e => {
+            if (!on) return;
+            on = false;
+            try {
+                host.dispatchEvent(new TouchEvent(e.type === 'touchcancel' ? 'touchcancel' : 'touchend', {
+                    touches: [], targetTouches: [], changedTouches: [], bubbles: true, cancelable: true
+                }));
+            } catch (err) { }
+        };
+        panel.addEventListener('touchend', end);
+        panel.addEventListener('touchcancel', end);
     }
 
     function clearSearch() {
@@ -2587,17 +2686,10 @@
         currentDoc = hit;
     }
 
-    function syncLabelsBtn() {
-        const btn = $('view-labels');
-        if (!btn) return;
-        btn.classList.toggle('active', state.labels);
-        btn.setAttribute('aria-pressed', String(state.labels));
-    }
-
+    // назви шарів на мапі завжди ввімкнені: перемикач прибрано, лишилися
+    // перетягування підпису та скидання в центр шару
     function setLabels(on) {
         state.labels = !!on;
-        syncLabelsBtn();
-        try { localStorage.setItem('LINETATE:labels', state.labels ? '1' : '0'); } catch (e) { }
         Object.values(state.layers).forEach(l => {
             l.viewLabel = state.labels;
             if (!mapReady) return;
@@ -3303,7 +3395,6 @@
         const rf = localStorage.getItem('LINETATE:reliefflat');
         const pl = localStorage.getItem('LINETATE:places');
         const zn = localStorage.getItem('LINETATE:zones3d');
-        const lb = localStorage.getItem('LINETATE:labels');
         const ol = localStorage.getItem('LINETATE:outlines');
         const rw = localStorage.getItem('LINETATE:rails');
         state.relief3d = r3 !== '0';
@@ -3312,9 +3403,9 @@
         state.zones3d = zn !== '0';
         state.outlines = ol !== '0';
         state.rails = rw !== '0';
-        // назви шарів на самій мапі: раніше вимкнені за замовчуванням, через що
-        // на телефоні назва зʼявлялася лише після тицяння пальцем по шару
-        state.labels = lb !== '0';
+        // назви шарів на самій мапі завжди ввімкнені: збережене «вимкнено»
+        // більше не має сили, бо повернути їх було б нічим
+        state.labels = true;
     } catch (e) { }
     LT.setReliefPrefs(map, { relief3d: state.relief3d, reliefFlat: state.reliefFlat });
     LT.setZones3d(map, state.zones3d);
@@ -3669,7 +3760,6 @@
             state.regions = on;
             mapTools.setRegions(on);
         });
-        $('view-labels').addEventListener('click', () => setLabels(!state.labels));
         $('view-relief').addEventListener('click', () => setReliefToggle(!(map._lt3d ? state.relief3d : state.reliefFlat)));
         $('view-places').addEventListener('click', () => setPlacesToggle(!state.places));
         $('view-zones').addEventListener('click', () => setZonesToggle(!state.zones3d));
@@ -3749,6 +3839,7 @@
             const res = searchRows[+row.dataset.i];
             if (res) pickSearch(res, +row.dataset.i);
         });
+        forwardSearchPinch();
 
         $('tool-draw').addEventListener('click', () => setDrawPanel(!drawPanelOpen));
         $('dp-close').addEventListener('click', () => setDrawPanel(false));
@@ -3847,7 +3938,6 @@
         syncReliefBtn();
         syncPlacesBtn();
         syncZonesBtn();
-        syncLabelsBtn();
 
         // далі — повна предзагрузка всіх дат і першого кадру під завісою
         preloadAll();
