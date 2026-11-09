@@ -273,6 +273,8 @@
             'status.ready': 'ГОТОВО', 'status.saved': 'ЗБЕРЕЖЕНО', 'status.draft': 'ЗАПИС…', 'status.error': 'ПОМИЛКА', 'status.newDate': 'НОВА ДАТА',
             'base.dark': 'Темна', 'base.hybrid': 'Гібрид',
             'viewer.layers': 'Шари', 'viewer.borders': 'КОРДОНИ', 'viewer.empty': 'ПОРОЖНЬО', 'viewer.noData': 'НЕМАЄ ДАНИХ',
+            'viewer.outlines': 'ОБВОДКА', 'viewer.outlinesHint': 'Контури шарів на карті',
+            'viewer.rails': 'ЗАЛІЗНИЦІ', 'viewer.railsHint': 'Показувати залізничні лінії',
             'viewer.noDataText': 'На вибрану дату карта не заповнена.<br>Виберіть інший день.',
             'viewer.updated': 'ОНОВЛЕНО', 'viewer.noLayers': 'ЗА ЦЮ ДАТУ ШАРІВ НЕМАЄ', 'viewer.zone': 'ЗОНА',
             'viewer.arrows': 'СТРІЛКИ', 'viewer.emptyVal': 'порожньо', 'viewer.km': 'км2',
@@ -519,6 +521,8 @@
             'status.ready': 'READY', 'status.saved': 'SAVED', 'status.draft': 'SAVING…', 'status.error': 'ERROR', 'status.newDate': 'NEW DATE',
             'base.dark': 'Dark', 'base.hybrid': 'Hybrid',
             'viewer.layers': 'Layers', 'viewer.borders': 'BORDERS', 'viewer.empty': 'EMPTY', 'viewer.noData': 'NO DATA',
+            'viewer.outlines': 'OUTLINES', 'viewer.outlinesHint': 'Layer contours on the map',
+            'viewer.rails': 'RAILWAYS', 'viewer.railsHint': 'Show railway lines',
             'viewer.noDataText': 'The map for this date is empty.<br>Pick another day.',
             'viewer.updated': 'UPDATED', 'viewer.noLayers': 'NO LAYERS FOR THIS DATE', 'viewer.zone': 'ZONE',
             'viewer.arrows': 'ARROWS', 'viewer.emptyVal': 'empty', 'viewer.km': 'km2',
@@ -766,6 +770,8 @@
             'status.ready': 'ГОТОВО', 'status.saved': 'СОХРАНЕНО', 'status.draft': 'ЗАПИСЬ…', 'status.error': 'ОШИБКА', 'status.newDate': 'НОВАЯ ДАТА',
             'base.dark': 'Тёмная', 'base.hybrid': 'Гибрид',
             'viewer.layers': 'Слои', 'viewer.borders': 'ГРАНИЦЫ', 'viewer.empty': 'ПУСТО', 'viewer.noData': 'НЕТ ДАННЫХ',
+            'viewer.outlines': 'ОБВОДКА', 'viewer.outlinesHint': 'Контуры слоёв на карте',
+            'viewer.rails': 'Ж/Д', 'viewer.railsHint': 'Показывать железнодорожные линии',
             'viewer.noDataText': 'На выбранную дату карта не заполнена.<br>Выберите другой день.',
             'viewer.updated': 'ОБНОВЛЕНО', 'viewer.noLayers': 'ЗА ЭТУ ДАТУ СЛОЁВ НЕТ', 'viewer.zone': 'ЗОНА',
             'viewer.arrows': 'СТРЕЛКИ', 'viewer.emptyVal': 'пусто', 'viewer.km': 'км2',
@@ -2149,6 +2155,10 @@
 
     function createMap(container, options) {
         const dev = deviceState || detectDevice();
+        // MSAA коштує 2.5–3 мс кадру (заміряно gl.finish на Iris Xe): на
+        // інтегрованій графіці 3D важливіший за згладжування країв, на
+        // дискретній лишаємо повну якість
+        const strongGpu = gpuInfo().tier >= 2;
         const map = new maplibregl.Map(Object.assign({
             container,
             style: BASE.hybrid,
@@ -2158,13 +2168,16 @@
             maxZoom: TILES_MAXZOOM,
             maxPitch: 0,
             maxBounds: MAP_BOUNDS,
-            antialias: !dev.mobile,
-            // на телефоне preserveDrawingBuffer — лишняя копия кадра каждый тик;
-            // снимок там снимается синхронно внутри события render (см. photo)
-            preserveDrawingBuffer: !dev.mobile,
+            antialias: !dev.mobile && strongGpu,
+            // копія кадру для снимка більше не потрібна: фото знімається
+            // синхронно всередині події render на обох платформах
+            preserveDrawingBuffer: false,
             refreshExpiredTiles: false,
             dragRotate: false,
-            fadeDuration: dev.mobile ? 120 : 300
+            // кросфейд растрових тайлів — це другий прохід підкладки щокадру
+            // (~0.8 мс) і під час панорами на 3D він не читається; на телефоні
+            // лишаємо мʼякше, бо там тайли приходять довше
+            fadeDuration: dev.mobile ? 120 : 0
         }, options || {}));
 
         // GPU-контекст телефонів губиться під тиском памʼяті (3D-рельєф і
@@ -5950,11 +5963,13 @@
         const dev = deviceState || detectDevice();
         const tier = deviceTier();
         if (!dev.mobile) {
-            // слабкий GPU (стара інтегрована графіка) не тягне повну сітку DEM:
-            // беремо легший профіль, щоб 3D не лагав. потужний — повний рельєф
-            // із виразнішим тінієванням хребтів (hill 1 замість 0.85)
-            if (tier === 0) return { maxzoom: 9, ex: 1, hill: 0.6, full: 10.2, zero: 12.4, floor: .7 };
-            return { maxzoom: 11, ex: 1.35, hill: tier >= 2 ? 1 : 0.85, full: 11, zero: 13.2, floor: .9 };
+            // сітку DEM визначає GPU, а не кількість ядер: z11 дає вчетверо
+            // більше тайлів, ніж z10, і на інтегрованій графіці це помітне
+            // навантаження на 3D-панораму без видимої різниці в рельєфі
+            const g = gpuInfo().tier;
+            if (tier === 0 || g === 0) return { maxzoom: 9, ex: 1, hill: 0.6, full: 10.2, zero: 12.4, floor: .7 };
+            if (g < 2) return { maxzoom: 10, ex: 1.2, hill: 0.85, full: 10.6, zero: 12.8, floor: .8 };
+            return { maxzoom: 11, ex: 1.35, hill: 1, full: 11, zero: 13.2, floor: .9 };
         }
         // телефон: слабкий GPU або мало пам'яті → найлегша сітка; інакше середня
         if (tier === 0 || lowEndDevice()) return { maxzoom: 7, ex: 0.8, hill: 0.45, full: 9.4, zero: 11.6, floor: .5 };
@@ -6689,6 +6704,11 @@
         return e.v;
     }
 
+    // контур, який малює перемикач «ОБВОДКА», коли шар не має власної
+    // товщини: тонка нейтральна лінія в тон державних кордонів
+    const OUTLINE_BW = 1.15;
+    const OUTLINE_INK = '#efe6d4';
+
     function applyLayerPaint(map, l, visible) {
         if (!map.getLayer('f_' + l.id)) return;
 
@@ -6708,15 +6728,27 @@
         // декоративних ліній (обвід, світла кромка, внутрішнє світло, тінь)
         // креслила кожен полігон окремо, і на зоні з кількох сусідніх шматків
         // всередині заливки проступала ламана «низькополігональна» лінія
-        const hasLine = !noLine && Number(s.bw) > 0;
-        const igo = Math.max(0, Math.min(100, s.iglow == null ? 0 : s.iglow)) / 100;
-        const blended = s.blend && s.blend !== 'normal';
-        const gradient = s.grad === true;
-        const arrow3d = l.kind === 'arrow' && s.d3 === true;
+        const ownBw = Number(s.bw) > 0 ? Number(s.bw) : 0;
         // 3D-режим: зона стає екструзією, плоска заливка й візерунок зникають.
         // перемикач «обʼємні зони» вимикає саме екструзію — тоді навіть у 3D
         // лишається плоска заливка
         const d3 = map._lt3d === true && l.kind === 'zone' && map._ltZones3d !== false;
+        // шар без власної товщини, але з увімкненим перемикачем «ОБВОДКА»:
+        // даємо тонку нейтральну лінію — інакше в даних із bw:0 перемикач
+        // не змінював нічого. декор (свічення, кромка) лишається тільки за
+        // товщини, яку задав користувач: саме він давав «низькополігональну»
+        // лінію на зонах із багатьох шматків.
+        // під екструзією тонку лінію не малюємо: контур уже дає стіна зони,
+        // а кожен рядок контуру на 20 тис. точок коштував 2–3.5 мс кадру на
+        // інтегрованій графіці (замір q126/q128)
+        const bw = ownBw || (noLine || map._ltOutlinesOff ? 0 : OUTLINE_BW);
+        const hasLine = !map._ltOutlinesOff && !noLine && bw > 0 && !(d3 && ownBw === 0);
+        const decor = ownBw > 0;
+        const lineCol = ownBw > 0 ? s.bcol : OUTLINE_INK;
+        const igo = Math.max(0, Math.min(100, s.iglow == null ? 0 : s.iglow)) / 100;
+        const blended = s.blend && s.blend !== 'normal';
+        const gradient = s.grad === true;
+        const arrow3d = l.kind === 'arrow' && s.d3 === true;
         // плоский псевдооб'єм стрілки (зміщені копії) — частина 2D-стилю
         ['xb_', 'xs_', 'xh_'].forEach(p => {
             if (map.getLayer(p + l.id)) map.setLayoutProperty(p + l.id, 'visibility', arrow3d ? vis : 'none');
@@ -6742,34 +6774,34 @@
         // обʼємний контур (fr_) і cast-тінь (cs_) прибрані: вони давали
         // z-fighting і коштували найдорожчого проходу геометрії на жест
         map.setLayoutProperty('l_' + l.id, 'visibility', hasLine ? vis : 'none');
-        map.setLayoutProperty('g_' + l.id, 'visibility', glow && hasLine ? vis : 'none');
-        map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && hasLine ? vis : 'none');
+        map.setLayoutProperty('g_' + l.id, 'visibility', decor && glow && hasLine ? vis : 'none');
+        map.setLayoutProperty('ig_' + l.id, 'visibility', decor && igo > 0 && hasLine ? vis : 'none');
         const zone = l.kind === 'zone';
-        map.setLayoutProperty('gw_' + l.id, 'visibility', glow && hasLine ? vis : 'none');
-        map.setLayoutProperty('rh_' + l.id, 'visibility', zone && hasLine ? vis : 'none');
+        map.setLayoutProperty('gw_' + l.id, 'visibility', decor && glow && hasLine ? vis : 'none');
+        map.setLayoutProperty('rh_' + l.id, 'visibility', decor && zone && hasLine ? vis : 'none');
 
         map.setPaintProperty('f_' + l.id, 'fill-color', s.color);
         map.setPaintProperty('f_' + l.id, 'fill-opacity', s.alpha * k);
-        map.setPaintProperty('f_' + l.id, 'fill-outline-color', hasLine ? s.bcol : 'rgba(0,0,0,0)');
+        map.setPaintProperty('f_' + l.id, 'fill-outline-color', hasLine ? lineCol : 'rgba(0,0,0,0)');
 
         if (pattern) {
             map.setPaintProperty('p_' + l.id, 'fill-pattern', ensurePattern(map, s.pattern, s.color, s.patternScale || 22));
         }
         map.setPaintProperty('p_' + l.id, 'fill-opacity', s.alpha * k);
 
-        map.setPaintProperty('l_' + l.id, 'line-color', s.bcol);
-        map.setPaintProperty('l_' + l.id, 'line-width', glow ? s.bw + 1 : s.bw);
+        map.setPaintProperty('l_' + l.id, 'line-color', lineCol);
+        map.setPaintProperty('l_' + l.id, 'line-width', glow && decor ? bw + 1 : bw);
         map.setPaintProperty('l_' + l.id, 'line-opacity', Math.min(1, s.alpha + 0.35) * k);
         map.setPaintProperty('l_' + l.id, 'line-dasharray', dashFor(s));
 
         map.setPaintProperty('g_' + l.id, 'line-color', s.bcol);
         const gAmt = Math.max(0, Math.min(100, s.glow == null ? 60 : s.glow)) / 100;
-        map.setPaintProperty('g_' + l.id, 'line-width', Math.max(6, s.bw * 5) * (0.5 + gAmt));
+        map.setPaintProperty('g_' + l.id, 'line-width', Math.max(6, bw * 5) * (0.5 + gAmt));
         map.setPaintProperty('g_' + l.id, 'line-opacity', Math.min(0.65, 0.6 * gAmt + s.alpha * 0.15) * k);
-        map.setPaintProperty('g_' + l.id, 'line-blur', Math.max(4, s.bw * 4) * (0.5 + gAmt));
+        map.setPaintProperty('g_' + l.id, 'line-blur', Math.max(4, bw * 4) * (0.5 + gAmt));
 
         // свечение внутри контура: сдвинутая внутрь размытая линия
-        const igW = Math.max(6, s.bw * 4) * (0.8 + igo * 2.2);
+        const igW = Math.max(6, bw * 4) * (0.8 + igo * 2.2);
         map.setPaintProperty('ig_' + l.id, 'line-color', s.igcol || s.bcol);
         map.setPaintProperty('ig_' + l.id, 'line-width', igW);
         map.setPaintProperty('ig_' + l.id, 'line-blur', Math.max(1.5, igW * 0.24));
@@ -6779,15 +6811,15 @@
 
         // широкое гало под узким свечением: глубина свечения в два слоя
         map.setPaintProperty('gw_' + l.id, 'line-color', s.bcol);
-        map.setPaintProperty('gw_' + l.id, 'line-width', Math.max(14, s.bw * 9) * (0.6 + gAmt));
-        map.setPaintProperty('gw_' + l.id, 'line-blur', Math.max(10, s.bw * 7) * (0.6 + gAmt));
+        map.setPaintProperty('gw_' + l.id, 'line-width', Math.max(14, bw * 9) * (0.6 + gAmt));
+        map.setPaintProperty('gw_' + l.id, 'line-blur', Math.max(10, bw * 7) * (0.6 + gAmt));
         map.setPaintProperty('gw_' + l.id, 'line-opacity', Math.min(0.3, 0.2 * gAmt + s.alpha * 0.06) * k);
 
         // светлая кромка изнутри: резкий блик по границе зоны
         map.setPaintProperty('rh_' + l.id, 'line-color', lightHex(s.bcol, 0.6));
-        map.setPaintProperty('rh_' + l.id, 'line-width', Math.max(1, s.bw * 0.7));
+        map.setPaintProperty('rh_' + l.id, 'line-width', Math.max(1, bw * 0.7));
         map.setPaintProperty('rh_' + l.id, 'line-opacity', Math.min(0.75, 0.28 + s.alpha * 0.45) * k);
-        map.setPaintProperty('rh_' + l.id, 'line-offset', -Math.max(1.1, s.bw * 0.55));
+        map.setPaintProperty('rh_' + l.id, 'line-offset', -Math.max(1.1, bw * 0.55));
 
         if (arrow3d) {
             map.setPaintProperty('xb_' + l.id, 'fill-opacity', Math.min(0.5, 0.16 + s.alpha * 0.35) * k);
@@ -8318,7 +8350,8 @@
                 // кромка малюється лише в шару із заданою товщиною контуру:
                 // без неї stroke по контуру кожного полігона давав ту саму
                 // ламану лінію всередині заливки, що й шари l_/rh_/ig_
-                const hasRim = Number(l.style.bw) > 0 && l.style.border !== 'none';
+                // (перемикач «ОБВОДКА» глушить і її, і шари l_/rh_/ig_)
+                const hasRim = !map._ltOutlinesOff && Number(l.style.bw) > 0 && l.style.border !== 'none';
                 // рамка — по висоті саме цього шару: блоки стоять на різній
                 // висоті за z-індексом, тож і заливка має лягати на його
                 // власну верхню грань, а не на середню по мапі. верхньою
@@ -8883,6 +8916,7 @@
         Calendar, BASE, createMap, baseSwitcher, smoothZoom,
         flagSVG: key => FLAG_SVG[key], flagHtml: (key, cls) => flagHtml(key, cls), pixelLabels, placeRu, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         setPlacesVisible, setReliefUser, setReliefPrefs, reliefPrefs, syncRelief, setZones3d,
+        setOutlines: (map, on) => { map._ltOutlinesOff = !on; },
         EMPTY, MARCH, BLENDS, dashFor, ensurePattern, rewindFC,
         createLayerObjects, removeLayerObjects, applyLayerPaint, orderLayerObjects, pulseLayer, syncLayerDecor,
         syncLayerLabel, setLayerLabelDrag, set3D,

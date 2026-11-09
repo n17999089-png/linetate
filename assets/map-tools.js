@@ -98,6 +98,16 @@
         // основа, білий пунктир. Малює GPU шарами мапи, а не полотном: ліній
         // 2609 і ~70 тис. вершин, у кадрі 2D-полотно коштувало б десятки мс
         let railFC = null;
+        let railsOn = true;
+        const RAIL_LAYERS = ['lt-rail-casing', 'lt-rail-dash', 'lt-rail-casing-2', 'lt-rail-dash-2'];
+
+        function applyRailsVis() {
+            RAIL_LAYERS.forEach(id => {
+                if (map.getLayer(id)) {
+                    map.setLayoutProperty(id, 'visibility', railsOn ? 'visible' : 'none');
+                }
+            });
+        }
         function railData() {
             if (railFC !== null) return railFC;
             const raw = window.LT_RAILWAYS;
@@ -117,7 +127,10 @@
             if (map.getSource('lt-rail')) return;
             const data = railData();
             if (!data) return;
-            map.addSource('lt-rail', { type: 'geojson', data, tolerance: 0.5 });
+            // допуск у пікселях тайла: 0.9 прибирає зайві вершини на
+            // регіональному огляді, а на міському масштабі тайл перебудовується
+            // з тією ж точністю, тож лінія не грубішає
+            map.addSource('lt-rail', { type: 'geojson', data, tolerance: 0.9 });
             const anchor = map.getLayer('lt-region-casing') ? 'lt-region-casing'
                 : (map.getLayer('lt-region-label') ? 'lt-region-label' : undefined);
             // ширина залежить лише від зуму: MapLibre не дозволяє поєднати
@@ -156,6 +169,7 @@
                     }, l.dash ? { 'line-dasharray': l.dash } : {})
                 }, anchor);
             });
+            applyRailsVis();
         }
 
         // державні кордони: точні лінії OSM, розкладені на категорії ще на
@@ -184,6 +198,15 @@
                         if (p[1] > y1) y1 = p[1];
                     }
                     f._bb = [x0, y0, x1, y1];
+                    // меркатор рахується один раз на завантаженні: у кадрі
+                    // log/tan на кожну з 30 тисяч вершин коштували більше,
+                    // ніж саме перетворення в екран
+                    const m = new Float64Array(coords.length * 2);
+                    for (let i = 0; i < coords.length; i++) {
+                        m[i << 1] = mercX(coords[i][0]);
+                        m[(i << 1) + 1] = mercY(coords[i][1]);
+                    }
+                    f._mx = m;
                     if (thin) f._thin = true;
                     return f;
                 };
@@ -210,12 +233,8 @@
 
         // плоска камера: перетворення «меркатор → екран» строго афінне, тому
         // коефіцієнти беруться з двох опорних точок і кожна вершина коштує
-        // два множники замість map.project. під нахилом рамка перспективна —
-        // там вершини проєктуються як є
-        function projector() {
-            if ((map.getPitch ? map.getPitch() : 0) > 0.5) {
-                return (lon, lat) => map.project([lon, lat]);
-            }
+        // два множники замість map.project
+        function flatProjector() {
             const c = map.getCenter();
             const p0 = map.project(c);
             const ep = 0.25;
@@ -224,13 +243,174 @@
             const mx0 = mercX(c.lng), my0 = mercY(c.lat);
             const dmx = mercX(c.lng + ep) - mx0;
             const dmy = mercY(c.lat + ep) - my0;
-            if (!dmx || !dmy) return (lon, lat) => map.project([lon, lat]);
-            const a = (pLon.x - p0.x) / dmx, b = (pLat.x - p0.x) / dmy;
-            const d = (pLon.y - p0.y) / dmx, e = (pLat.y - p0.y) / dmy;
-            return (lon, lat) => {
-                const dx = mercX(lon) - mx0, dy = mercY(lat) - my0;
-                return { x: p0.x + a * dx + b * dy, y: p0.y + d * dx + e * dy };
+            if (!dmx || !dmy) return null;
+            return {
+                x0: p0.x, y0: p0.y, mx0, my0,
+                a: (pLon.x - p0.x) / dmx, b: (pLat.x - p0.x) / dmy,
+                d: (pLon.y - p0.y) / dmx, e: (pLat.y - p0.y) / dmy
             };
+        }
+
+        // перспективна камера відображає площину Меркатора на екран дробово-
+        // лінійно: чотири кути кадру задають точну гомографію для будь-якої
+        // вершини. на оглядовому зумі рельєф зсуває кордон у середньому на
+        // 0.13 px (p95 — 0.6, максимум 1.7), тож вибірку DEM там не беремо,
+        // а кожна вершина коштує 8 множників замість map.project (~10 мкс)
+        function fitHomography(sw, sh) {
+            const tr = map.transform;
+            if (!tr || typeof tr.pointLocation !== 'function') return null;
+            const q = [[0, 0], [sw, 0], [sw, sh], [0, sh]].map(([x, y]) => {
+                const ll = tr.pointLocation({ x, y });
+                return { u: mercX(ll.lng), v: mercY(ll.lat), x, y };
+            });
+            if (q.some(p => !isFinite(p.u) || !isFinite(p.v))) return null;
+            const M = [];
+            q.forEach(p => {
+                M.push([p.u, p.v, 1, 0, 0, 0, -p.u * p.x, -p.v * p.x, p.x]);
+                M.push([0, 0, 0, p.u, p.v, 1, -p.u * p.y, -p.v * p.y, p.y]);
+            });
+            for (let c = 0; c < 8; c++) {
+                let r0 = c;
+                for (let r = c + 1; r < 8; r++) if (Math.abs(M[r][c]) > Math.abs(M[r0][c])) r0 = r;
+                if (Math.abs(M[r0][c]) < 1e-12) return null;
+                if (r0 !== c) { const t = M[c]; M[c] = M[r0]; M[r0] = t; }
+                const d = M[c][c];
+                for (let k = c; k <= 8; k++) M[c][k] /= d;
+                for (let r = 0; r < 8; r++) {
+                    if (r === c) continue;
+                    const f = M[r][c];
+                    if (!f) continue;
+                    for (let k = c; k <= 8; k++) M[r][k] -= f * M[c][k];
+                }
+            }
+            const s = M.map(r => r[8]);
+            if (!s.every(Number.isFinite)) return null;
+            return { a: s[0], b: s[1], c: s[2], d: s[3], e: s[4], f: s[5], g: s[6], h: s[7] };
+        }
+
+        // перо з відсіканням: перспектива за камерою дає координати в мільйони
+        // пікселів, і полотно теселює такі відрізки майже як справжню лінію.
+        // тому кожен відрізок відсікається рамкою кадру (Ліанг–Барскі) ще до
+        // lineTo, а координати за рамкою не потрапляють у шлях узагалі
+        const FRAME_M = 80;
+
+        function makePen(ctx, sw, sh) {
+            const X0 = -FRAME_M, Y0 = -FRAME_M, X1 = sw + FRAME_M, Y1 = sh + FRAME_M;
+            let started = false, hasPrev = false, px = 0, py = 0;
+            const seg = (x0, y0, x1, y1) => {
+                const dx = x1 - x0, dy = y1 - y0;
+                let t0 = 0, t1 = 1, r;
+                if (dx === 0) { if (x0 < X0 || x0 > X1) return; }
+                else if (dx > 0) {
+                    r = (X0 - x0) / dx; if (r > t1) return; if (r > t0) t0 = r;
+                    r = (X1 - x0) / dx; if (r < t0) return; if (r < t1) t1 = r;
+                } else {
+                    r = (X0 - x0) / dx; if (r < t0) return; if (r < t1) t1 = r;
+                    r = (X1 - x0) / dx; if (r > t1) return; if (r > t0) t0 = r;
+                }
+                if (dy === 0) { if (y0 < Y0 || y0 > Y1) return; }
+                else if (dy > 0) {
+                    r = (Y0 - y0) / dy; if (r > t1) return; if (r > t0) t0 = r;
+                    r = (Y1 - y0) / dy; if (r < t0) return; if (r < t1) t1 = r;
+                } else {
+                    r = (Y0 - y0) / dy; if (r < t0) return; if (r < t1) t1 = r;
+                    r = (Y1 - y0) / dy; if (r > t1) return; if (r > t0) t0 = r;
+                }
+                if (t0 > t1) return;
+                const ax = x0 + dx * t0, ay = y0 + dy * t0;
+                if (!started || t0 > 0) { ctx.moveTo(ax, ay); started = true; }
+                else ctx.lineTo(ax, ay);
+                ctx.lineTo(x0 + dx * t1, y0 + dy * t1);
+            };
+            return {
+                put(x, y) {
+                    if (hasPrev) seg(px, py, x, y);
+                    px = x; py = y; hasPrev = true;
+                },
+                cut() { started = false; hasPrev = false; }
+            };
+        }
+
+        function paintFlatPath(mx, F, pen) {
+            const n = mx.length >> 1;
+            for (let i = 0; i < n; i++) {
+                const dx = mx[i << 1] - F.mx0, dy = mx[(i << 1) + 1] - F.my0;
+                pen.put(F.x0 + F.a * dx + F.b * dy, F.y0 + F.d * dx + F.e * dy);
+            }
+        }
+
+        function paintHomogPath(mx, H, pen) {
+            const n = mx.length >> 1;
+            const a = H.a, b = H.b, c = H.c, d = H.d, e = H.e, f = H.f, g = H.g, h = H.h;
+            for (let i = 0; i < n; i++) {
+                const u = mx[i << 1], v = mx[(i << 1) + 1];
+                const w = g * u + h * v + 1;
+                // w <= 0 — точка за камерою: її екранна проєкція дзеркальна
+                if (w < 1e-6) { pen.cut(); continue; }
+                pen.put((a * u + b * v + c) / w, (d * u + e * v + f) / w);
+            }
+        }
+
+        // під нахилом на близькому зумі map.project тягне DEM на кожну
+        // вершину (~7 мкс), тож шлях будується за адаптивними опорними
+        // точками: середина ділянки проєктується точно, і якщо лінійна
+        // інтерполяція розійшлася з нею більш ніж на AFF_TOL, ділянка
+        // ділиться навпіл. похибка в кадрі лишається під пікселем
+        const AFF_TOL = 0.8;
+
+        function paintPitchedPath(pts, proj, st, pen, sw, sh) {
+            const n = pts.length;
+            const M = FRAME_M;
+            // 0 — точка в кадрі (з запасом), інакше — умовна сторона екрана
+            const side = p => p.x < -M ? 1 : p.x > sw + M ? 2 : p.y < -M ? 3 : p.y > sh + M ? 4 : 0;
+            const exact = i => {
+                const p = proj(pts[i][0], pts[i][1]);
+                st.checks++;
+                return (p && isFinite(p.x) && isFinite(p.y)) ? p : null;
+            };
+            const fill = (i0, p0, i1, p1, pm, depth) => {
+                const im = (i0 + i1) >> 1;
+                if (im <= i0) return;
+                if (!pm) {
+                    pm = exact(im);
+                    if (!pm) {
+                        pen.cut();
+                        for (let i = i0 + 1; i < i1; i++) {
+                            const q = exact(i);
+                            if (q) pen.put(q.x, q.y); else pen.cut();
+                        }
+                        return;
+                    }
+                }
+                const f = (im - i0) / (i1 - i0);
+                const err = Math.hypot(pm.x - (p0.x + (p1.x - p0.x) * f), pm.y - (p0.y + (p1.y - p0.y) * f));
+                if (err <= AFF_TOL || depth >= 6) {
+                    // у максимум іде похибка лише прийнятої інтерполяції:
+                    // ділянки, які діляться далі, лінію вже не формують
+                    if (!side(pm) && err > st.err) st.err = err;
+                    const dx = (p1.x - p0.x) / (i1 - i0), dy = (p1.y - p0.y) / (i1 - i0);
+                    for (let i = i0 + 1; i < i1; i++) pen.put(p0.x + dx * (i - i0), p0.y + dy * (i - i0));
+                } else {
+                    fill(i0, p0, im, pm, null, depth + 1);
+                    pen.put(pm.x, pm.y);
+                    fill(im, pm, i1, p1, null, depth + 1);
+                }
+            };
+            for (let s = 0; s < n; s += 48) {
+                const e = Math.min(s + 48, n - 1);
+                const p0 = exact(s);
+                if (!p0) { pen.cut(); continue; }
+                if (e === s) { pen.put(p0.x, p0.y); continue; }
+                const p1 = exact(e);
+                if (!p1) { pen.cut(); continue; }
+                const pm = exact((s + e) >> 1);
+                const s0 = side(p0), s1 = side(p1), sm = pm ? side(pm) : 0;
+                // ділянка цілком за одним краєм кадру — креслити нічого
+                if (s0 && s0 === s1 && s0 === sm) { pen.cut(); continue; }
+                pen.put(p0.x, p0.y);
+                fill(s, p0, e, p1, pm, 0);
+                pen.put(p1.x, p1.y);
+            }
         }
 
         function paintBorders() {
@@ -245,14 +425,31 @@
             const ctx = bCtx;
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, pw, ph);
+            paintBordersInto(ctx, dpr);
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
+
+        // той самий прохід, але в будь-якому масштабі: снимок карти рендериться
+        // у 2K, тож кордони мають лягти різко, а не розтягнутою копією віконного
+        // полотна
+        function paintBordersInto(ctx, scale) {
             const data = borderData();
             if (!data) return;
+            const t0 = performance.now();
+            const st = { pts: 0, feats: 0, err: 0, checks: 0 };
             const view = map.getBounds();
             const vw = view.getWest() - 0.35, ve = view.getEast() + 0.35;
             const vs = view.getSouth() - 0.35, vn = view.getNorth() + 0.35;
             const zoom = map.getZoom();
-            const proj = projector();
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            const pitched = (map.getPitch ? map.getPitch() : 0) > 0.5;
+            const srcCv = map.getCanvas();
+            const sw = srcCv.clientWidth || srcCv.width || 1280;
+            const sh = srcCv.clientHeight || srcCv.height || 800;
+            const flatP = pitched ? null : flatProjector();
+            const homog = pitched && zoom < 8.2 ? fitHomography(sw, sh) : null;
+            const proj = pitched ? ((lon, lat) => map.project([lon, lat])) : null;
+            const pen = makePen(ctx, sw, sh);
+            ctx.setTransform(scale, 0, 0, scale, 0, 0);
             ctx.lineJoin = 'round';
             ctx.lineCap = 'round';
             // три проходи: спершу тонкі контури сусідів, потім державний
@@ -276,13 +473,23 @@
                         const bb = f._bb;
                         if (bb && (bb[2] < vw || bb[0] > ve || bb[3] < vs || bb[1] > vn)) return;
                         const pts = f.geometry.coordinates;
-                        let started = false;
+                        st.feats++;
+                        st.pts += pts.length;
                         ctx.beginPath();
-                        for (let i = 0; i < pts.length; i++) {
-                            const p = proj(pts[i][0], pts[i][1]);
-                            if (!p || !isFinite(p.x) || !isFinite(p.y)) { started = false; continue; }
-                            if (!started) { ctx.moveTo(p.x, p.y); started = true; }
-                            else ctx.lineTo(p.x, p.y);
+                        pen.cut();
+                        if (pitched) {
+                            if (homog && f._mx) paintHomogPath(f._mx, homog, pen);
+                            else paintPitchedPath(pts, proj, st, pen, sw, sh);
+                        } else if (flatP && f._mx) {
+                            paintFlatPath(f._mx, flatP, pen);
+                        } else {
+                            let started = false;
+                            for (let i = 0; i < pts.length; i++) {
+                                const p = map.project([pts[i][0], pts[i][1]]);
+                                if (!p || !isFinite(p.x) || !isFinite(p.y)) { started = false; continue; }
+                                if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+                                else ctx.lineTo(p.x, p.y);
+                            }
                         }
                         if (meta.dash) ctx.setLineDash(meta.dash);
                         // темна підкладка тримає лінію читабельною і на світлому
@@ -299,6 +506,11 @@
             });
             ctx.globalAlpha = 1;
             ctx.setTransform(1, 0, 0, 1, 0, 0);
+            window.__ltBorderMs = {
+                ms: +(performance.now() - t0).toFixed(2), feats: st.feats, pts: st.pts,
+                checks: st.checks, err: +st.err.toFixed(2), hom: !!homog,
+                z: +zoom.toFixed(2), pitch: +(map.getPitch() || 0).toFixed(0)
+            };
         }
 
         function mountBorders() {
@@ -342,6 +554,23 @@
                 REGION_LAYERS.forEach(id => {
                     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', regions ? 'visible' : 'none');
                 });
+            },
+            setRailways(on) {
+                railsOn = !!on;
+                applyRailsVis();
+            },
+            // кордони в снимок: малюємо їх у масштабі фото, не копією екранного
+            // полотна — інакше лінія виходить удвічі тоншою й мильною
+            snapBorders(ctx, W) {
+                const src = map.getCanvas();
+                const cssW = src.clientWidth || src.width;
+                if (!cssW || !W) return;
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.globalAlpha = 1;
+                ctx.globalCompositeOperation = 'source-over';
+                paintBordersInto(ctx, W / cssW);
+                ctx.restore();
             },
             setBorder(id, on) {
                 if (!id) return;

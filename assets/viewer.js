@@ -17,7 +17,9 @@
         relief3d: true,
         reliefFlat: false,
         places: true,
-        zones3d: true
+        zones3d: true,
+        outlines: true,
+        rails: true
     };
 
     let map = null;
@@ -2665,6 +2667,41 @@
         syncZonesBtn();
     }
 
+    // «ОБВОДКА»: контури всіх шарів одним перемикачем. це не зміна стилю
+    // (стиль лишається в даних) — рушій просто не малює лінії контуру й
+    // світлу кромку, поки прапорець вимкнено
+    function syncOutlinesBtn() {
+        const btn = $('view-outlines');
+        if (!btn) return;
+        btn.classList.toggle('active', !!state.outlines);
+        btn.setAttribute('aria-pressed', String(!!state.outlines));
+    }
+
+    function setOutlinesToggle(on) {
+        state.outlines = !!on;
+        try { localStorage.setItem('LINETATE:outlines', state.outlines ? '1' : '0'); } catch (e) { }
+        LT.setOutlines(map, state.outlines);
+        Object.values(state.layers).forEach(l => {
+            if (mapReady) LT.applyLayerPaint(map, l, isVisible(l));
+        });
+        if (blend) blend.sync();
+        syncOutlinesBtn();
+    }
+
+    function syncRailsBtn() {
+        const btn = $('view-rails');
+        if (!btn) return;
+        btn.classList.toggle('active', !!state.rails);
+        btn.setAttribute('aria-pressed', String(!!state.rails));
+    }
+
+    function setRailsToggle(on) {
+        state.rails = !!on;
+        try { localStorage.setItem('LINETATE:rails', state.rails ? '1' : '0'); } catch (e) { }
+        if (mapTools) mapTools.setRailways(state.rails);
+        syncRailsBtn();
+    }
+
     function centerLabel(id) {
         const l = state.layers[id];
         if (!l) return;
@@ -2971,6 +3008,10 @@
             });
             ctx.globalCompositeOperation = 'source-over';
 
+            // кордони живуть на власному DOM-полотні (#lt-borders) і в кадр
+            // мапи не входять — без цього рядка снимок виходив без них
+            try { mapTools.snapBorders(ctx, W); } catch (e) { }
+
             paintDraw();
             if (drawCv && drawCv.width) ctx.drawImage(drawCv, 0, 0, W, H);
 
@@ -3028,12 +3069,9 @@
         };
 
         // без preserveDrawingBuffer WebGL-буфер живёт только внутри кадра,
-        // поэтому копию снимаем синхронно в обработчике render
+        // поэтому копию снимаем синхронно в обработчике render — одинаково
+        // на десктопе и телефоне
         const capture = () => {
-            if (!LT.device().mobile) {
-                try { snapPhoto(); } finally { restore(); }
-                return;
-            }
             let got = false;
             const grab = () => {
                 if (got) return;
@@ -3228,16 +3266,24 @@
         const pl = localStorage.getItem('LINETATE:places');
         const zn = localStorage.getItem('LINETATE:zones3d');
         const lb = localStorage.getItem('LINETATE:labels');
+        const ol = localStorage.getItem('LINETATE:outlines');
+        const rw = localStorage.getItem('LINETATE:rails');
         state.relief3d = r3 !== '0';
         state.reliefFlat = rf === '1';
         state.places = pl !== '0';
         state.zones3d = zn !== '0';
+        state.outlines = ol !== '0';
+        state.rails = rw !== '0';
         // назви шарів на самій мапі: раніше вимкнені за замовчуванням, через що
         // на телефоні назва зʼявлялася лише після тицяння пальцем по шару
         state.labels = lb !== '0';
     } catch (e) { }
     LT.setReliefPrefs(map, { relief3d: state.relief3d, reliefFlat: state.reliefFlat });
     LT.setZones3d(map, state.zones3d);
+    LT.setOutlines(map, state.outlines);
+    mapTools.setRailways(state.rails);
+    syncOutlinesBtn();
+    syncRailsBtn();
 
     pxLabels = LT.pixelLabels(map);
     pxLabels.setOn(state.base === 'hybrid');
@@ -3585,6 +3631,8 @@
         $('view-relief').addEventListener('click', () => setReliefToggle(!(map._lt3d ? state.relief3d : state.reliefFlat)));
         $('view-places').addEventListener('click', () => setPlacesToggle(!state.places));
         $('view-zones').addEventListener('click', () => setZonesToggle(!state.zones3d));
+        $('view-outlines').addEventListener('click', () => setOutlinesToggle(!state.outlines));
+        $('view-rails').addEventListener('click', () => setRailsToggle(!state.rails));
         $('view-3d').addEventListener('click', toggle3D);
         const rail3d = $('tool-3d');
         if (rail3d) rail3d.addEventListener('click', toggle3D);
