@@ -6,12 +6,17 @@
  *   assets/borders.js — точні лінії кордонів OSM (ODbL);
  *   scripts/data/ua-border-ways.json — лінії кордону України з OSM
  *                        (relation 60199): ними закриваємо дірки, яких
- *                        немає в borders.js (Придністров'я, шов Дунаю).
+ *                        немає в borders.js (Придністров'я, шов Дунаю);
+ *   scripts/data/region-borders.json — згенеровані
+ *                        scripts/build-region-borders.js контури сусідніх
+ *                        країн (Польща, Словаччина, Угорщина, Румунія,
+ *                        Білорусь, Молдова, РФ) і де-факто межа
+ *                        Придністров'я.
  *
  * Результат: assets/state-borders.js — категорії за країнами-сусідами
- * (РФ, Білорусь, Польща, Словаччина, Угорщина, Румунія, Молдова), кожна
- * стиснена polyline з точністю 1e5. Переглядач лише декодує готові лінії,
- * жодних обчислень у кадрі.
+ * (РФ, Білорусь, Польща, Словаччина, Угорщина, Румунія, Молдова) плюс
+ * пунктирне Придністров'я; кожна лінія стиснена polyline з точністю 1e5.
+ * Переглядач лише декодує готові лінії, жодних обчислень у кадрі.
  *
  * Запуск: node scripts/build-state-borders.js
  */
@@ -359,6 +364,27 @@ function main() {
     console.log('OSM gap fill: runs', fillRuns, 'pts', fillPts);
 
 
+    // повні контури сусідніх країн: тонкі лінії, які домалюють кордон
+    // Польщі з Чехією, Білорусі з Литвою тощо. з Україною їх не дублюємо —
+    // ці ділянки вже є вище. Придністров'я йде окремою пунктирною категорією
+    const regionPath = path.join(ROOT, 'scripts/data/region-borders.json');
+    const region = fs.existsSync(regionPath) ? JSON.parse(fs.readFileSync(regionPath, 'utf8')) : null;
+    const outlines = {};
+    // region-borders.json зберігає ВЖЕ закодовані polyline: їх не можна
+    // класти в cats (там масиви точок, які кодуються нижче) — інакше
+    // рядок перекодовується як координати й лінія розсипається в нулі
+    let pmrLines = null;
+    if (region) {
+        for (const id of Object.keys(cats)) {
+            if (region.outline && region.outline[id] && region.outline[id].length) {
+                outlines[id] = region.outline[id];
+            }
+        }
+        if (region.pmr && region.pmr.length) pmrLines = region.pmr;
+    } else {
+        console.warn('region-borders.json відсутній — контури сусідів не додано');
+    }
+
     // стандартний картографічний дизайн: одна тепла слонова лінія з темною
     // підкладкою для всіх країн. колір не кодує країну — її показує прапор
     // у перемикачі. товщина ледь різна: кордон РФ читається на червоній
@@ -399,20 +425,42 @@ function main() {
             name: { uk: 'Кордон з Молдовою', en: 'Border with Moldova', ru: 'Граница с Молдовой' },
             short: { uk: 'Молдова', en: 'Moldova', ru: 'Молдова' },
             color: BORDER_COLOR, width: 2.8
+        },
+        // де-факто межа невизнаного утворення: пунктир тим самим кольором,
+        // щоб не читалась як міжнародний кордон
+        pmr: {
+            name: { uk: 'Придністров’я (де-факто)', en: 'Transnistria (de facto)', ru: 'Приднестровье (де-факто)' },
+            short: { uk: 'Придністров’я', en: 'Transnistria', ru: 'Приднестровье' },
+            color: BORDER_COLOR, width: 1.8, dash: [5, 4]
         }
     };
 
-    const out = {
-        v: 2,
-        cats: Object.keys(cats).map(id => ({
+    const outCats = Object.keys(cats).map(id => {
+        const cat = {
             id,
             name: meta[id].name,
             short: meta[id].short,
             color: meta[id].color,
             width: meta[id].width,
             lines: cats[id].map(encodePolyline)
-        }))
-    };
+        };
+        if (meta[id].dash) cat.dash = meta[id].dash;
+        if (outlines[id]) cat.outline = outlines[id];
+        return cat;
+    });
+    if (pmrLines) {
+        outCats.push({
+            id: 'pmr',
+            name: meta.pmr.name,
+            short: meta.pmr.short,
+            color: meta.pmr.color,
+            width: meta.pmr.width,
+            dash: meta.pmr.dash,
+            lines: pmrLines
+        });
+    }
+
+    const out = { v: 3, cats: outCats };
 
     fs.writeFileSync(path.join(ROOT, 'assets/state-borders.js'),
         '/* LINESTATE — державні кордони України (OpenStreetMap, ODbL).\n' +
@@ -423,6 +471,7 @@ function main() {
     const sz = fs.statSync(path.join(ROOT, 'assets/state-borders.js')).size;
     console.log('raw border points kept:', rawKept, 'simplified:', keptPts, 'size:', (sz / 1024).toFixed(1) + ' KB');
     for (const id of Object.keys(cats)) console.log(id, 'lines:', cats[id].length, 'pts:', cats[id].reduce((a, b) => a + b.length, 0));
+    console.log('pmr lines:', pmrLines ? pmrLines.length : 0);
 }
 
 main();

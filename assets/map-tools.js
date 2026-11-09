@@ -123,12 +123,16 @@
             // ширина залежить лише від зуму: MapLibre не дозволяє поєднати
             // ["zoom"] з властивістю обʼєкта в одному виразі line-width, тому
             // головні й другорядні лінії — окремі шари
-            const fade = ['interpolate', ['linear'], ['zoom'], 6.2, 0, 7.1, 0.92];
+            const fade = ['interpolate', ['linear'], ['zoom'], 5.2, 0, 5.9, 1];
             const width = arr => ['interpolate', ['linear'], ['zoom']].concat(arr);
-            // біло-чорне чергування: біла підкладка й темний пунктир поверх
+            // біло-чорне чергування: біла підкладка й темний пунктир поверх.
+            // з оглядового зуму головні лінії вже читаються, другорядні
+            // з'являються лише з z7, коли є місце для деталі. підкладка досить
+            // товста, щоб чорний пунктир усередині не зникав на висоті —
+            // інакше залізниця стає ще одним білим пунктиром замість нитки
             const layers = [
-                { id: 'lt-rail-casing', color: '#f6f1e2', w: [5, 2.0, 8, 3.0, 11, 3.8, 14, 4.8], cap: 'round', dash: null },
-                { id: 'lt-rail-dash', color: '#151a20', w: [5, 1.1, 8, 1.75, 11, 2.3, 14, 3.0], cap: 'butt', dash: [2.0, 2.0] }
+                { id: 'lt-rail-casing', color: '#fbf7ea', w: [5, 3.6, 7, 4.2, 10, 5.0, 14, 5.8], cap: 'round', dash: null },
+                { id: 'lt-rail-dash', color: '#10151b', w: [5, 1.9, 7, 2.3, 10, 2.8, 14, 3.6], cap: 'butt', dash: [2.0, 2.0] }
             ];
             layers.forEach(l => {
                 map.addLayer({
@@ -162,11 +166,11 @@
             if (!raw || !raw.cats) return null;
             const out = {};
             raw.cats.forEach(c => {
-                const features = c.lines.map(line => {
+                const make = (line, thin) => {
                     const coords = LT.decodePolyline(line);
                     const f = {
                         type: 'Feature',
-                        properties: { cat: c.id },
+                        properties: { cat: c.id, thin: !!thin },
                         geometry: { type: 'LineString', coordinates: coords }
                     };
                     // рамка в градусах: за нею відсікаємо цілі лінії, не
@@ -180,8 +184,12 @@
                         if (p[1] > y1) y1 = p[1];
                     }
                     f._bb = [x0, y0, x1, y1];
+                    if (thin) f._thin = true;
                     return f;
-                });
+                };
+                const features = c.lines.map(line => make(line, false));
+                // контури сусідніх країн — тонший шар під основним кордоном
+                if (c.outline) c.outline.forEach(line => features.push(make(line, true)));
                 out[c.id] = { meta: c, fc: { type: 'FeatureCollection', features } };
             });
             window.__ltBorderData = out;
@@ -247,35 +255,49 @@
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.lineJoin = 'round';
             ctx.lineCap = 'round';
-            Object.keys(data).forEach(id => {
-                if (borderVis[id] === false) return;
-                const { meta, fc } = data[id];
-                const core = meta.color || '#eae3d3';
-                const cw = meta.width || 2.6;
-                const wCore = cw * (zoom < 6.5 ? 0.84 : 1);
-                const caseW = wCore + 2.2;
-                fc.features.forEach(f => {
-                    const bb = f._bb;
-                    if (bb && (bb[2] < vw || bb[0] > ve || bb[3] < vs || bb[1] > vn)) return;
-                    const pts = f.geometry.coordinates;
-                    let started = false;
-                    ctx.beginPath();
-                    for (let i = 0; i < pts.length; i++) {
-                        const p = proj(pts[i][0], pts[i][1]);
-                        if (!p || !isFinite(p.x) || !isFinite(p.y)) { started = false; continue; }
-                        if (!started) { ctx.moveTo(p.x, p.y); started = true; }
-                        else ctx.lineTo(p.x, p.y);
-                    }
-                    // темна підкладка тримає лінію читабельною і на світлому
-                    // лісі, і на темній заливці окупованої зони
-                    ctx.strokeStyle = 'rgba(8,11,16,.72)';
-                    ctx.lineWidth = caseW;
-                    ctx.stroke();
-                    ctx.strokeStyle = core;
-                    ctx.lineWidth = wCore;
-                    ctx.stroke();
+            // три проходи: спершу тонкі контури сусідів, потім державний
+            // кордон України, останнім — пунктир де-факто межі. так товста
+            // лінія завжди перекриває тонку, а не навпаки
+            ['thin', 'main', 'dash'].forEach(pass => {
+                Object.keys(data).forEach(id => {
+                    if (borderVis[id] === false) return;
+                    const { meta, fc } = data[id];
+                    const kind = meta.dash ? 'dash' : 'main';
+                    if (kind !== pass) return;
+                    const thin = pass === 'thin';
+                    const core = thin ? '#e6ddc9' : (meta.color || '#eae3d3');
+                    const base = meta.width || 2.6;
+                    const wCore = (thin ? 1.4 : base) * (zoom < 6.5 ? 0.84 : 1);
+                    const caseW = thin ? wCore + 0.8 : (pass === 'dash' ? wCore + 1.5 : wCore + 2.2);
+                    const caseColor = thin ? 'rgba(8,11,16,.62)' : 'rgba(8,11,16,.72)';
+                    ctx.globalAlpha = 1;
+                    fc.features.forEach(f => {
+                        if (!!f._thin !== thin) return;
+                        const bb = f._bb;
+                        if (bb && (bb[2] < vw || bb[0] > ve || bb[3] < vs || bb[1] > vn)) return;
+                        const pts = f.geometry.coordinates;
+                        let started = false;
+                        ctx.beginPath();
+                        for (let i = 0; i < pts.length; i++) {
+                            const p = proj(pts[i][0], pts[i][1]);
+                            if (!p || !isFinite(p.x) || !isFinite(p.y)) { started = false; continue; }
+                            if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+                            else ctx.lineTo(p.x, p.y);
+                        }
+                        if (meta.dash) ctx.setLineDash(meta.dash);
+                        // темна підкладка тримає лінію читабельною і на світлому
+                        // лісі, і на темній заливці окупованої зони
+                        ctx.strokeStyle = caseColor;
+                        ctx.lineWidth = caseW;
+                        ctx.stroke();
+                        ctx.strokeStyle = core;
+                        ctx.lineWidth = wCore;
+                        ctx.stroke();
+                        if (meta.dash) ctx.setLineDash([]);
+                    });
                 });
             });
+            ctx.globalAlpha = 1;
             ctx.setTransform(1, 0, 0, 1, 0, 0);
         }
 
