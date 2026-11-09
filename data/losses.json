@@ -1,5 +1,5 @@
 {
- "updatedAt": "2026-11-06T12:09:37.838Z",
+ "updatedAt": "2026-11-09T16:34:56.292Z",
  "ru": {
   "named": 282993,
   "asOf": "2026-10-23",
@@ -649,13 +649,13 @@
   "url": "https://ualosses.org/en/statistics/"
  },
  "equip": {
-  "asOf": "2026-11-06",
-  "day": 1716,
+  "asOf": "2026-11-09",
+  "day": 1719,
   "source": "Oryx",
   "url": "https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-equipment.html",
   "summary": {
-   "total": 24251,
-   "destroyed": 19216,
+   "total": 24275,
+   "destroyed": 19240,
    "damaged": 1001,
    "abandoned": 1192,
    "captured": 2842
@@ -677,14 +677,14 @@
    "submarines"
   ],
   "totals": {
-   "tanks": 4454,
-   "armoured_fighting_vehicles": 9743,
-   "artillery_systems": 1870,
-   "mlrs": 645,
-   "aa_warfare_systems": 549,
+   "tanks": 4456,
+   "armoured_fighting_vehicles": 9747,
+   "artillery_systems": 1871,
+   "mlrs": 646,
+   "aa_warfare_systems": 551,
    "planes": 208,
    "helicopters": 186,
-   "vehicles_fuel_tanks": 5180,
+   "vehicles_fuel_tanks": 5190,
    "warships_cutters": 40,
    "cruise_missiles": null,
    "uav_systems": 26,
@@ -693,14 +693,14 @@
    "submarines": null
   },
   "destroyed": {
-   "tanks": 3359,
-   "armoured_fighting_vehicles": 7858,
-   "artillery_systems": 1425,
-   "mlrs": 541,
-   "aa_warfare_systems": 412,
+   "tanks": 3361,
+   "armoured_fighting_vehicles": 7862,
+   "artillery_systems": 1426,
+   "mlrs": 542,
+   "aa_warfare_systems": 414,
    "planes": 178,
    "helicopters": 146,
-   "vehicles_fuel_tanks": 4367,
+   "vehicles_fuel_tanks": 4377,
    "warships_cutters": 27,
    "cruise_missiles": null,
    "uav_systems": 22,
@@ -709,14 +709,14 @@
    "submarines": null
   },
   "increase": {
-   "tanks": 0,
-   "armoured_fighting_vehicles": 0,
-   "artillery_systems": 0,
-   "mlrs": 0,
-   "aa_warfare_systems": 0,
+   "tanks": 2,
+   "armoured_fighting_vehicles": 4,
+   "artillery_systems": 1,
+   "mlrs": 1,
+   "aa_warfare_systems": 2,
    "planes": 0,
    "helicopters": 0,
-   "vehicles_fuel_tanks": 0,
+   "vehicles_fuel_tanks": 10,
    "warships_cutters": 0,
    "cruise_missiles": 0,
    "uav_systems": 0,
@@ -724,7 +724,25 @@
    "atgm_srbm_systems": 0,
    "submarines": 0
   },
-  "days": [],
+  "days": [
+   [
+    "2026-11-09",
+    2,
+    4,
+    1,
+    1,
+    2,
+    0,
+    0,
+    10,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  ],
   "history": [
    [
     "2026-11-06",
@@ -736,6 +754,23 @@
     208,
     186,
     5180,
+    40,
+    null,
+    26,
+    1313,
+    47,
+    null
+   ],
+   [
+    "2026-11-09",
+    4456,
+    9747,
+    1871,
+    646,
+    551,
+    208,
+    186,
+    5190,
     40,
     null,
     26,
