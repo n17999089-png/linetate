@@ -70,7 +70,7 @@
                     border: ['solid', 'dashed', 'glow', 'none'].indexOf(s.border) >= 0 ? s.border : 'solid',
                     anim,
                     glow: Number.isFinite(s.glow) ? Math.min(100, Math.max(0, s.glow)) : 60,
-                    iglow: Number.isFinite(s.iglow) ? Math.min(100, Math.max(0, s.iglow)) : 0,
+                    iglow: Number.isFinite(s.iglow) ? Math.min(100, Math.max(0, s.iglow)) : 45,
                     igcol: typeof s.igcol === 'string' ? s.igcol : '#ffffff',
                     grad: s.grad === true,
                     gcol: typeof s.gcol === 'string' ? s.gcol : '#04101c',

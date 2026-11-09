@@ -2816,19 +2816,91 @@
         return mob ? (lowEndDevice() ? .74 : .86) : 1;
     }
 
-    // радіус точки під підписом: чим важливіший НП, тим більша кулька
+    // пів-сторони знака під підписом: спільна мірка і для колізій, і для
+    // печіння спрайта. місто — квадрат, село — кружок, столиця — золотий
     function dotRadius(rank, sc) {
-        return (rank <= 1 ? 2.8 : rank <= 2 ? 2.5 : 2.15) * sc;
+        const side = rank <= 0 ? 11 : rank <= 1 ? 10 : rank <= 2 ? 9 : 8;
+        return side * sc / 2;
     }
 
-    function drawDot(k, cx, cy, r, fill) {
+    function roundRectPath(k, x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
         k.beginPath();
-        k.arc(cx, cy, r, 0, Math.PI * 2);
-        k.fillStyle = fill;
-        k.fill();
-        k.strokeStyle = PLACE_INK;
-        k.lineWidth = 1;
-        k.stroke();
+        k.moveTo(x + rr, y);
+        k.lineTo(x + w - rr, y);
+        k.arcTo(x + w, y, x + w, y + rr, rr);
+        k.lineTo(x + w, y + h - rr);
+        k.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+        k.lineTo(x + rr, y + h);
+        k.arcTo(x, y + h, x, y + h - rr, rr);
+        k.lineTo(x, y + rr);
+        k.arcTo(x, y, x + rr, y, rr);
+        k.closePath();
+    }
+
+    // Знак НП малюється просто в спрайт на точній координаті. Місто — квадрат
+    // із заокругленими кутами, село — кружок, столиця — золотий квадрат із
+    // білою внутрішньою рамкою. «Внутрішнє світло» самої іконки — градієнт від
+    // білого вгорі до тіні знизу плюс блик по верхній кромці: так знак читається
+    // обʼємним на будь-якому фоні, а не пласкою цяткою. Контур спільний з
+    // підписом, щоб пара «іконка + назва» виглядала однією міткою.
+    function drawPlaceIcon(k, cx, cy, r, kind, rank) {
+        const s = Math.max(4, r * 2);
+        k.save();
+        k.lineJoin = 'round';
+        if (kind === 'vil') {
+            const rr = Math.max(1.6, s / 2 - .7);
+            const g = k.createRadialGradient(cx - rr * .34, cy - rr * .42, rr * .06, cx, cy, rr * 1.12);
+            g.addColorStop(0, '#ffffff');
+            g.addColorStop(.46, '#e8f1fa');
+            g.addColorStop(1, '#9db2c8');
+            k.beginPath();
+            k.arc(cx, cy, rr, 0, Math.PI * 2);
+            k.fillStyle = g;
+            k.fill();
+            k.lineWidth = Math.max(1.1, s * .13);
+            k.strokeStyle = 'rgba(3, 6, 10, .96)';
+            k.stroke();
+            // блик зсунутий угору-вліво: світло падає з того ж боку, що й у міста
+            k.beginPath();
+            k.arc(cx - rr * .3, cy - rr * .34, Math.max(.5, rr * .26), 0, Math.PI * 2);
+            k.fillStyle = 'rgba(255, 255, 255, .92)';
+            k.fill();
+        } else {
+            const ins = Math.max(.6, s * .07);
+            const x0 = cx - s / 2 + ins, y0 = cy - s / 2 + ins;
+            const side = s - ins * 2;
+            const cap = kind === 'cap';
+            const g = k.createLinearGradient(x0, y0, x0, y0 + side);
+            if (cap) {
+                g.addColorStop(0, '#fff6dc');
+                g.addColorStop(.46, '#ffd489');
+                g.addColorStop(1, '#c8861f');
+            } else {
+                g.addColorStop(0, '#ffffff');
+                g.addColorStop(.46, '#e2edf8');
+                g.addColorStop(1, '#9db2c8');
+            }
+            roundRectPath(k, x0, y0, side, side, Math.max(1.2, side * .26));
+            k.fillStyle = g;
+            k.fill();
+            k.lineWidth = Math.max(1.1, s * .13);
+            k.strokeStyle = 'rgba(3, 6, 10, .96)';
+            k.stroke();
+            // внутрішня рамка: у столиці світла, у міста — тонка тіньова лінія
+            k.beginPath();
+            roundRectPath(k, x0 + side * .22, y0 + side * .22, side * .56, side * .56, Math.max(.5, side * .12));
+            k.strokeStyle = cap ? 'rgba(255, 255, 255, .72)' : 'rgba(255, 255, 255, .42)';
+            k.lineWidth = Math.max(.6, s * .07);
+            k.stroke();
+            k.beginPath();
+            k.moveTo(x0 + side * .27, y0 + side * .17);
+            k.lineTo(x0 + side * .73, y0 + side * .17);
+            k.strokeStyle = cap ? 'rgba(255, 255, 255, .95)' : 'rgba(255, 255, 255, .8)';
+            k.lineWidth = Math.max(.7, s * .09);
+            k.stroke();
+        }
+        k.restore();
     }
 
     // Підпис готується ОДИН раз: текст, крапка і ромб столиці лягають у власний
@@ -3173,8 +3245,8 @@
 
         // спрайт підпису: текст і точка, намальовані відносно точної координати
         // НП — це (0,0) спрайта. далі по кадрі лише drawImage. Стара манера:
-        // підпис висить НАД точкою, ромб столиці — над самим підписом. Міста
-        // без точки стоять центром на координаті, як на паперових картах
+        // підпис висить НАД точкою; міста без точки стоять центром на координаті,
+        // як на паперових картах
         function buildSprite(name, rank, cap, dot, dpr, kind, sc) {
             const fsz = PLACE_SIZE[rank];
             const big = rank <= 1;
@@ -3184,12 +3256,9 @@
             const padX = (mob ? 4 : 5) + 3, padY = (mob ? 3.5 : 5) + 3;
             const dr = dot ? dotRadius(rank, sc) : 0;
             const ty = dot ? -(dr + 3.4) : 0;
-            const dia = cap ? (big ? 3.2 : 2.8) * sc : 0;
-            const dmy = ty - fsz / 2 - 6;
             let bottom = ty + fsz * 0.32 + padY;
             let top = ty - fsz - padY;
-            if (dot) bottom = Math.max(bottom, dr + 1.8 + padY);
-            if (cap) top = Math.min(top, dmy - dia - padY);
+            if (dot) bottom = Math.max(bottom, dr + 1.4 + padY);
             const half = Math.max(tw / 2, dot ? dr + 2.4 : 0) + padX;
             const left = -half, right = half;
             const w = Math.max(2, Math.ceil(right - left)), h = Math.max(2, Math.ceil(bottom - top));
@@ -3206,41 +3275,27 @@
             try { k.letterSpacing = (big ? 0.9 : 0.5) + 'px'; } catch (e) { }
 
             if (dot) {
-                // точка точно на координаті, підпис над нею не ховає місце
-                drawDot(k, 0, 0, dr, kind === 'cap' ? PLACE_CAP : '#e8eef5');
+                // знак точно на координаті, підпис над ним не ховає місце
+                drawPlaceIcon(k, 0, 0, dr, kind, rank);
             }
             // контур разом із м'якою тінню: широкий штрих-«світіння» на 1x
             // зливався з обводкою в чорну плашку навколо всього слова. спрайт
             // печеться один раз, тому shadowBlur у гарячому шляху не коштує
             k.save();
-            k.shadowColor = cap ? 'rgba(255, 170, 40, .38)' : 'rgba(0, 0, 0, .62)';
-            k.shadowBlur = (big ? 4.6 : 3.4) * (mob ? .85 : 1);
+            k.shadowColor = cap ? 'rgba(255, 170, 40, .38)' : 'rgba(0, 0, 0, .58)';
+            k.shadowBlur = (big ? 4.2 : 3.0) * (mob ? .85 : 1);
             k.shadowOffsetY = 1;
             // товщина обводки — стара: тонший штрих губився на світлих зонах,
             // і назви міст читались як незахищений текст
             k.strokeStyle = PLACE_INK;
-            k.lineWidth = big ? 3.4 : 2.6;
+            k.lineWidth = big ? 3.1 : 2.4;
             k.strokeText(name, 0, ty);
             k.restore();
             k.strokeStyle = PLACE_INK;
-            k.lineWidth = big ? 3.4 : 2.6;
+            k.lineWidth = big ? 3.1 : 2.4;
             k.strokeText(name, 0, ty);
             k.fillStyle = cap ? PLACE_CAP : PLACE_FILL[rank];
             k.fillText(name, 0, ty);
-            if (cap) {
-                // ромб над столицею — картографічний маркер статусу
-                k.beginPath();
-                k.moveTo(0, dmy - dia);
-                k.lineTo(dia, dmy);
-                k.lineTo(0, dmy + dia);
-                k.lineTo(-dia, dmy);
-                k.closePath();
-                k.fillStyle = 'rgba(255, 212, 137, .96)';
-                k.fill();
-                k.strokeStyle = 'rgba(0, 0, 0, .8)';
-                k.lineWidth = 1;
-                k.stroke();
-            }
             try { k.letterSpacing = '0px'; } catch (e) { }
             return { cv: c, x: left, y: top, w: w, h: h };
         }
@@ -3303,7 +3358,7 @@
             c.height = Math.round(size * dprNow);
             const k = c.getContext('2d');
             k.setTransform(dprNow, 0, 0, dprNow, 0, 0);
-            drawDot(k, size / 2, size / 2, r, kind === 'cap' ? PLACE_CAP : '#e8eef5');
+            drawPlaceIcon(k, size / 2, size / 2, r, kind, rank);
             b = { cv: c, size: size };
             bareIcons.set(key, b);
             return b;
@@ -3548,10 +3603,10 @@
                 }
                 if (px < -80 || py < -50 || px > size.x + 80 || py > size.y + 50) continue;
                 it.px = px; it.py = py;
-                // стара манера: великі міста живуть самим підписом на координаті,
-                // а точка з'являється, коли масштаб дозволяє читати підпис над
-                // нею. інакше крапки на оглядовому зумі зайняли б пів карти
-                it.dot = it.rank >= 3 && zoom >= 9.6;
+                // з близького зуму під назвою стоїть знак: квадрат міста або
+                // кружок села. з огляду великі міста живуть самим підписом на
+                // координаті — інакше знаки зайняли б пів карти
+                it.dot = zoom >= 9.6 && (it.kind !== 'vil' || it.rank >= 3);
                 cand.push(it);
             }
             const shown = new Set();
@@ -6965,7 +7020,7 @@
         const hasLine = !map._ltOutlinesOff && !noLine && bw > 0 && !(d3 && ownBw === 0);
         const decor = ownBw > 0;
         const lineCol = ownBw > 0 ? s.bcol : OUTLINE_INK;
-        const igo = Math.max(0, Math.min(100, s.iglow == null ? 0 : s.iglow)) / 100;
+        const igo = glowStrength(s.iglow);
         const blended = s.blend && s.blend !== 'normal';
         const gradient = s.grad === true;
         const arrow3d = l.kind === 'arrow' && s.d3 === true;
@@ -6995,7 +7050,7 @@
         // z-fighting і коштували найдорожчого проходу геометрії на жест
         map.setLayoutProperty('l_' + l.id, 'visibility', hasLine ? vis : 'none');
         map.setLayoutProperty('g_' + l.id, 'visibility', decor && glow && hasLine ? vis : 'none');
-        map.setLayoutProperty('ig_' + l.id, 'visibility', decor && igo > 0 && hasLine ? vis : 'none');
+        map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && hasLine ? vis : 'none');
         const zone = l.kind === 'zone';
         map.setLayoutProperty('gw_' + l.id, 'visibility', decor && glow && hasLine ? vis : 'none');
         map.setLayoutProperty('rh_' + l.id, 'visibility', decor && zone && hasLine ? vis : 'none');
@@ -7020,14 +7075,16 @@
         map.setPaintProperty('g_' + l.id, 'line-opacity', Math.min(0.65, 0.6 * gAmt + s.alpha * 0.15) * k);
         map.setPaintProperty('g_' + l.id, 'line-blur', Math.max(4, bw * 4) * (0.5 + gAmt));
 
-        // свечение внутри контура: сдвинутая внутрь размытая линия
-        const igW = Math.max(6, bw * 4) * (0.8 + igo * 2.2);
-        map.setPaintProperty('ig_' + l.id, 'line-color', s.igcol || s.bcol);
+        // свечение внутри контура: сдвинутая внутрь размытая линия. колір
+        // виводимо з заливки, а не з обводки: світло мусить бути світлішим
+        // за сам шар, інакше воно читається як друга тінь
+        const igW = Math.max(4, bw * 3) * (0.7 + igo * 1.5);
+        map.setPaintProperty('ig_' + l.id, 'line-color', glowTint(s.color, s.igcol));
         map.setPaintProperty('ig_' + l.id, 'line-width', igW);
-        map.setPaintProperty('ig_' + l.id, 'line-blur', Math.max(1.5, igW * 0.24));
-        map.setPaintProperty('ig_' + l.id, 'line-opacity', Math.min(0.9, 0.25 + igo * 0.65) * k);
+        map.setPaintProperty('ig_' + l.id, 'line-blur', Math.max(1.5, igW * 0.3));
+        map.setPaintProperty('ig_' + l.id, 'line-opacity', Math.min(0.75, 0.16 + igo * 0.45) * k);
         // отрицательный сдвиг уходит внутрь контура при обходе CCW (см. rewindFC)
-        map.setPaintProperty('ig_' + l.id, 'line-offset', -Math.max(2, igW * 0.34));
+        map.setPaintProperty('ig_' + l.id, 'line-offset', -Math.max(1.8, igW * 0.34));
 
         // широкое гало под узким свечением: глубина свечения в два слоя
         map.setPaintProperty('gw_' + l.id, 'line-color', s.bcol);
@@ -7277,6 +7334,26 @@
         const k = Math.max(0, Math.min(1, Number(amt) || 0));
         const h = v => Math.round(v + (255 - v) * k).toString(16).padStart(2, '0');
         return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+    }
+
+    // Колір внутрішнього світла: за замовчуванням — світліший за заливку
+    // шару. Кастомний колір беремо лише тоді, коли він справді світліший:
+    // старі збережені «чорні» значення давали тінь замість світла, і саме
+    // через них свічення читалося як брудна пляма.
+    function glowTint(fill, custom) {
+        const base = parseHex(fill) || [80, 90, 100];
+        const light = lightHex(fill, 0.52);
+        const cus = parseHex(custom);
+        if (!cus) return light;
+        const lum = c => .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+        return lum(cus) > lum(base) + 16 ? custom : light;
+    }
+
+    // сила свічення 0..1: повзунок лишається підсилювачем, а не єдиним
+    // джерелом — інакше збережений 7 % (колишній дефолт) давав майже нуль
+    function glowStrength(v) {
+        const n = v == null ? 45 : Math.max(0, Math.min(100, Number(v) || 0));
+        return n <= 0 ? 0 : 0.45 + 0.55 * (n / 100);
     }
 
     // средний цвет — средний стоп трёхстопового градиента
@@ -8513,6 +8590,66 @@
 
 
 
+        // Внутрішнє світло шару — справжня «тінь навиворіт» по зовнішньому
+        // силуету заливки. Робимо на зменшеній копії полотна: alpha мінус її
+        // розмиття лишає смугу тільки всередині силуету, тож між сусідніми
+        // шматками одного шару не проступають внутрішні шви (на відміну від
+        // лінії зі зсувом, яка креслила кожне кільце окремо).
+        let glowMaskCv = null, glowMaskCtx = null, glowBandCv = null, glowBandCtx = null;
+        function applyInnerGlow(cv, color, alpha, radius, fillA) {
+            if (!(alpha > 0.008) || !(radius > 0.2)) return;
+            const w = Math.max(1, Math.round(cv.width / 2));
+            const h = Math.max(1, Math.round(cv.height / 2));
+            if (!glowMaskCv) {
+                glowMaskCv = document.createElement('canvas'); glowMaskCtx = glowMaskCv.getContext('2d');
+                glowBandCv = document.createElement('canvas'); glowBandCtx = glowBandCv.getContext('2d');
+            }
+            if (glowMaskCv.width !== w || glowMaskCv.height !== h) {
+                glowMaskCv.width = w; glowMaskCv.height = h;
+                glowBandCv.width = w; glowBandCv.height = h;
+            }
+            // Силует спершу робимо непрозорим: заливка шару має alpha < 1, і
+            // без цього «силует мінус його розмиття» лишало б усередині
+            // A·(1−A) (при A≈.55 це 0.25), тобто світлішав би весь шар, а не
+            // смуга по краю. Кілька проходів 'lighter' підіймають alpha до 1,
+            // не чіпаючи форму (за межами силуету лишається 0).
+            const m = glowMaskCtx;
+            m.setTransform(1, 0, 0, 1, 0, 0);
+            m.globalAlpha = 1;
+            m.filter = 'none';
+            m.globalCompositeOperation = 'source-over';
+            m.clearRect(0, 0, w, h);
+            m.drawImage(cv, 0, 0, w, h);
+            const passes = Math.min(6, Math.max(2, Math.ceil(1 / Math.max(0.08, fillA * 0.86))));
+            if (passes > 1) {
+                m.globalCompositeOperation = 'lighter';
+                for (let i = 1; i < passes; i++) m.drawImage(cv, 0, 0, w, h);
+                m.globalCompositeOperation = 'source-over';
+            }
+            const g = glowBandCtx;
+            g.setTransform(1, 0, 0, 1, 0, 0);
+            g.globalAlpha = 1;
+            g.filter = 'none';
+            g.globalCompositeOperation = 'source-over';
+            g.clearRect(0, 0, w, h);
+            g.drawImage(glowMaskCv, 0, 0);
+            g.globalCompositeOperation = 'destination-out';
+            g.filter = 'blur(' + (radius / 2).toFixed(2) + 'px)';
+            g.drawImage(glowMaskCv, 0, 0);
+            g.filter = 'none';
+            g.globalCompositeOperation = 'source-in';
+            g.fillStyle = color;
+            g.fillRect(0, 0, w, h);
+            g.globalCompositeOperation = 'source-over';
+            const ctx = cv.getContext('2d');
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(glowBandCv, 0, 0, cv.width, cv.height);
+            ctx.restore();
+        }
+
         function paint() {
             if (!host) return;
             // Рівна камера — чисте афінне перетворення. Під нахилом полотно веде
@@ -8647,6 +8784,15 @@
                 const rimW = Math.max(1.1, 1.7 * rx);
                 const bloomW = 5.4 * rx;
                 const invScale = 1 / Math.max(1e-9, (kx + ky) / 2);
+                // внутрішнє світло: смуга світлішого за заливку кольору по
+                // силуету шару. сила 0.45..1, тож старий повзунок 7 % дає
+                // видиме свічення, а 0 — справді вимикає його
+                const igStr = glowStrength(l.style.iglow);
+                const glowA = igStr > 0
+                    ? Math.min(0.5, (0.12 + 0.3 * Math.pow(igStr, 0.8)) * fxA)
+                    : 0;
+                const glowCol = glowTint(l.style.color, l.style.igcol);
+                const glowR = (3.2 + 4.6 * igStr) * rx;
                 // чотири сходи градієнта рахуємо раз на шар, не на полігон
                 const gStop0 = hexA(l.style.color, Math.min(1, alpha * 1.16));
                 const gStop1 = hexA(mixHex(l.style.color, gcol, 0.34), alpha * 1.02);
@@ -8699,6 +8845,7 @@
                         ctx.stroke(rec.p);
                         ctx.globalCompositeOperation = 'source-over';
                     }
+                    if (glowA > 0) applyInnerGlow(cv, glowCol, glowA, glowR, alpha);
                     ctx.setTransform(1, 0, 0, 1, 0, 0);
                     return;
                 }
@@ -8779,6 +8926,7 @@
                     ctx.stroke();
                     ctx.globalCompositeOperation = 'source-over';
                 }
+                if (glowA > 0) applyInnerGlow(cv, glowCol, glowA, glowR, alpha);
             });
 
             // рельєф довантажується порціями: хвіст кілець добирається тільки

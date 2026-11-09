@@ -87,7 +87,7 @@
                 border: 'solid',
                 anim: 'none',
                 glow: 60,
-                iglow: 0,
+                iglow: 45,
                 igcol: arrow ? '#ff8a8a' : '#ffffff',
                 label: false,
                 labelSize: 12,
@@ -150,7 +150,7 @@
                     border: BORDERS.indexOf(s.border) >= 0 ? s.border : 'solid',
                     anim,
                     glow: Number.isFinite(s.glow) ? Math.min(100, Math.max(0, s.glow)) : 60,
-                    iglow: Number.isFinite(s.iglow) ? Math.min(100, Math.max(0, s.iglow)) : 0,
+                    iglow: Number.isFinite(s.iglow) ? Math.min(100, Math.max(0, s.iglow)) : 45,
                     igcol: typeof s.igcol === 'string' ? s.igcol : '#ffffff',
                     label: s.label === true,
                     labelSize: Number.isFinite(s.labelSize) ? Math.min(28, Math.max(8, s.labelSize)) : 12,
@@ -1140,7 +1140,7 @@
         $('f-border').value = l.style.border;
         syncBorderFields(l);
         $('f-glow').value = l.style.glow;
-        $('f-iglow').value = l.style.iglow || 0;
+        $('f-iglow').value = l.style.iglow == null ? 45 : l.style.iglow;
         $('f-igcol').value = l.style.igcol || '#ffffff';
         $('f-anim').value = l.style.anim;
         $('f-label').value = l.style.label ? '1' : '0';

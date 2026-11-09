@@ -43,15 +43,15 @@
                 const vis = regionVis();
                 if (regionLines) {
                     map.addSource('lt-regions', { type: 'geojson', data: regionData.lines, tolerance: 0.4 });
-                    const dash = [4, 3];
+                    const dash = [5, 3.2];
                     [
                         {
                             id: 'lt-region-casing', type: 'line', source: 'lt-regions',
                             layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
                             paint: {
                                 'line-color': '#000000',
-                                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.8, 8, 2.4, 11, 2.8],
-                                'line-opacity': 0.36, 'line-blur': 0.3, 'line-dasharray': dash
+                                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.9, 8, 2.5, 11, 3.0],
+                                'line-opacity': 0.38, 'line-blur': 0.3, 'line-dasharray': dash
                             }
                         },
                         {
@@ -59,8 +59,8 @@
                             layout: { visibility: vis, 'line-cap': 'round', 'line-join': 'round' },
                             paint: {
                                 'line-color': '#dbe4ef',
-                                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.9, 8, 1.05, 11, 1.25],
-                                'line-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.5, 7, 0.62, 11, 0.72],
+                                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.95, 8, 1.1, 11, 1.3],
+                                'line-opacity': ['interpolate', ['linear'], ['zoom'], 4, 0.5, 7, 0.64, 11, 0.74],
                                 'line-dasharray': dash
                             }
                         }
@@ -99,8 +99,10 @@
         // 2609 і ~70 тис. вершин, у кадрі 2D-полотно коштувало б десятки мс
         let railFC = null;
         let railsOn = true;
-        const RAIL_LAYERS = ['lt-rail-casing', 'lt-rail-dash', 'lt-rail-casing-1m', 'lt-rail-dash-1m',
-            'lt-rail-casing-1s', 'lt-rail-dash-1s', 'lt-rail-casing-2', 'lt-rail-dash-2'];
+        const RAIL_LAYERS = ['lt-rail-casing', 'lt-rail-dash', 'lt-rail-halo',
+            'lt-rail-casing-1m', 'lt-rail-dash-1m', 'lt-rail-halo-1m',
+            'lt-rail-casing-1s', 'lt-rail-dash-1s', 'lt-rail-halo-1s',
+            'lt-rail-casing-2', 'lt-rail-dash-2', 'lt-rail-halo-2'];
 
         function applyRailsVis() {
             RAIL_LAYERS.forEach(id => {
@@ -155,15 +157,25 @@
             // ширина залежить лише від зуму: MapLibre не дозволяє поєднати
             // ["zoom"] з властивістю обʼєкта в одному виразі line-width, тому
             // головні й другорядні лінії — окремі шари
-            const fade = ['interpolate', ['linear'], ['zoom'], 5.2, 0, 5.9, 1];
             const width = arr => ['interpolate', ['linear'], ['zoom']].concat(arr);
-            // біло-чорне чергування: біла підкладка й темний пунктир поверх.
-            // з огляду видно тільки довгі головні коридори — саме вони читаються
-            // як «залізниця країни». короткі обривки головних і всі другорядні
-            // нитки підключаються на міському зумі, де є місце для деталі
-            const layers = [
-                { id: 'lt-rail-casing', color: '#fbf7ea', w: [5, 3.6, 7, 4.2, 10, 5.0, 14, 5.8], cap: 'round', dash: null },
-                { id: 'lt-rail-dash', color: '#10151b', w: [5, 1.9, 7, 2.3, 10, 2.8, 14, 3.6], cap: 'butt', dash: [2.0, 2.0] }
+            // біло-чорне чергування: темне мʼяке гало, кремова підкладка й
+            // темний пунктир поверх. гало прибирає «білу павутину» над світлим
+            // рельєфом і тримає знак читабельним на темних заливках зон.
+            // пунктир вузький і короткий (≈0.45 ширини підкладки): товсті довгі
+            // штрихи на міському масштабі читались як «гусениця», а не як
+            // залізничний знак
+            // яруси геометрично не перетинаються (фільтри за довжиною нитки),
+            // тож кожна лінія малюється рівно трьома шарами незалежно від зуму
+            const sign = [
+                { id: 'lt-rail-halo', color: '#0b1015', cap: 'round', dash: null, blur: 1.4,
+                    w: [5, 6.8, 7, 7.6, 10, 8.4, 14, 9.2],
+                    a: [5.2, 0, 5.9, .2, 7, .22, 10, .26, 14, .3] },
+                { id: 'lt-rail-casing', color: '#fbf7ea', cap: 'round', dash: null,
+                    w: [5, 3.4, 7, 4.0, 10, 4.8, 14, 5.6],
+                    a: [5.2, 0, 5.9, 1, 14, 1] },
+                { id: 'lt-rail-dash', color: '#161d26', cap: 'butt', dash: [1.15, 1.15],
+                    w: [5, 1.5, 7, 1.7, 10, 2.0, 14, 2.4],
+                    a: [5.2, 0, 5.9, 1, 14, 1] }
             ];
             const tiers = [
                 // каркас країни: тільки довгі вузлові магістралі (90+ км). з огляду
@@ -177,16 +189,19 @@
                 // другорядні нитки — під'їзні до промвузлів, лише з близького зуму
                 { suffix: '-2', filter: ['all', ['==', ['get', 'c'], 2], ['>=', ['get', 'len'], 40]], zoom: 9.8, scale: 0.62 }
             ];
-            layers.forEach(l => {
-                tiers.forEach(t => {
+            tiers.forEach(t => {
+                sign.forEach(l => {
                     const paint = {
                         'line-color': l.color,
                         'line-width': width(l.w.map((v, i) => i % 2 ? +(v * t.scale).toFixed(2) : v)),
                         'line-opacity': t.zoom
-                            ? ['interpolate', ['linear'], ['zoom'], t.zoom, 0, t.zoom + 0.6, 1]
-                            : fade
+                            // ярус входить у своєму зумі; стала прозорість після
+                            // входу — остання в списку, без подвійного накладання
+                            ? ['interpolate', ['linear'], ['zoom'], t.zoom, 0, t.zoom + 0.6, l.a[l.a.length - 1]]
+                            : width(l.a)
                     };
                     if (l.dash) paint['line-dasharray'] = l.dash;
+                    if (l.blur) paint['line-blur'] = l.blur;
                     map.addLayer(Object.assign({
                         id: l.id + t.suffix, type: 'line', source: 'lt-rail',
                         filter: t.filter,
@@ -540,11 +555,17 @@
                     // МД–РО, HU–SK та інші не малювалися ніколи
                     if (pass !== 'thin' && kind !== pass) return;
                     const thin = pass === 'thin';
-                    const core = thin ? '#e6ddc9' : (meta.color || '#eae3d3');
-                    const base = meta.width || 2.6;
-                    const wCore = (thin ? 1.4 : base) * (zoom < 6.5 ? 0.84 : 1);
-                    const caseW = thin ? wCore + 0.8 : (pass === 'dash' ? wCore + 1.5 : wCore + 2.2);
-                    const caseColor = thin ? 'rgba(8,11,16,.62)' : 'rgba(8,11,16,.72)';
+                    const core = thin ? '#e7decb' : (meta.color || '#efe6d2');
+                    const base = meta.width || 2.9;
+                    const wCore = (thin ? 1.5 : base) * (zoom < 6.5 ? 0.94 : 1.04);
+                    // три смуги: широке темне гало (мʼяко відділяє лінію від
+                    // будь-якого фону), темна підкладка й світлий сердечник.
+                    // на сердечнику — тонкий блик по центру: він і дає відчуття
+                    // металевої kartografічної лінії замість пласкої смуги
+                    const caseW = thin ? wCore + 1.0 : wCore + 2.2;
+                    const haloW = caseW + (thin ? 1.8 : 3.0);
+                    const caseColor = thin ? 'rgba(8,11,16,.58)' : 'rgba(8,11,16,.72)';
+                    const haloColor = thin ? 'rgba(6,9,13,.16)' : 'rgba(6,9,13,.24)';
                     ctx.globalAlpha = 1;
                     fc.features.forEach(f => {
                         if (!!f._thin !== thin) return;
@@ -576,12 +597,20 @@
                         if (meta.dash) ctx.setLineDash(meta.dash);
                         // темна підкладка тримає лінію читабельною і на світлому
                         // лісі, і на темній заливці окупованої зони
+                        ctx.strokeStyle = haloColor;
+                        ctx.lineWidth = haloW;
+                        ctx.stroke();
                         ctx.strokeStyle = caseColor;
                         ctx.lineWidth = caseW;
                         ctx.stroke();
                         ctx.strokeStyle = core;
                         ctx.lineWidth = wCore;
                         ctx.stroke();
+                        if (!thin) {
+                            ctx.strokeStyle = 'rgba(255,252,243,.5)';
+                            ctx.lineWidth = Math.max(.65, wCore * .28);
+                            ctx.stroke();
+                        }
                         if (meta.dash) ctx.setLineDash([]);
                     });
                 });
