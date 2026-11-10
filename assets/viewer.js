@@ -212,7 +212,8 @@
         try { return turf.area(feature) / 1e6; } catch (e) { return 0; }
     }
 
-    // дата грузится и нормализуется один раз; повторные обновления берут кэш
+    // На телефоні тримаємо лише поточну й попередню дату: кеші WeakMap
+    // дозволяють звільнити геометрію решти після перемикання.
     const docCache = new Map();
     let currentDoc = null;
 
@@ -228,14 +229,21 @@
             doc
         };
         docCache.set(date, entry);
+        if (isMobileUI()) {
+            docCache.forEach((value, cachedDate) => {
+                if (docCache.size <= 2) return;
+                if (cachedDate === date || cachedDate === state.date) return;
+                docCache.delete(cachedDate);
+                warmState.done.delete(cachedDate);
+            });
+        }
         return entry;
     }
 
     /* ------------------------- повна підготовка ------------------------- */
 
-    // Перший жест не повинен нічого рахувати: дати розбираються й нормалізуються
-    // заздалегідь, перетини масок і вся сходи спрощень друкуються до дотику.
-    // Поточний день — відразу під завісою, решта — по одному шматку, коли мапа стоїть.
+    // ПК готує решту дат у паузах; телефон — лише обрану, щоб одночасні
+    // Path2D усіх дат не перевищували ліміт пам'яті браузерного процесу.
     const warmState = { dates: [], date: null, ids: null, idx: 0, timer: 0, done: new Set() };
 
     function zoneIds(layers) {
@@ -312,6 +320,7 @@
     }
 
     function preloadRest() {
+        if (isMobileUI()) return;
         const cur = state.date;
         warmState.dates = store.listDates().map(d => d.date)
             .filter(d => d !== cur && !warmState.done.has(d) && d !== warmState.date)
@@ -2343,7 +2352,8 @@
         updateLegend();
         updateEmpty();
         syncAdvanceButton();
-        warmPriority(state.date);
+        if (isMobileUI()) warmCurrent();
+        else warmPriority(state.date);
     }
 
     function zoneSnapshot() {
@@ -3575,8 +3585,12 @@
         if (veilLifted) return;
         const veil = $('boot');
         if (!veil) return;
-        // завіса не має відкривати чорну сцену: якщо жодного кадру не було
-        // або графічний контекст загинув — показуємо причину, а не магію
+        // WebKit може віддати перший render пізніше за готовність даних:
+        // це ще не збій, тому чекаємо кадр до справжнього дедлайну.
+        if (!map._ltFrames && !map._ltGlLost && Date.now() - veilStart < 16000) {
+            setTimeout(liftVeil, 250);
+            return;
+        }
         if (map._ltGlLost || !map._ltFrames) {
             LT.gfxFail('Телефон не зміг відмалювати карту. Закрийте інші вкладки й спробуйте ще раз.');
         }
@@ -3644,7 +3658,7 @@
         const cap = (window.matchMedia && matchMedia('(max-width: 700px)').matches) ? 7000 : 5500;
         const cur = state.date;
         if (!warmState.done.has(cur)) warmDate(cur, 'all');
-        const rest = store.listDates().map(d => d.date)
+        const rest = isMobileUI() ? [] : store.listDates().map(d => d.date)
             .filter(d => d !== cur)
             .sort((a, b) => Math.abs(Date.parse(a) - Date.parse(cur)) - Math.abs(Date.parse(b) - Date.parse(cur)));
         const total = rest.length + 1;

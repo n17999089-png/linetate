@@ -164,6 +164,14 @@ self.onmessage = ev => {
         docs.set(m.date, { savedAt: Number(m.savedAt) || 0, layers: m.layers || {} });
         return;
     }
+    if (m.t === 'release') {
+        docs.delete(m.date);
+        const prefix = m.date + '|';
+        zoneCache.forEach((value, key) => {
+            if (key.startsWith(prefix)) zoneCache.delete(key);
+        });
+        return;
+    }
     if (m.t === 'pair') {
         let group = null, err = null;
         try { group = pair(m.prev, m.cur); }

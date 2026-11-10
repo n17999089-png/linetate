@@ -2212,6 +2212,9 @@
         // інтегрованій графіці 3D важливіший за згладжування країв, на
         // дискретній лишаємо повну якість
         const strongGpu = gpuInfo().tier >= 2;
+        const mem = navigator.deviceMemory || 4;
+        const cores = navigator.hardwareConcurrency || 4;
+        const mobileDprCap = LITE ? 1.25 : ((mem <= 3 || cores <= 4) ? 1.5 : 1.8);
         const map = new maplibregl.Map(Object.assign({
             container,
             style: LITE ? BASE.dark : BASE.hybrid,
@@ -2221,6 +2224,7 @@
             maxZoom: TILES_MAXZOOM,
             maxPitch: 0,
             maxBounds: MAP_BOUNDS,
+            pixelRatio: dev.mobile ? Math.min(window.devicePixelRatio || 1, mobileDprCap) : undefined,
             antialias: !dev.mobile && strongGpu,
             // копія кадру для снимка більше не потрібна: фото знімається
             // синхронно всередині події render на обох платформах
@@ -2429,14 +2433,9 @@
         // а на слабших пристроях ріжемо сильніше — камера рухається помітно рівніше
         if (dev.mobile) {
             try {
-                const mem = navigator.deviceMemory || 4;
-                const cores = navigator.hardwareConcurrency || 4;
-                // lite-старт після втрати контексту: менше пікселів на кадр,
-                // щоб телефон узагалі втримав сцену
-                const cap = LITE ? 1.25 : ((mem <= 3 || cores <= 4) ? 1.5 : 1.8);
                 const pr = map.getPixelRatio();
-                if (pr > cap) map.setPixelRatio(cap);
-                adaptResolution(map, Math.min(cap, map.getPixelRatio()));
+                if (pr > mobileDprCap) map.setPixelRatio(mobileDprCap);
+                adaptResolution(map, Math.min(mobileDprCap, map.getPixelRatio()));
             } catch (e) { }
         }
 
@@ -5435,7 +5434,7 @@
         if (newsWorker) return newsWorker;
         if (typeof Worker !== 'function') { newsWorkerBroken = true; return null; }
         try {
-            const w = new Worker('assets/news-worker.js?v=1');
+            const w = new Worker('assets/news-worker.js?v=2');
             w.onmessage = ev => {
                 const m = ev.data || {};
                 if (m.t !== 'pair') return;
@@ -5527,6 +5526,7 @@
                     });
                 }
             }
+            w.postMessage({ t: 'release', date: list[i - 1].date });
             if (progress) { try { progress(i, list.length); } catch (e) { } }
             if (gap) await newsSleep(gap);
         }
