@@ -1666,8 +1666,6 @@
         return type ? String(type).toUpperCase() : LT.t('place.object');
     }
 
-    // іконка рядка: місто — квадрат, село — кружок, інші обʼєкти — шпилька,
-    // бо в них немає класу НП
     const SEARCH_PIN = '<path d="M12 21s6.4-5.7 6.4-11A6.4 6.4 0 1 0 5.6 10c0 5.3 6.4 11 6.4 11z"/><circle cx="12" cy="10" r="2.3"/>';
 
     function searchKind(res) {
@@ -1677,10 +1675,7 @@
             : 'obj';
     }
 
-    function searchIcon(res) {
-        const kind = searchKind(res);
-        if (kind === 'city') return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2" fill="currentColor"/></svg>';
-        if (kind === 'vil') return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.4" fill="currentColor"/></svg>';
+    function searchIcon() {
         return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SEARCH_PIN}</svg>`;
     }
 

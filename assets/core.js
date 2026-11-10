@@ -3521,9 +3521,9 @@
             if (live) animRaf = requestAnimationFrame(() => { animRaf = 0; paint(); });
         }
 
-        let lastSig = '';
+        let lastSig = '', motionT = 0, motionAt = 0;
 
-        function rebuild() {
+        function rebuild(inMotion) {
             // приховані назви не перебираємо: полотно порожнє, а набір лишається
             // в пам'яті — увімкнення перемикача одразу відновить підписи
             if (hidden) return;
@@ -3642,9 +3642,9 @@
             const shown = new Set();
             for (let i = 0; i < prevItems.length; i++) shown.add(prevItems[i].key);
             // друкуємо не більше кадру за раз: решта назв наздожене у наступних
-            // кадрах, а сам жест зуму залишається рівним. на телефоні перша
-            // партія менша — 8 полотен із тінню вже коштують помітного кадру
-            const bakeCap = mob ? 8 : 40;
+            // кадрах, а сам жест зуму залишається рівним. під час руху партія
+            // менша: нова крапка видна одразу, підпис доїдає наступним кадром
+            const bakeCap = inMotion ? (mob ? 2 : 8) : (mob ? 8 : 40);
             let bakes = 0;
             let bakeMs = 0;
             let measureMs = 0;
@@ -3693,7 +3693,7 @@
                     const now = performance.now();
                     const was = gone.get(item.key);
                     gone.delete(item.key);
-                    if (was && now - was < PLACE_REVIVE_MS) {
+                    if (inMotion || (was && now - was < PLACE_REVIVE_MS)) {
                         an = { born: now - PLACE_IN_MS, epoch: animEpoch };
                     } else {
                         // каскад прив'язаний до РАНГУ, а не до порядку вставки:
@@ -3729,7 +3729,9 @@
             fading = [];
             const fadeCap = mob ? 24 : 40;
             const nowOut = performance.now();
-            for (let i = 0; i < prevItems.length && fading.length < fadeCap; i++) {
+            // затихаюча копія зберігає екранні координати, тож під час руху
+            // вона відірвалася б від свого міста; на паузі перехід лишається
+            for (let i = 0; !inMotion && i < prevItems.length && fading.length < fadeCap; i++) {
                 const p = prevItems[i];
                 if (!p.sp || keep.has(p.key)) continue;
                 if (p.x < -60 || p.y - p.h < -40 || p.x > size.x + 60 || p.y + p.h > size.y + 40) continue;
@@ -3752,7 +3754,7 @@
             // у продакшні такої глобальної змінної немає, тому рядок коштує один
             // пошук властивості
             if (window.__ltPlacesDebug) window.__ltPlacesDebug(items, extraDots, {
-                fading: fading.length, anim: anim.size, fresh: fresh, mobile: mob,
+                fading: fading.length, anim: anim.size, fresh: fresh, mobile: mob, motion: !!inMotion,
                 ms: { collect: Math.round(msCollect), scan: Math.round(performance.now() - tScan), bake: Math.round(bakeMs), measure: Math.round(measureMs) }
             });
             paint();
@@ -3802,9 +3804,21 @@
             reposition();
         }
 
-        // набір назв перебудовуємо ТІЛЬКИ коли камера зупинилась: під час жеста
-        // кожен проміжний масштаб породжував новий перелік, і назви на межі
-        // свободи міняли «підпис ↔ крапка» на ковному кадрі.
+        // нові НП додаємо й під час жеста, але не на кожен move: збір набору
+        // займає кілька мілісекунд, тож даємо йому окремий інтервал. наступна
+        // перебудова на паузі підбирає всі назви, яким не вистачило часу на друк
+        function scheduleMotionBuild() {
+            if (motionT || hidden) return;
+            const interval = docMobile() ? 220 : 140;
+            const wait = Math.max(0, interval - (performance.now() - motionAt));
+            motionT = setTimeout(() => {
+                motionT = 0;
+                if (hidden || !map.isMoving || (!map.isMoving() && !map.isEasing())) return;
+                rebuild(true);
+                motionAt = performance.now();
+            }, wait);
+        }
+
         // чекаємо від ПЕРШОЇ події, а не від останньої: мапа сипле idle на
         // кожен перемальований кадр, і старий clearTimeout перезапускав таймер
         // безкінечно — після зуму назви могли лишитися від попереднього масштабу
@@ -3817,7 +3831,7 @@
             }, docMobile() ? 300 : 240);
         }
 
-        map.on('move', () => { needFrame = true; });
+        map.on('move', () => { needFrame = true; scheduleMotionBuild(); });
         // камера рушила одразу після перебудови: назви, що танули, стоять на
         // старому місці, тож лишати їх на рухомій мапі — це «відірвані» підписи
         map.on('movestart', () => { if (fading.length) fading = []; });
@@ -3918,6 +3932,7 @@
                 clearInterval(watchdog);
                 clearTimeout(timer);
                 clearTimeout(settleT);
+                clearTimeout(motionT);
                 clearTimeout(warmT);
                 warmDone = true;
                 if (bakeRaf) cancelAnimationFrame(bakeRaf);
@@ -6484,7 +6499,6 @@
         }
         const th = theme || map._ltBase || 'hybrid';
         s.reliefTheme = th;
-        gateReliefGestures(map);
         const col = reliefThemeColors(th);
         const p = reliefProfile();
         s.relief = p;
@@ -6590,37 +6604,6 @@
         // бо подія ще лежить у черзі, і terrain не вмикався б ніколи
         if (moving()) { map.on('moveend', go); return; }
         go();
-    }
-
-    // hillshade — найважче полотно в 3D: тіні перераховуються на кожен
-    // кадр руху нахиленої камери. замір q241 у телефонному профілі:
-    // 2.4 → 5.3 fps, коли шар прихований, і 10 fps без terrain. тому під
-    // час жесту тіні ховаємо, а на паузі повертаємо: висоти, зони й
-    // кордони залишаються на місці, тіні встигають за камерою на зупинці
-    function gateReliefGestures(map) {
-        if (map._ltReliefGate) return;
-        map._ltReliefGate = true;
-        let hidden = false;
-        const hide = () => {
-            if (!map._lt3d || hidden || !map.getLayer('lt-relief')) return;
-            try {
-                if (map.getLayoutProperty('lt-relief', 'visibility') === 'none') return;
-                map.setLayoutProperty('lt-relief', 'visibility', 'none');
-                hidden = true;
-            } catch (e) { }
-        };
-        const show = () => {
-            if (!hidden) return;
-            hidden = false;
-            if (!map.getLayer('lt-relief')) return;
-            try { map.setLayoutProperty('lt-relief', 'visibility', 'visible'); } catch (e) { }
-        };
-        map.on('movestart', hide);
-        map.on('zoomstart', hide);
-        map.on('rotatestart', hide);
-        map.on('pitchstart', hide);
-        map.on('moveend', show);
-        map.on('idle', show);
     }
 
     // перегляд починає кадри без гір: їх просить переглядач, щойно завіса впала.
