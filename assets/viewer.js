@@ -3392,16 +3392,8 @@
             btn.title = label;
             btn.setAttribute('aria-label', label);
             btn.setAttribute('aria-pressed', String(on));
-            // країну показує прапор, без текстових підписів у рейці.
-            // Придністров'я — не держава, тому замість прапора пунктир
-            // того самого кольору, що й лінія на карті
-            if (c.id === 'pmr') {
-                btn.classList.add('border-chip-dash');
-                btn.innerHTML = '<span style="display:block;width:18px;height:2px;border-top:2px dashed ' +
-                    (c.color || '#e9e2d0') + '"></span>';
-            } else {
-                btn.innerHTML = LT.flagHtml(c.id, 'lt-flag-chip');
-            }
+            // країну показує прапор, без текстових підписів у рейці
+            btn.innerHTML = LT.flagHtml(c.id, 'lt-flag-chip');
             btn.addEventListener('click', () => {
                 const next = borderOn[c.id] === false;
                 borderOn[c.id] = next;

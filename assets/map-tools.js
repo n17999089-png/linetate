@@ -90,7 +90,9 @@
             mountBorders();
             mountRailways();
             try {
-                map.setLight({ anchor: 'viewport', color: '#e5f6ff', intensity: 0.4, position: [1.4, 210, 40] });
+                // Нульова сила направленого світла лишає екструзії їхній власний
+                // колір: інакше дах і стіна однієї зони дають різний RGB на зумі.
+                map.setLight({ anchor: 'viewport', color: '#e5f6ff', intensity: 0, position: [1.4, 210, 40] });
             } catch (e) { }
         }
 

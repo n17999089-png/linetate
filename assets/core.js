@@ -2714,6 +2714,14 @@
              </g>
              <path d="M28.2 17.8h3.6v1.9h-3.6z" fill="#b3543f"/>
              <path d="M28.2 19.7h3.6v2l-1.8 2-1.8-2z" fill="#3f6fb3"/>`,
+            FLAG_FOLD),
+        pmr: flagSvg('Pmr',
+            `<rect width="60" height="13.33" fill="#de0000"/><rect y="13.33" width="60" height="13.34" fill="#009933"/><rect y="26.67" width="60" height="13.33" fill="#de0000"/>
+             <path d="M12 2.2l1.35 2.75 3.05.44-2.2 2.15.52 3.03L12 9.17 9.28 10.57l.52-3.03-2.2-2.15 3.05-.44z" fill="#ffd700"/>
+             <g fill="none" stroke="#ffd700" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
+                 <path d="M5.2 12.6c4.8 1.5 9.2-1.7 8.9-6.2 2.5 4.6-.7 9.1-5.2 9.1-1.5 0-2.8-.5-3.7-1.4"/>
+                 <path d="M5.3 5.1l8.2 8.2M4.1 4.2l3.1-.6-.6 3.1M11.8 11.8l2.5 2.5"/>
+             </g>`,
             FLAG_FOLD)
     };
 
@@ -4076,7 +4084,9 @@
         const src = map.getSource('lt-adv-3d');
         if (!s || !src) return;
         const vis = map._lt3d ? 'none' : 'visible';
-        ['lt-adv-case', 'lt-adv-line'].forEach(id => {
+        // Плоскі заливка й обводка в 3D лежать на рельєфі й б'ються з ним по
+        // глибині; тут лишається лише піднята об'ємна смуга.
+        ['lt-adv-fill', 'lt-adv-case', 'lt-adv-line'].forEach(id => {
             if (map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== vis) {
                 map.setLayoutProperty(id, 'visibility', vis);
             }
@@ -4737,9 +4747,9 @@
         if (!statsFlagUri[flag]) {
             statsFlagUri[flag] = "url('data:image/svg+xml," + encodeURIComponent(FLAG_SVG[flag] || FLAG_SVG.en) + "')";
         }
-        // прапори з емблемами й діагоналями (UK, BY, SK, MD) не ріжемо на
-        // смуги: на стиках малюнок рветься, тому вони хитаються одним полотном
-        const single = flag === 'en' || flag === 'by' || flag === 'sk' || flag === 'md';
+        // прапори з емблемами й діагоналями не ріжемо на смуги: на стиках
+        // малюнок рветься, тому вони хитаються одним полотном
+        const single = flag === 'en' || flag === 'by' || flag === 'sk' || flag === 'md' || flag === 'pmr';
         const cloth = single
             ? '<span class="lt-flag-cloth"></span>'
             : '<span class="lt-flag-strip"></span><span class="lt-flag-strip"></span><span class="lt-flag-strip"></span>';
@@ -5895,10 +5905,9 @@
     const CAST_PX = [18, 64];
     const RIM_PX = 3.2;
     const WALL_PX = 24;
-    // щільність обʼєму зони у 3D. на 0.95 тіло було майже непрозоре й рельєф
-    // крізь нього не читався зовсім. 0.78 — компроміс: колір шару вже не
-    // «пливе» при зміні растрових тайлів під ним, а хребти гілшейду ще видно
-    const ZONE_3D_OPACITY = 0.78;
+    // Верхня грань має тримати колір шару на кожному зумі: напівпрозора
+    // екструзія змінювала RGB разом із супутниковими тайлами під нею.
+    const ZONE_3D_OPACITY = 1;
     // кожен наступний за z-індексом шар стоїть вище за попередній. без цього
     // дві верхні грані в одній площині мігають — те, що користувач називає
     // «битва з індексами»
@@ -7074,7 +7083,9 @@
                 'fill-extrusion-height': wallStops(WALL_PX),
                 // у maplibre 3.6 немає ambient-occlusion: шар із невідомою властивістю
                 // стиль не видалює з помилкою, а мовчки не додає взагалі
-                'fill-extrusion-vertical-gradient': true
+                // без градієнта стіни: на різних зумах у кадр потрапляла різна
+                // його частина, і та сама зона змінювала колір
+                'fill-extrusion-vertical-gradient': false
             }
         });
         // анімація 3D ↔ площина перебирає саме ці шари: тримаємо список,
