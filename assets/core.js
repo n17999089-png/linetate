@@ -7164,7 +7164,11 @@
         const bw = ownBw || (noLine || map._ltOutlinesOff ? 0 : OUTLINE_BW);
         const hasLine = !map._ltOutlinesOff && !noLine && bw > 0 && !(d3 && ownBw === 0);
         const decor = ownBw > 0;
-        const lineCol = ownBw > 0 ? s.bcol : OUTLINE_INK;
+        // переглядач малює контури зон білим — «старі обводки» зі знімків:
+        // колір bcol тут не читається на заливці свого ж кольору. адмінка
+        // прапор не ставить і далі показує реальний колір контуру шару
+        const whiteRim = map._ltWhiteRims === true && l.kind === 'zone' && ownBw > 0;
+        const lineCol = whiteRim ? '#ffffff' : (ownBw > 0 ? s.bcol : OUTLINE_INK);
         const igo = Math.max(0, Math.min(100, s.iglow == null ? 0 : s.iglow)) / 100;
         const blended = s.blend && s.blend !== 'normal';
         const gradient = s.grad === true;
@@ -7236,7 +7240,7 @@
         map.setPaintProperty('gw_' + l.id, 'line-opacity', Math.min(0.3, 0.2 * gAmt + s.alpha * 0.06) * k);
 
         // светлая кромка изнутри: резкий блик по границе зоны
-        map.setPaintProperty('rh_' + l.id, 'line-color', lightHex(s.bcol, 0.6));
+        map.setPaintProperty('rh_' + l.id, 'line-color', whiteRim ? '#ffffff' : lightHex(s.bcol, 0.6));
         map.setPaintProperty('rh_' + l.id, 'line-width', Math.max(1, bw * 0.7));
         map.setPaintProperty('rh_' + l.id, 'line-opacity', Math.min(0.75, 0.28 + s.alpha * 0.45) * k);
         map.setPaintProperty('rh_' + l.id, 'line-offset', -Math.max(1.1, bw * 0.55));

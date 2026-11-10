@@ -3466,6 +3466,7 @@
     LT.setReliefPrefs(map, { relief3d: state.relief3d, reliefFlat: state.reliefFlat });
     LT.setZones3d(map, state.zones3d);
     LT.setOutlines(map, state.outlines);
+    map._ltWhiteRims = true;
     mapTools.setRailways(state.rails);
     syncOutlinesBtn();
     syncRailsBtn();

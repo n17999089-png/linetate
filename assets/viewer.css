@@ -82,11 +82,11 @@
     opacity: 0; visibility: hidden; pointer-events: none;
     transform: translateY(-10px) scale(.96);
     transform-origin: top right;
-    transition: opacity .14s ease, transform .18s ease, visibility .18s;
+    transition: opacity .24s var(--ease), transform .38s var(--ease-pop), visibility .38s;
 }
 #legend.open {
     opacity: 1; visibility: visible; pointer-events: auto; transform: none;
-    transition: opacity .2s ease, transform .34s var(--ease-pop), visibility .34s;
+    transition: opacity .26s var(--ease), transform .4s var(--ease-pop), visibility .4s;
 }
 #legend .panel-head { padding: 10px 11px 10px 14px; }
 #legend .panel-head .label { color: var(--text-2); }
@@ -99,11 +99,11 @@
     opacity: 0; visibility: hidden; pointer-events: none;
     transform: translateY(-10px) scale(.96);
     transform-origin: top right;
-    transition: opacity .14s ease, transform .18s ease, visibility .18s;
+    transition: opacity .24s var(--ease), transform .38s var(--ease-pop), visibility .38s;
 }
 #stats.open {
     opacity: 1; visibility: visible; pointer-events: auto; transform: none;
-    transition: opacity .2s ease, transform .34s var(--ease-pop), visibility .34s;
+    transition: opacity .26s var(--ease), transform .4s var(--ease-pop), visibility .4s;
 }
 #stats .panel-head { padding: 10px 11px 10px 14px; }
 #stats .panel-head .label { color: var(--text-2); }
@@ -434,11 +434,11 @@
     z-index: var(--z-sheet);
     transform: translateY(calc(100% + 140px)) scale(.99);
     transform-origin: bottom center;
-    transition: transform .2s ease, opacity .16s ease, visibility .2s;
+    transition: transform .34s var(--ease), opacity .26s var(--ease), visibility .34s;
 }
 .dev-mobile #legend.open {
     transform: none;
-    transition: transform .42s var(--ease-pop), opacity .22s ease, visibility .42s;
+    transition: transform .46s var(--ease-pop), opacity .3s var(--ease), visibility .46s;
 }
 .dev-mobile #stats {
     top: auto;
@@ -449,11 +449,11 @@
     z-index: var(--z-sheet);
     transform: translateY(calc(100% + 140px)) scale(.99);
     transform-origin: bottom center;
-    transition: transform .2s ease, opacity .16s ease, visibility .2s;
+    transition: transform .34s var(--ease), opacity .26s var(--ease), visibility .34s;
 }
 .dev-mobile #stats.open {
     transform: none;
-    transition: transform .42s var(--ease-pop), opacity .22s ease, visibility .42s;
+    transition: transform .46s var(--ease-pop), opacity .3s var(--ease), visibility .46s;
 }
 .dev-mobile #stats .panel-head { padding: 9px 10px 9px 12px; }
 .dev-mobile .stats-btn .lb-txt { display: none; }
@@ -650,11 +650,11 @@
     border-radius: 14px;
     opacity: 0; visibility: hidden; pointer-events: none;
     transform: translateX(-10px) scale(.97); transform-origin: left top;
-    transition: opacity .14s ease, transform .18s ease, visibility .18s;
+    transition: opacity .24s var(--ease), transform .38s var(--ease-pop), visibility .38s;
 }
 #draw-panel.open {
     opacity: 1; visibility: visible; pointer-events: auto; transform: none;
-    transition: opacity .2s ease, transform .34s var(--ease-pop), visibility .34s;
+    transition: opacity .26s var(--ease), transform .4s var(--ease-pop), visibility .4s;
 }
 .dp-head {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -914,11 +914,11 @@
     contain: layout style; isolation: isolate;
     opacity: 0; visibility: hidden; pointer-events: none;
     transform: translateY(-10px) scale(.97); transform-origin: top right;
-    transition: opacity .14s ease, transform .18s ease, visibility .18s;
+    transition: opacity .24s var(--ease), transform .38s var(--ease-pop), visibility .38s;
 }
 #place-search.open {
     opacity: 1; visibility: visible; pointer-events: auto; transform: none;
-    transition: opacity .2s ease, transform .34s var(--ease-pop), visibility .34s;
+    transition: opacity .26s var(--ease), transform .4s var(--ease-pop), visibility .4s;
 }
 
 .ps-bar {
@@ -1019,7 +1019,7 @@
         inset 0 1px 0 rgba(255, 255, 255, .07);
     opacity: 0; visibility: hidden; pointer-events: none;
     transform: translateY(-7px) scale(.985); transform-origin: top center;
-    transition: opacity .14s ease, transform .18s ease, visibility .18s;
+    transition: opacity .24s var(--ease), transform .38s var(--ease-pop), visibility .38s;
 }
 .ps-pop.show {
     opacity: 1; visibility: visible; pointer-events: auto; transform: none;
@@ -1264,11 +1264,11 @@
     transform: translateY(26px) scale(.99); transform-origin: bottom center;
     /* на телефоні панель їде знизу як аркуш: довший і мʼякший хід, ніж
        на ПК, інакше на вузькому екрані відкриття читається як стрибок */
-    transition: transform .2s ease, opacity .16s ease, visibility .2s;
+    transition: transform .34s var(--ease), opacity .26s var(--ease), visibility .34s;
 }
 .dev-mobile #draw-panel.open {
     transform: none;
-    transition: transform .42s var(--ease-pop), opacity .22s ease, visibility .42s;
+    transition: transform .46s var(--ease-pop), opacity .3s var(--ease), visibility .46s;
 }
 .dev-mobile .dp-head { margin: 0 -9px; padding: 7px 7px 7px 12px; }
 /* інструменти в один ряд іконок: панель займає ~3 екранні смуги менше */
@@ -1368,6 +1368,20 @@
     filter: blur(38px);
     animation: boot-aurora-b 23s ease-in-out infinite alternate;
 }
+/* червона хвиля: брендовий акцент фронтового червоного — тягнеться від
+   нижнього краю, як живий фронт на самій мапі */
+.bg-c {
+    background:
+        radial-gradient(46% 34% at 22% 78%, rgba(224, 44, 32, .42), transparent 72%),
+        radial-gradient(38% 30% at 78% 70%, rgba(255, 74, 46, .26), transparent 74%),
+        radial-gradient(34% 26% at 52% 86%, rgba(150, 16, 12, .34), transparent 76%);
+    filter: blur(34px);
+    animation: boot-aurora-c 27s ease-in-out infinite alternate;
+}
+@keyframes boot-aurora-c {
+    0% { transform: translate3d(-4%, 3%, 0) scale(1.05); opacity: .7; }
+    100% { transform: translate3d(4%, -2%, 0) scale(1.16); opacity: 1; }
+}
 @keyframes boot-aurora-a {
     0% { transform: translate3d(-3%, 2%, 0) scale(1); opacity: .75; }
     100% { transform: translate3d(4%, -3%, 0) scale(1.12); opacity: 1; }
@@ -1412,7 +1426,9 @@
     position: absolute; left: 50%; top: 38%; width: min(86vmin, 640px);
     aspect-ratio: 1; transform: translate(-50%, -50%);
     border-radius: 50%; pointer-events: none; filter: blur(6px);
-    background: radial-gradient(circle, rgba(255, 198, 64, .22), rgba(255, 150, 26, .08) 42%, transparent 68%);
+    background:
+        radial-gradient(circle, rgba(255, 198, 64, .22), rgba(255, 150, 26, .08) 42%, transparent 68%),
+        radial-gradient(120% 120% at 50% 112%, rgba(216, 42, 32, .2), transparent 56%);
     animation: boot-halo 6.4s ease-in-out infinite;
 }
 @keyframes boot-halo {
@@ -1456,7 +1472,9 @@
 /* тонка орбіта за знаком: читається як «на звʼязку», без старих кілець */
 .boot-orbit {
     position: absolute; inset: -16% -14%; border-radius: 50%; pointer-events: none;
-    background: conic-gradient(from 0deg, transparent 0 68%, rgba(255, 205, 90, .45) 86%, transparent 94%);
+    background:
+        conic-gradient(from 0deg, transparent 0 68%, rgba(255, 205, 90, .45) 86%, transparent 94%),
+        conic-gradient(from 180deg, transparent 0 74%, rgba(216, 42, 32, .4) 88%, transparent 96%);
     -webkit-mask-image: radial-gradient(circle, transparent 60%, #000 61.4%, #000 62.2%, transparent 63.6%);
     mask-image: radial-gradient(circle, transparent 60%, #000 61.4%, #000 62.2%, transparent 63.6%);
     animation: boot-spin 8s linear infinite;
@@ -1502,21 +1520,21 @@
     background: linear-gradient(180deg, #fffdf6 0 32%, #ffe9a8 62%, #ffb62e 100%);
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
-    animation: boot-letter .68s var(--ease-pop) both;
+    animation: boot-letter .9s var(--ease) both;
 }
-.boot-brand span:nth-child(1) { animation-delay: .10s; }
-.boot-brand span:nth-child(2) { animation-delay: .14s; }
-.boot-brand span:nth-child(3) { animation-delay: .18s; }
-.boot-brand span:nth-child(4) { animation-delay: .22s; }
-.boot-brand span:nth-child(5) { animation-delay: .26s; }
-.boot-brand span:nth-child(6) { animation-delay: .30s; }
-.boot-brand span:nth-child(7) { animation-delay: .34s; }
-.boot-brand span:nth-child(8) { animation-delay: .38s; }
-.boot-brand span:nth-child(9) { animation-delay: .42s; }
+.boot-brand span:nth-child(1) { animation-delay: .12s; }
+.boot-brand span:nth-child(2) { animation-delay: .19s; }
+.boot-brand span:nth-child(3) { animation-delay: .26s; }
+.boot-brand span:nth-child(4) { animation-delay: .33s; }
+.boot-brand span:nth-child(5) { animation-delay: .40s; }
+.boot-brand span:nth-child(6) { animation-delay: .47s; }
+.boot-brand span:nth-child(7) { animation-delay: .54s; }
+.boot-brand span:nth-child(8) { animation-delay: .61s; }
+.boot-brand span:nth-child(9) { animation-delay: .68s; }
 @keyframes boot-letter {
-    0% { opacity: 0; transform: translateY(14px) scale(.9); }
-    60% { opacity: 1; }
-    100% { opacity: 1; transform: none; }
+    0% { opacity: 0; transform: translateY(16px) scale(.94); filter: blur(5px); }
+    55% { opacity: 1; }
+    100% { opacity: 1; transform: none; filter: blur(0); }
 }
 .boot-sub {
     display: flex; align-items: center; justify-content: center; gap: 12px;
@@ -1587,9 +1605,9 @@
 .boot-bar i {
     position: absolute; top: 0; bottom: 0; left: 0; width: var(--p, 0%);
     border-radius: inherit;
-    background: linear-gradient(90deg, rgba(255, 180, 40, .35), #ffcf5c 55%, #fff4cf);
-    box-shadow: 0 0 16px rgba(255, 205, 80, .6);
-    transition: width .45s var(--ease-pop);
+    background: linear-gradient(90deg, rgba(216, 42, 32, .55), #ffcf5c 45%, #fff4cf);
+    box-shadow: 0 0 16px rgba(255, 205, 80, .6), 0 0 22px rgba(216, 42, 32, .35);
+    transition: width .6s var(--ease);
 }
 .boot-bar i::after {
     content: ''; position: absolute; inset: 0;
@@ -1628,6 +1646,7 @@
     .bg-map { filter: blur(8px) saturate(.72) brightness(.56) contrast(1.06); }
     .bg-a { filter: blur(30px) brightness(.72); }
     .bg-b { display: none; }
+    .bg-c { filter: blur(30px) brightness(.8); opacity: .8; }
     .bg-grid { background-size: 56px 56px; opacity: .38; }
 }
 /* застиглі анімації не повинні ховати інформацію: лишаємо статичний кадр
@@ -1636,6 +1655,7 @@
     .boot-stage, .boot-halo, .boot-orbit, .boot-orbit b, .boot-mark img, .boot-sheen,
     .boot-bar i::after, #boot-state::before, .boot-step.on i,
     .bg-map, .bg-aurora, .bg-scan, .boot-brand span { animation: none; }
+    .boot-brand span { filter: none; }
     .boot-sheen { display: none; }
     .bg-scan { display: none; }
     #ps-results .sr, .search-marker .sm-in { animation: none; }

@@ -331,22 +331,23 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 
 /* Date picker */
 .cal { position: absolute; z-index: var(--z-cal); display: none; width: 340px; max-width: calc(100vw - 24px); padding: 15px; background: linear-gradient(155deg, #262628, #101011 62%, #050506); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow-white), var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .1); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; isolation: isolate; }
-.cal.show { display: block; animation: cal-in .18s var(--ease); }
-.cal.closing { display: block; animation: cal-out .15s ease forwards; pointer-events: none; }
+.cal.show { display: block; animation: cal-in .28s var(--ease-pop); }
+.cal.closing { display: block; animation: cal-out .22s var(--ease) forwards; pointer-events: none; }
 .cal-top { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; }
 .cal-title { flex: 1; min-width: 0; text-align: center; font-family: var(--title); font-size: 13px; letter-spacing: .6px; color: var(--text); }
-.cal-nav, .cal-today, .cal-go { min-height: 36px; padding: 0 10px; background: #232325; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .18s ease, color .18s ease; }
+.cal-nav, .cal-today, .cal-go { min-height: 36px; padding: 0 10px; background: #232325; color: var(--text-2); border: 1px solid var(--line-2); border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background .22s var(--ease), color .22s var(--ease), border-color .22s var(--ease), transform .22s var(--ease-pop); }
 .cal-nav { width: 36px; flex: 0 0 auto; padding: 0; font-size: 20px; }
-.cal-nav:hover, .cal-today:hover, .cal-go:hover { background: #37373a; color: var(--text); }
+.cal-nav:hover, .cal-today:hover, .cal-go:hover { background: #37373a; color: var(--text); border-color: var(--line-3); transform: translateY(-1px); }
 .cal-today { font-size: 11px; }
 .cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-bottom: 7px; }
 .cal-week span { text-align: center; font-size: 9px; font-weight: 650; color: var(--dim); text-transform: uppercase; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .cal-pad { height: 36px; }
-.cal-day { position: relative; height: 36px; background: rgba(255, 255, 255, .025); color: var(--text-2); border: 1px solid var(--line); border-radius: 7px; font-size: 12px; font-weight: 550; cursor: pointer; transition: background .15s ease, color .15s ease, border-color .15s ease; }
-.cal-day:hover { background: #2e2e31; color: var(--text); border-color: var(--line-3); }
-.cal-day.today { border-color: rgba(255, 255, 255, .45); color: var(--text); }
-.cal-day.active { background: linear-gradient(180deg, #ffffff, #d2d2d2); color: #0b0b0c; border-color: #ffffff; font-weight: 700; }
+.cal-day { position: relative; height: 36px; background: rgba(255, 255, 255, .025); color: var(--text-2); border: 1px solid var(--line); border-radius: 7px; font-size: 12px; font-weight: 550; cursor: pointer; transition: background .2s var(--ease), color .2s var(--ease), border-color .2s var(--ease), transform .18s var(--ease-pop), box-shadow .2s var(--ease); }
+.cal-day:hover { background: linear-gradient(180deg, rgba(232, 191, 120, .14), rgba(232, 191, 120, .05)); color: var(--text); border-color: rgba(232, 191, 120, .4); transform: translateY(-1px); }
+.cal-day:active { transform: translateY(0) scale(.95); }
+.cal-day.today { border-color: rgba(255, 255, 255, .45); color: var(--text); box-shadow: 0 0 0 1px rgba(255, 255, 255, .12), 0 0 12px rgba(255, 255, 255, .08); }
+.cal-day.active { background: linear-gradient(180deg, #ffffff, #d2d2d2); color: #0b0b0c; border-color: #ffffff; font-weight: 700; box-shadow: 0 4px 16px rgba(255, 255, 255, .18), 0 0 0 1px rgba(255, 255, 255, .35); }
 .cal-day.off, .cal-day.off:hover { background: rgba(255, 255, 255, .01); color: var(--dim-2); border-color: rgba(255, 255, 255, .04); cursor: not-allowed; }
 .cal-day.off i { background: var(--dim-2); opacity: .45; }
 .cal-day i { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--live); }
