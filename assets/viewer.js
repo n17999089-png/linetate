@@ -70,7 +70,7 @@
                     border: ['solid', 'dashed', 'glow', 'none'].indexOf(s.border) >= 0 ? s.border : 'solid',
                     anim,
                     glow: Number.isFinite(s.glow) ? Math.min(100, Math.max(0, s.glow)) : 60,
-                    iglow: Number.isFinite(s.iglow) ? Math.min(100, Math.max(0, s.iglow)) : 45,
+                    iglow: Number.isFinite(s.iglow) ? Math.min(100, Math.max(0, s.iglow)) : 0,
                     igcol: typeof s.igcol === 'string' ? s.igcol : '#ffffff',
                     grad: s.grad === true,
                     gcol: typeof s.gcol === 'string' ? s.gcol : '#04101c',
@@ -1850,9 +1850,9 @@
 
     // локальний індекс знає лише точку, тож перший клік може статися до
     // відповіді Nominatim. коли приходить справжній контур того ж міста —
-    // підміняємо вибір, щоб зона намалювалася. камеру при цьому не чіпаємо:
-    // людина вже обрала місце, і повторний політ до центру контуру читався
-    // як «кинуло на інший НП»
+    // підміняємо вибір, щоб зона намалювалася. камеру не чіпаємо, якщо
+    // контур уже в кадрі; інакше підганяємо рамку — інакше велике місто
+    // лишалось за екраном і виглядало як «територія не намалювалась»
     function upgradeLocalPick(rows) {
         if (!searchPick || !searchPick.res || !searchPick.res._local || searchPick.feature) return;
         const key = foldSearchName(searchPick.name);
@@ -1860,7 +1860,17 @@
         const hit = rows.find(r => r.geojson
             && foldSearchName(r.name || shortName(r)) === key
             && samePlace(r, lon, lat));
-        if (hit) pickSearch(hit, 0, { keepCamera: true });
+        if (!hit) return;
+        pickSearch(hit, 0, { keepCamera: true });
+        const b = searchPick && searchPick.feature ? LT.boundsOf([searchPick.feature]) : null;
+        if (!b) return;
+        const mb = map.getBounds();
+        const framed = b[0] >= mb.getWest() && b[2] <= mb.getEast()
+            && b[1] >= mb.getSouth() && b[3] <= mb.getNorth();
+        if (!framed) {
+            map.fitBounds([[b[0], b[1]], [b[2], b[3]]],
+                { padding: 70, duration: 700, maxZoom: 12 });
+        }
     }
 
     function pickSearch(res, index, opts) {
@@ -2064,6 +2074,41 @@
         return out;
     }
 
+    // відповіді Nominatim кешуємо: повторний запит того ж НП не мусить чекати
+    // мережу, а коли геокодер відповідає 429 чи недоступний — контур усе одно
+    // намалюється з кешу замість «місто знайдено, території немає»
+    const NOM_KEY = 'LINETATE:search1';
+    let nomCache = null;
+    function nomCacheRead() {
+        if (nomCache) return nomCache;
+        nomCache = {};
+        try {
+            const raw = localStorage.getItem(NOM_KEY);
+            const o = raw ? JSON.parse(raw) : null;
+            if (o && typeof o === 'object') nomCache = o;
+        } catch (e) { nomCache = {}; }
+        return nomCache;
+    }
+    function nomCacheGet(q) {
+        const e = nomCacheRead()[LT.lang() + '|' + normSearchName(q)];
+        if (!e || !Array.isArray(e.rows) || !(Date.now() - e.t < 7 * 864e5)) return null;
+        return e.rows;
+    }
+    function nomCachePut(q, rows) {
+        if (!Array.isArray(rows) || !rows.length) return;
+        const c = nomCacheRead();
+        const k = LT.lang() + '|' + normSearchName(q);
+        c[k] = { t: Date.now(), rows };
+        const keys = Object.keys(c).sort((a, b) => (c[b].t || 0) - (c[a].t || 0));
+        keys.slice(24).forEach(x => delete c[x]);
+        try { localStorage.setItem(NOM_KEY, JSON.stringify(c)); }
+        catch (e) {
+            // квота: лишаємо найсвіжіший запит, інакше пошук знову чекав би мережу
+            nomCache = {}; nomCache[k] = c[k];
+            try { localStorage.setItem(NOM_KEY, JSON.stringify(nomCache)); } catch (e2) { }
+        }
+    }
+
     async function doSearch(autoPick) {
         const q = String($('ps-q') && $('ps-q').value || '').trim();
         if (!q) return;
@@ -2077,13 +2122,20 @@
         }
         if (wrap) wrap.classList.add('ps-busy');
         try {
-            const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=8&addressdetails=1'
-                + '&polygon_geojson=1&accept-language=' + LT.lang() + '&q=' + encodeURIComponent(q);
-            const r = await fetch(url, { headers: { Accept: 'application/json' } });
-            if (seq !== searchSeq) return;
-            if (!r.ok) throw new Error('http');
-            const rows = await r.json();
-            if (seq !== searchSeq) return;
+            const cached = nomCacheGet(q);
+            let rows;
+            if (cached) {
+                rows = cached;
+            } else {
+                const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=8&addressdetails=1'
+                    + '&polygon_geojson=1&accept-language=' + LT.lang() + '&q=' + encodeURIComponent(q);
+                const r = await fetch(url, { headers: { Accept: 'application/json' } });
+                if (seq !== searchSeq) return;
+                if (!r.ok) throw new Error('http');
+                rows = await r.json();
+                if (seq !== searchSeq) return;
+                nomCachePut(q, rows);
+            }
             if (Array.isArray(rows) && rows.length) {
                 const merged = mergeSearchRows(rows, local, q);
                 if (merged.length) {
@@ -2884,7 +2936,11 @@
         const refLayers = loadDoc(ref).layers;
         const current = zoneSnapshot();
         const other = snapshotFor(refLayers);
-        const stats = ref < state.date ? LT.showAdvance(map, other, current) : LT.showAdvance(map, current, other);
+        const roles = (() => { try { return localStorage.getItem('LINETATE:__roles') || ''; } catch (e) { return ''; } })();
+        const key = ref + '>' + state.date + '|' + roles;
+        const stats = ref < state.date
+            ? LT.showAdvance(map, other, current, key)
+            : LT.showAdvance(map, current, other, key);
         LT.advanceToast(stats, true);
     }
 
@@ -3519,6 +3575,10 @@
         try { LT.views.record(); } catch (e) { }
         // решта дат додрукована в фоні: жоден перебір календаря не має туманити
         setTimeout(preloadRest, 600);
+        // новини рахують різниці зон по всіх парах дат — це секунди важкої
+        // роботи. рахуємо їх заздалегідь, у паузі після завіси, щоб вкладка
+        // відкривалась без очікування. жест відсуває старт: кадри належать мапі
+        scheduleNewsWarm();
         // на швидкій мережі завіса мигнула б за сто мілісекунд — тримаємо
         // мінімум, щоб перехід читався як завантаження, а не як глітч
         setTimeout(() => {
@@ -3532,6 +3592,35 @@
     // усе під завісою: меню, шрифти, поточний день, решта дат і перший кадр
     // полотен. кожна дата дає кадру подихати, щоб смуга рухалась, а браузер
     // не застигав на довгому синхронному розрахунку
+    let newsWarmRuns = false;
+    let newsWarmArmed = false;
+    // на телефоні камера сама дрібно підправляється щокадру й сипле
+    // movestart — підписка на жест тут перезапускала б таймер вічно.
+    // тому чекаємо спокійний кадр за isMoving/isEasing, а не за подією
+    function scheduleNewsWarm() {
+        if (newsWarmRuns || newsWarmArmed) return;
+        newsWarmArmed = true;
+        const start = () => {
+            if (newsWarmRuns) return;
+            if (document.visibilityState === 'hidden'
+                || (map.isMoving && (map.isMoving() || map.isEasing()))) {
+                setTimeout(start, 800);
+                return;
+            }
+            newsWarmRuns = true;
+            let p;
+            try {
+                p = Promise.resolve(LT.frontNews(null, {
+                    gap: isMobileUI() ? 60 : 0,
+                    pause: () => !!(map.isMoving && (map.isMoving() || map.isEasing()))
+                        || document.visibilityState === 'hidden'
+                }));
+            } catch (e) { newsWarmRuns = false; return; }
+            p.then(() => { }, () => { newsWarmRuns = false; });
+        };
+        setTimeout(start, isMobileUI() ? 1000 : 500);
+    }
+
     async function preloadAll() {
         if (preloadStarted) return;
         preloadStarted = true;

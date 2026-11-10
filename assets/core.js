@@ -2816,91 +2816,19 @@
         return mob ? (lowEndDevice() ? .74 : .86) : 1;
     }
 
-    // пів-сторони знака під підписом: спільна мірка і для колізій, і для
-    // печіння спрайта. місто — квадрат, село — кружок, столиця — золотий
+    // радіус точки під підписом: чим важливіший НП, тим більша кулька
     function dotRadius(rank, sc) {
-        const side = rank <= 0 ? 11 : rank <= 1 ? 10 : rank <= 2 ? 9 : 8;
-        return side * sc / 2;
+        return (rank <= 1 ? 2.8 : rank <= 2 ? 2.5 : 2.15) * sc;
     }
 
-    function roundRectPath(k, x, y, w, h, r) {
-        const rr = Math.min(r, w / 2, h / 2);
+    function drawDot(k, cx, cy, r, fill) {
         k.beginPath();
-        k.moveTo(x + rr, y);
-        k.lineTo(x + w - rr, y);
-        k.arcTo(x + w, y, x + w, y + rr, rr);
-        k.lineTo(x + w, y + h - rr);
-        k.arcTo(x + w, y + h, x + w - rr, y + h, rr);
-        k.lineTo(x + rr, y + h);
-        k.arcTo(x, y + h, x, y + h - rr, rr);
-        k.lineTo(x, y + rr);
-        k.arcTo(x, y, x + rr, y, rr);
-        k.closePath();
-    }
-
-    // Знак НП малюється просто в спрайт на точній координаті. Місто — квадрат
-    // із заокругленими кутами, село — кружок, столиця — золотий квадрат із
-    // білою внутрішньою рамкою. «Внутрішнє світло» самої іконки — градієнт від
-    // білого вгорі до тіні знизу плюс блик по верхній кромці: так знак читається
-    // обʼємним на будь-якому фоні, а не пласкою цяткою. Контур спільний з
-    // підписом, щоб пара «іконка + назва» виглядала однією міткою.
-    function drawPlaceIcon(k, cx, cy, r, kind, rank) {
-        const s = Math.max(4, r * 2);
-        k.save();
-        k.lineJoin = 'round';
-        if (kind === 'vil') {
-            const rr = Math.max(1.6, s / 2 - .7);
-            const g = k.createRadialGradient(cx - rr * .34, cy - rr * .42, rr * .06, cx, cy, rr * 1.12);
-            g.addColorStop(0, '#ffffff');
-            g.addColorStop(.46, '#e8f1fa');
-            g.addColorStop(1, '#9db2c8');
-            k.beginPath();
-            k.arc(cx, cy, rr, 0, Math.PI * 2);
-            k.fillStyle = g;
-            k.fill();
-            k.lineWidth = Math.max(1.1, s * .13);
-            k.strokeStyle = 'rgba(3, 6, 10, .96)';
-            k.stroke();
-            // блик зсунутий угору-вліво: світло падає з того ж боку, що й у міста
-            k.beginPath();
-            k.arc(cx - rr * .3, cy - rr * .34, Math.max(.5, rr * .26), 0, Math.PI * 2);
-            k.fillStyle = 'rgba(255, 255, 255, .92)';
-            k.fill();
-        } else {
-            const ins = Math.max(.6, s * .07);
-            const x0 = cx - s / 2 + ins, y0 = cy - s / 2 + ins;
-            const side = s - ins * 2;
-            const cap = kind === 'cap';
-            const g = k.createLinearGradient(x0, y0, x0, y0 + side);
-            if (cap) {
-                g.addColorStop(0, '#fff6dc');
-                g.addColorStop(.46, '#ffd489');
-                g.addColorStop(1, '#c8861f');
-            } else {
-                g.addColorStop(0, '#ffffff');
-                g.addColorStop(.46, '#e2edf8');
-                g.addColorStop(1, '#9db2c8');
-            }
-            roundRectPath(k, x0, y0, side, side, Math.max(1.2, side * .26));
-            k.fillStyle = g;
-            k.fill();
-            k.lineWidth = Math.max(1.1, s * .13);
-            k.strokeStyle = 'rgba(3, 6, 10, .96)';
-            k.stroke();
-            // внутрішня рамка: у столиці світла, у міста — тонка тіньова лінія
-            k.beginPath();
-            roundRectPath(k, x0 + side * .22, y0 + side * .22, side * .56, side * .56, Math.max(.5, side * .12));
-            k.strokeStyle = cap ? 'rgba(255, 255, 255, .72)' : 'rgba(255, 255, 255, .42)';
-            k.lineWidth = Math.max(.6, s * .07);
-            k.stroke();
-            k.beginPath();
-            k.moveTo(x0 + side * .27, y0 + side * .17);
-            k.lineTo(x0 + side * .73, y0 + side * .17);
-            k.strokeStyle = cap ? 'rgba(255, 255, 255, .95)' : 'rgba(255, 255, 255, .8)';
-            k.lineWidth = Math.max(.7, s * .09);
-            k.stroke();
-        }
-        k.restore();
+        k.arc(cx, cy, r, 0, Math.PI * 2);
+        k.fillStyle = fill;
+        k.fill();
+        k.strokeStyle = PLACE_INK;
+        k.lineWidth = 1;
+        k.stroke();
     }
 
     // Підпис готується ОДИН раз: текст, крапка і ромб столиці лягають у власний
@@ -3245,8 +3173,8 @@
 
         // спрайт підпису: текст і точка, намальовані відносно точної координати
         // НП — це (0,0) спрайта. далі по кадрі лише drawImage. Стара манера:
-        // підпис висить НАД точкою; міста без точки стоять центром на координаті,
-        // як на паперових картах
+        // підпис висить НАД точкою, ромб столиці — над самим підписом. Міста
+        // без точки стоять центром на координаті, як на паперових картах
         function buildSprite(name, rank, cap, dot, dpr, kind, sc) {
             const fsz = PLACE_SIZE[rank];
             const big = rank <= 1;
@@ -3256,9 +3184,12 @@
             const padX = (mob ? 4 : 5) + 3, padY = (mob ? 3.5 : 5) + 3;
             const dr = dot ? dotRadius(rank, sc) : 0;
             const ty = dot ? -(dr + 3.4) : 0;
+            const dia = cap ? (big ? 3.2 : 2.8) * sc : 0;
+            const dmy = ty - fsz / 2 - 6;
             let bottom = ty + fsz * 0.32 + padY;
             let top = ty - fsz - padY;
-            if (dot) bottom = Math.max(bottom, dr + 1.4 + padY);
+            if (dot) bottom = Math.max(bottom, dr + 1.8 + padY);
+            if (cap) top = Math.min(top, dmy - dia - padY);
             const half = Math.max(tw / 2, dot ? dr + 2.4 : 0) + padX;
             const left = -half, right = half;
             const w = Math.max(2, Math.ceil(right - left)), h = Math.max(2, Math.ceil(bottom - top));
@@ -3275,27 +3206,41 @@
             try { k.letterSpacing = (big ? 0.9 : 0.5) + 'px'; } catch (e) { }
 
             if (dot) {
-                // знак точно на координаті, підпис над ним не ховає місце
-                drawPlaceIcon(k, 0, 0, dr, kind, rank);
+                // точка точно на координаті, підпис над нею не ховає місце
+                drawDot(k, 0, 0, dr, kind === 'cap' ? PLACE_CAP : '#e8eef5');
             }
             // контур разом із м'якою тінню: широкий штрих-«світіння» на 1x
             // зливався з обводкою в чорну плашку навколо всього слова. спрайт
             // печеться один раз, тому shadowBlur у гарячому шляху не коштує
             k.save();
-            k.shadowColor = cap ? 'rgba(255, 170, 40, .38)' : 'rgba(0, 0, 0, .58)';
-            k.shadowBlur = (big ? 4.2 : 3.0) * (mob ? .85 : 1);
+            k.shadowColor = cap ? 'rgba(255, 170, 40, .38)' : 'rgba(0, 0, 0, .62)';
+            k.shadowBlur = (big ? 4.6 : 3.4) * (mob ? .85 : 1);
             k.shadowOffsetY = 1;
             // товщина обводки — стара: тонший штрих губився на світлих зонах,
             // і назви міст читались як незахищений текст
             k.strokeStyle = PLACE_INK;
-            k.lineWidth = big ? 3.1 : 2.4;
+            k.lineWidth = big ? 3.4 : 2.6;
             k.strokeText(name, 0, ty);
             k.restore();
             k.strokeStyle = PLACE_INK;
-            k.lineWidth = big ? 3.1 : 2.4;
+            k.lineWidth = big ? 3.4 : 2.6;
             k.strokeText(name, 0, ty);
             k.fillStyle = cap ? PLACE_CAP : PLACE_FILL[rank];
             k.fillText(name, 0, ty);
+            if (cap) {
+                // ромб над столицею — картографічний маркер статусу
+                k.beginPath();
+                k.moveTo(0, dmy - dia);
+                k.lineTo(dia, dmy);
+                k.lineTo(0, dmy + dia);
+                k.lineTo(-dia, dmy);
+                k.closePath();
+                k.fillStyle = 'rgba(255, 212, 137, .96)';
+                k.fill();
+                k.strokeStyle = 'rgba(0, 0, 0, .8)';
+                k.lineWidth = 1;
+                k.stroke();
+            }
             try { k.letterSpacing = '0px'; } catch (e) { }
             return { cv: c, x: left, y: top, w: w, h: h };
         }
@@ -3358,7 +3303,7 @@
             c.height = Math.round(size * dprNow);
             const k = c.getContext('2d');
             k.setTransform(dprNow, 0, 0, dprNow, 0, 0);
-            drawPlaceIcon(k, size / 2, size / 2, r, kind, rank);
+            drawDot(k, size / 2, size / 2, r, kind === 'cap' ? PLACE_CAP : '#e8eef5');
             b = { cv: c, size: size };
             bareIcons.set(key, b);
             return b;
@@ -3603,10 +3548,10 @@
                 }
                 if (px < -80 || py < -50 || px > size.x + 80 || py > size.y + 50) continue;
                 it.px = px; it.py = py;
-                // з близького зуму під назвою стоїть знак: квадрат міста або
-                // кружок села. з огляду великі міста живуть самим підписом на
-                // координаті — інакше знаки зайняли б пів карти
-                it.dot = zoom >= 9.6 && (it.kind !== 'vil' || it.rank >= 3);
+                // стара манера: великі міста живуть самим підписом на координаті,
+                // а точка з'являється, коли масштаб дозволяє читати підпис над
+                // нею. інакше крапки на оглядовому зумі зайняли б пів карти
+                it.dot = it.rank >= 3 && zoom >= 9.6;
                 cand.push(it);
             }
             const shown = new Set();
@@ -4011,15 +3956,22 @@
         });
     }
 
+    const unionMemo = new WeakMap();
     function unionFeatures(fc) {
         const fs = (fc && fc.features) || [];
         if (!fs.length) return null;
-        if (countCoords(fc) > 60000) return null;
+        // шар-зона майже завжди одна фіча: об'єднання нічого не змінює, а
+        // turf.union по великому MultiPolygon коштує сотні мілісекунд
+        const hit = unionMemo.get(fc);
+        if (hit !== undefined) return hit;
+        if (countCoords(fc) > 60000) { unionMemo.set(fc, null); return null; }
         let u = fs[0];
         for (let i = 1; i < fs.length && u; i++) {
-            try { u = turf.union(u, fs[i]); } catch (e) { return null; }
+            try { u = turf.union(u, fs[i]); } catch (e) { u = null; }
         }
-        return u && u.geometry ? u : null;
+        u = u && u.geometry ? u : null;
+        unionMemo.set(fc, u);
+        return u;
     }
 
     function areaKm2(f) {
@@ -4070,7 +4022,11 @@
         src.setData({ type: 'FeatureCollection', features: feats });
     }
 
-    function showAdvance(map, prev, next) {
+    // різниці сусідніх дат рахуються один раз на пару: перемикання дати назад
+    // і повторне вмикання «Просування» не мусять знову ганяти turf.difference
+    // по всьому фронту (це й були ті секунди очікування)
+    const advanceMemo = new Map();
+    function showAdvance(map, prev, next, key) {
         const empty = { gain: 0, loss: 0 };
         const hasData = snap => Object.values(snap || {}).some(v => v && v.fc && v.fc.features && v.fc.features.length);
         if (!hasData(prev) || !hasData(next)) return empty;
@@ -4078,6 +4034,17 @@
         ensureAdvance(map);
         const src = map.getSource('lt-adv');
         if (!src) return empty;
+
+        const hit = key ? advanceMemo.get(key) : null;
+        if (hit) {
+            src.setData({ type: 'FeatureCollection', features: hit.feats });
+            const st = z3d(map);
+            st.adv = { gain: hit.gainFC, loss: hit.lossFC };
+            advanceBand(map);
+            ADV_LAYERS.forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
+            advancePulse(map);
+            return hit.stats;
+        }
 
         src.setData(EMPTY);
 
@@ -4123,14 +4090,17 @@
         });
 
         const stats = { gain, loss };
+        const gainFC = gainFeats.length ? { type: 'FeatureCollection', features: gainFeats } : null;
+        const lossFC = lossFeats.length ? { type: 'FeatureCollection', features: lossFeats } : null;
+        if (key) {
+            if (advanceMemo.size > 24) advanceMemo.clear();
+            advanceMemo.set(key, { feats, stats, gainFC, lossFC });
+        }
         if (!feats.length) return stats;
 
         src.setData({ type: 'FeatureCollection', features: feats });
         const st = z3d(map);
-        st.adv = {
-            gain: gainFeats.length ? { type: 'FeatureCollection', features: gainFeats } : null,
-            loss: lossFeats.length ? { type: 'FeatureCollection', features: lossFeats } : null
-        };
+        st.adv = { gain: gainFC, loss: lossFC };
         advanceBand(map);
         ADV_LAYERS.forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
         advancePulse(map);
@@ -5285,6 +5255,12 @@
         });
         const land = statsZone(cur, roles.land) || statsZone(prev, roles.land);
         const items = [];
+        // спершу лише площа кожної ділянки, далі класифікація джерела й пошук
+        // найближчого НП — тільки для тих шести, що справді підуть у картки.
+        // різниця зон дробиться на десятки кілець, і раніше кожне з них ганяло
+        // кілька boolean-операцій та перебір усіх НП України, щоб потім бути
+        // відрізаним фільтром NEWS_MAX_ITEMS
+        const rings = [];
         ['rus', 'ukr'].forEach(side => {
             if (!p[side] || !c[side]) return;
             let gain = statsDiff(c[side], p[side]);
@@ -5293,43 +5269,47 @@
                 const poly = newsPolyFeat(ring);
                 const area = statsAreaKm2(poly);
                 if (area < NEWS_MIN_KM2) return;
-                let rest = poly;
-                const srcs = [];
-                ['ukr', 'rus', 'grey'].forEach(src => {
-                    if (src === side || !p[src] || !rest) return;
-                    const part = statsCut(rest, p[src]);
-                    if (!part) return;
-                    const a = statsAreaKm2(part);
-                    if (a > 0.005) srcs.push([src, a]);
-                    rest = statsDiff(rest, part);
-                });
-                if (rest) {
-                    const a = statsAreaKm2(rest);
-                    if (a > 0.005) srcs.push(['empty', a]);
-                }
-                srcs.sort((a, b) => b[1] - a[1]);
-                let pt = null;
-                try { pt = turf.pointOnFeature(poly); } catch (e) { pt = null; }
-                if (!pt) return;
-                const near = newsFindPlace(pt);
-                if (!near) return;
-                const lon = pt.geometry.coordinates[0], lat = pt.geometry.coordinates[1];
-                let inside = false;
-                try {
-                    inside = turf.booleanPointInPolygon(turf.point([near.e[2] / 1e5, near.e[3] / 1e5]), poly);
-                } catch (e) { inside = false; }
-                const src = srcs.length ? srcs[0][0] : 'empty';
-                const taking = (side === 'rus' && src === 'ukr') || (side === 'ukr' && src === 'rus');
-                const suffix = taking ? (inside ? 'Take' : 'TakeArea') : (inside ? 'Area' : 'Near');
-                const bbox = turf.bbox(poly);
-                items.push({
-                    side, src, inside,
-                    key: side + suffix,
-                    dir: inside || near.km < 1 ? '' : newsDirKey(lon, lat, near.e),
-                    area,
-                    name: newsPlaceName(near.e),
-                    bbox: [bbox[0], bbox[1], bbox[2], bbox[3]]
-                });
+                rings.push({ side, poly, area });
+            });
+        });
+        rings.sort((a, b) => b.area - a.area);
+        rings.slice(0, NEWS_MAX_ITEMS).forEach(({ side, poly, area }) => {
+            let rest = poly;
+            const srcs = [];
+            ['ukr', 'rus', 'grey'].forEach(src => {
+                if (src === side || !p[src] || !rest) return;
+                const part = statsCut(rest, p[src]);
+                if (!part) return;
+                const a = statsAreaKm2(part);
+                if (a > 0.005) srcs.push([src, a]);
+                rest = statsDiff(rest, part);
+            });
+            if (rest) {
+                const a = statsAreaKm2(rest);
+                if (a > 0.005) srcs.push(['empty', a]);
+            }
+            srcs.sort((a, b) => b[1] - a[1]);
+            let pt = null;
+            try { pt = turf.pointOnFeature(poly); } catch (e) { pt = null; }
+            if (!pt) return;
+            const near = newsFindPlace(pt);
+            if (!near) return;
+            const lon = pt.geometry.coordinates[0], lat = pt.geometry.coordinates[1];
+            let inside = false;
+            try {
+                inside = turf.booleanPointInPolygon(turf.point([near.e[2] / 1e5, near.e[3] / 1e5]), poly);
+            } catch (e) { inside = false; }
+            const src = srcs.length ? srcs[0][0] : 'empty';
+            const taking = (side === 'rus' && src === 'ukr') || (side === 'ukr' && src === 'rus');
+            const suffix = taking ? (inside ? 'Take' : 'TakeArea') : (inside ? 'Area' : 'Near');
+            const bbox = turf.bbox(poly);
+            items.push({
+                side, src, inside,
+                key: side + suffix,
+                dir: inside || near.km < 1 ? '' : newsDirKey(lon, lat, near.e),
+                area,
+                name: newsPlaceName(near.e),
+                bbox: [bbox[0], bbox[1], bbox[2], bbox[3]]
             });
         });
         items.sort((a, b) => b.area - a.area);
@@ -5337,32 +5317,154 @@
     }
 
     let newsMemo = null;
-    function frontNews(progress) {
-        const list = listDates().slice().sort((a, b) => a.date < b.date ? -1 : 1);
-        const sig = list.map(d => d.date + ':' + d.updatedAt).join(',') + '|' + JSON.stringify(statsStoredRoles());
-        if (newsMemo && newsMemo.sig === sig) {
-            if (progress) { try { progress(1, 1); } catch (e) { } }
-            return Promise.resolve(newsMemo.res);
+    // фоновий прогрів і відкрита вкладка можуть попросити новини одночасно:
+    // рахунок важкий, тож обидва запити ділять один прохід, а не запускають
+    // два паралельні перебори різниць зон
+    let newsPending = null;
+    const NEWS_CACHE_KEY = 'LINETATE:news1';
+    // готові новини зберігаємо між сесіями: наступний захід відкриває вкладку
+    // без повторного рахунку різниць по всіх датах
+    function newsCacheRead() {
+        try {
+            const o = JSON.parse(localStorage.getItem(NEWS_CACHE_KEY) || 'null');
+            return o && o.sig && o.res ? o : null;
+        } catch (e) { return null; }
+    }
+    function newsCachePut(sig, res) {
+        try { localStorage.setItem(NEWS_CACHE_KEY, JSON.stringify({ sig, res })); } catch (e) { }
+    }
+
+    // turf.difference на великих полігонах — це 200–550 мс на пару дат, і в
+    // головному потоці вони падали просто в кадри мапи. рахує воркер; якщо
+    // його немає або він упав, тихо повертаємось до рахунку на місці
+    let newsWorker = null;
+    let newsWorkerBroken = false;
+    const newsReplies = new Map();
+    let newsReqId = 0;
+
+    function newsWorkerGet() {
+        if (newsWorkerBroken) return null;
+        if (newsWorker) return newsWorker;
+        if (typeof Worker !== 'function') { newsWorkerBroken = true; return null; }
+        try {
+            const w = new Worker('assets/news-worker.js?v=1');
+            w.onmessage = ev => {
+                const m = ev.data || {};
+                if (m.t !== 'pair') return;
+                const r = newsReplies.get(m.id);
+                if (!r) return;
+                newsReplies.delete(m.id);
+                r(m);
+            };
+            w.onerror = () => {
+                newsWorkerBroken = true;
+                const wait = Array.from(newsReplies.values());
+                newsReplies.clear();
+                wait.forEach(r => { try { r(null); } catch (e) { } });
+            };
+            newsWorker = w;
+            return w;
+        } catch (e) {
+            newsWorkerBroken = true;
+            return null;
         }
+    }
+
+    function newsWorkerStop() {
+        const w = newsWorker;
+        newsWorker = null;
+        if (w) { try { w.terminate(); } catch (e) { } }
+    }
+
+    // список НП один на всю сесію: компактні пари координат, індекс у ньому
+    // повертається назад і перетворюється на назву вже з локалізацією
+    function newsWorkerPlaces(w) {
+        const list = newsPlaces();
+        const pts = new Float64Array(list.length * 2);
+        for (let i = 0; i < list.length; i++) {
+            pts[i * 2] = list[i][2] / 1e5;
+            pts[i * 2 + 1] = list[i][3] / 1e5;
+        }
+        w.postMessage({ t: 'places', pts });
+    }
+
+    function newsWorkerDate(w, date, doc, roles, sent) {
+        if (!doc || !doc.layers || sent.has(date)) return;
+        sent.add(date);
+        const layers = {};
+        STATS_ROLES.forEach(r => {
+            const id = roles[r];
+            const l = id ? doc.layers[id] : null;
+            const fs = l && l.data && Array.isArray(l.data.features) ? l.data.features : null;
+            if (fs && fs.length) layers[r] = fs;
+        });
+        w.postMessage({ t: 'date', date, savedAt: doc.savedAt || 0, layers });
+    }
+
+    function newsWorkerPair(w, prevDate, curDate) {
+        const id = ++newsReqId;
         return new Promise(resolve => {
-            if (list.length < 2) {
-                const res = { start: list.length ? list[0].date : null, groups: [], total: 0 };
-                newsMemo = { sig, res };
-                return resolve(res);
+            newsReplies.set(id, resolve);
+            w.postMessage({ t: 'pair', id, prev: prevDate, cur: curDate });
+        });
+    }
+
+    function newsSleep(ms) {
+        return new Promise(r => setTimeout(r, ms));
+    }
+
+    async function newsWorkerRun(w, list, roles, progress, gap, pause) {
+        newsWorkerPlaces(w);
+        const sent = new Set();
+        const groups = [];
+        const names = newsPlaces();
+        for (let i = 1; i < list.length; i++) {
+            while (pause && pause()) await newsSleep(260);
+            const prev = load(list[i - 1].date);
+            const cur = load(list[i].date);
+            if (cur && cur.layers && prev && prev.layers) {
+                newsWorkerDate(w, list[i - 1].date, prev, roles, sent);
+                newsWorkerDate(w, list[i].date, cur, roles, sent);
+                const m = await newsWorkerPair(w, list[i - 1].date, list[i].date);
+                if (!m) throw new Error('news worker stopped');
+                if (m.err) throw new Error(m.err);
+                if (m.group && m.group.items.length) {
+                    groups.push({
+                        date: m.group.date, savedAt: m.group.savedAt,
+                        items: m.group.items.map(it => ({
+                            side: it.side, src: it.src, inside: it.inside, key: it.key,
+                            dir: it.dir, area: it.area,
+                            name: newsPlaceName(names[it.place]), bbox: it.bbox
+                        }))
+                    });
+                }
             }
-            const latest = load(list[list.length - 1].date);
-            const roles = statsRoles(latest && latest.layers);
+            if (progress) { try { progress(i, list.length); } catch (e) { } }
+            if (gap) await newsSleep(gap);
+        }
+        return groups;
+    }
+
+    function newsFinish(sig, list, groups) {
+        const res = {
+            start: list.length ? list[0].date : null,
+            groups,
+            total: groups.reduce((n, g) => n + g.items.length, 0)
+        };
+        newsMemo = { sig, res };
+        newsCachePut(sig, res);
+        return res;
+    }
+
+    // запасний шлях без воркера: той самий рахунок, але кадри мапи він таки
+    // з'їдає — тому лише коли Worker недоступний
+    function newsLocalRun(sig, list, roles, progress, gap, pause) {
+        return new Promise(resolve => {
             const groups = [];
             let i = 1;
             const step = () => {
-                if (i >= list.length) {
-                    const res = {
-                        start: list[0].date, groups,
-                        total: groups.reduce((n, g) => n + g.items.length, 0)
-                    };
-                    newsMemo = { sig, res };
-                    return resolve(res);
-                }
+                if (pause && pause()) { setTimeout(step, 260); return; }
+                if (i >= list.length) return resolve(newsFinish(sig, list, groups));
                 const cur = load(list[i].date);
                 const prev = load(list[i - 1].date);
                 if (cur && cur.layers && prev && prev.layers) {
@@ -5373,10 +5475,53 @@
                 }
                 i++;
                 if (progress) { try { progress(i, list.length); } catch (e) { } }
-                setTimeout(step, 0);
+                setTimeout(step, gap);
             };
             step();
         });
+    }
+
+    // opts.gap — пауза між парами дат (фоновий прогрів не має йти суцільним
+    // блоком); opts.pause — «зараз зайнято»: жест чи прихована вкладка
+    // відсувають наступну пару, щоб рахунок не крав кадри в мапи
+    function frontNews(progress, opts) {
+        const gap = opts && opts.gap > 0 ? opts.gap : 0;
+        const pause = opts && typeof opts.pause === 'function' ? opts.pause : null;
+        const list = listDates().slice().sort((a, b) => a.date < b.date ? -1 : 1);
+        const sig = list.map(d => d.date + ':' + d.updatedAt).join(',') + '|' + JSON.stringify(statsStoredRoles());
+        if (newsMemo && newsMemo.sig === sig) {
+            if (progress) { try { progress(1, 1); } catch (e) { } }
+            return Promise.resolve(newsMemo.res);
+        }
+        if (!newsMemo) {
+            const disk = newsCacheRead();
+            if (disk && disk.sig === sig) {
+                newsMemo = { sig, res: disk.res };
+                if (progress) { try { progress(1, 1); } catch (e) { } }
+                return Promise.resolve(disk.res);
+            }
+        }
+        if (newsPending) return newsPending;
+        const latest = list.length ? load(list[list.length - 1].date) : null;
+        const roles = statsRoles(latest && latest.layers);
+        newsPending = (async () => {
+            if (list.length < 2) return newsFinish(sig, list, []);
+            const w = newsWorkerGet();
+            if (w) {
+                try {
+                    const groups = await newsWorkerRun(w, list, roles, progress, gap, pause);
+                    newsWorkerStop();
+                    return newsFinish(sig, list, groups);
+                } catch (e) {
+                    newsWorkerStop();
+                }
+            }
+            return newsLocalRun(sig, list, roles, progress, gap, pause);
+        })();
+        const pending = newsPending;
+        pending.then(() => { if (newsPending === pending) newsPending = null; },
+            () => { if (newsPending === pending) newsPending = null; });
+        return pending;
     }
 
     function newsTime(ts) {
@@ -7020,7 +7165,7 @@
         const hasLine = !map._ltOutlinesOff && !noLine && bw > 0 && !(d3 && ownBw === 0);
         const decor = ownBw > 0;
         const lineCol = ownBw > 0 ? s.bcol : OUTLINE_INK;
-        const igo = glowStrength(s.iglow);
+        const igo = Math.max(0, Math.min(100, s.iglow == null ? 0 : s.iglow)) / 100;
         const blended = s.blend && s.blend !== 'normal';
         const gradient = s.grad === true;
         const arrow3d = l.kind === 'arrow' && s.d3 === true;
@@ -7050,7 +7195,7 @@
         // z-fighting і коштували найдорожчого проходу геометрії на жест
         map.setLayoutProperty('l_' + l.id, 'visibility', hasLine ? vis : 'none');
         map.setLayoutProperty('g_' + l.id, 'visibility', decor && glow && hasLine ? vis : 'none');
-        map.setLayoutProperty('ig_' + l.id, 'visibility', igo > 0 && hasLine ? vis : 'none');
+        map.setLayoutProperty('ig_' + l.id, 'visibility', decor && igo > 0 && hasLine ? vis : 'none');
         const zone = l.kind === 'zone';
         map.setLayoutProperty('gw_' + l.id, 'visibility', decor && glow && hasLine ? vis : 'none');
         map.setLayoutProperty('rh_' + l.id, 'visibility', decor && zone && hasLine ? vis : 'none');
@@ -7075,16 +7220,14 @@
         map.setPaintProperty('g_' + l.id, 'line-opacity', Math.min(0.65, 0.6 * gAmt + s.alpha * 0.15) * k);
         map.setPaintProperty('g_' + l.id, 'line-blur', Math.max(4, bw * 4) * (0.5 + gAmt));
 
-        // свечение внутри контура: сдвинутая внутрь размытая линия. колір
-        // виводимо з заливки, а не з обводки: світло мусить бути світлішим
-        // за сам шар, інакше воно читається як друга тінь
-        const igW = Math.max(4, bw * 3) * (0.7 + igo * 1.5);
-        map.setPaintProperty('ig_' + l.id, 'line-color', glowTint(s.color, s.igcol));
+        // свечение внутри контура: сдвинутая внутрь размытая линия
+        const igW = Math.max(6, bw * 4) * (0.8 + igo * 2.2);
+        map.setPaintProperty('ig_' + l.id, 'line-color', s.igcol || s.bcol);
         map.setPaintProperty('ig_' + l.id, 'line-width', igW);
-        map.setPaintProperty('ig_' + l.id, 'line-blur', Math.max(1.5, igW * 0.3));
-        map.setPaintProperty('ig_' + l.id, 'line-opacity', Math.min(0.75, 0.16 + igo * 0.45) * k);
+        map.setPaintProperty('ig_' + l.id, 'line-blur', Math.max(1.5, igW * 0.24));
+        map.setPaintProperty('ig_' + l.id, 'line-opacity', Math.min(0.9, 0.25 + igo * 0.65) * k);
         // отрицательный сдвиг уходит внутрь контура при обходе CCW (см. rewindFC)
-        map.setPaintProperty('ig_' + l.id, 'line-offset', -Math.max(1.8, igW * 0.34));
+        map.setPaintProperty('ig_' + l.id, 'line-offset', -Math.max(2, igW * 0.34));
 
         // широкое гало под узким свечением: глубина свечения в два слоя
         map.setPaintProperty('gw_' + l.id, 'line-color', s.bcol);
@@ -7336,26 +7479,6 @@
         return '#' + h(c[0]) + h(c[1]) + h(c[2]);
     }
 
-    // Колір внутрішнього світла: за замовчуванням — світліший за заливку
-    // шару. Кастомний колір беремо лише тоді, коли він справді світліший:
-    // старі збережені «чорні» значення давали тінь замість світла, і саме
-    // через них свічення читалося як брудна пляма.
-    function glowTint(fill, custom) {
-        const base = parseHex(fill) || [80, 90, 100];
-        const light = lightHex(fill, 0.52);
-        const cus = parseHex(custom);
-        if (!cus) return light;
-        const lum = c => .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
-        return lum(cus) > lum(base) + 16 ? custom : light;
-    }
-
-    // сила свічення 0..1: повзунок лишається підсилювачем, а не єдиним
-    // джерелом — інакше збережений 7 % (колишній дефолт) давав майже нуль
-    function glowStrength(v) {
-        const n = v == null ? 45 : Math.max(0, Math.min(100, Number(v) || 0));
-        return n <= 0 ? 0 : 0.45 + 0.55 * (n / 100);
-    }
-
     // средний цвет — средний стоп трёхстопового градиента
     function midHex(a, b) {
         const ca = parseHex(a), cb = parseHex(b);
@@ -7490,7 +7613,7 @@
     // (як раніше), а частково заповнене — по свіжих вершинах і по торішніх
     // висотах решти, де різниця одиниці метрів.
     const demCache = new WeakMap();
-    const DEM = { map: null, on: false, ep: -1, gen: 1, busy: 0, ex: 1, elev: 0, left: 0 };
+    const DEM = { map: null, on: false, ep: -1, gen: 1, busy: 0, ex: 1, elev: 0, left: 0, bumpAt: 0 };
     let demScratch = null;
 
     // Швидке читання рельєфу замість getElevationForLngLatZoom.
@@ -7608,17 +7731,23 @@
     // плаский масив меркатор-вершин → висоти рельєфу в МЕТРАХ (без множника
     // підняття: той змінюється на кожен крок зума, а перераховувати через нього
     // весь кеш — зайве). null — кеш ще порожній, кільце йде по сталій висоті.
+    // Кільце проходить прохід за прохід: висоти завжди читаються з живих
+    // буферів тайлів, тож щойно тайл доїхав — наступний прохід уже бере нову
+    // висоту. Раніше прогрес скидався на нуль при кожній генерації, і під час
+    // безперервного підвантаження хвіст кільця не встигав дійти до кінця:
+    // рельєф «доїжджав» лише коли потік тайлів стихав. Тепер прохід
+    // продовжується з місця, а нові тайли лише замовляють ще один прохід.
     function ringDem(map, f) {
         let hit = demCache.get(f);
         if (!hit) {
-            hit = { ep: -1, wip: -1, at: 0, bad: 0, m: new Float64Array(f.length >> 1) };
+            hit = { ep: -1, g: -1, want: 0, at: 0, bad: 0, m: new Float64Array(f.length >> 1) };
             demCache.set(f, hit);
         }
         if (hit.bad) return null;
-        if (hit.ep === DEM.ep) return hit.m;
-        if (hit.wip !== DEM.ep) {
-            hit.wip = DEM.ep;
-            hit.at = 0;
+        if (hit.ep === DEM.ep && !hit.want) return hit.m;
+        if (hit.g !== DEM.ep) {
+            hit.g = DEM.ep;
+            hit.want = 1;
             // перший захід: ще не заповнені вершини не повинні падати на нуль,
             // бо нуль — це рівень моря, а не «без поправки». стартуємо з
             // висоти камери: поправка для таких вершин дорівнює нулю
@@ -7630,6 +7759,7 @@
             if (!LL) { hit.bad = 1; return null; }
             if (!demScratch) demScratch = new LL(0, 0);
             const m = hit.m, n = m.length, k = 1 / DEM.ex;
+            const g = DEM.ep;
             try {
                 for (; hit.at < n && DEM.left > 0; hit.at++) {
                     const j = hit.at * 2;
@@ -7638,7 +7768,10 @@
                     // обрізки кільце з-під води йшло б окремим східцем
                     let e = DEMF.ok ? demFast(f[j], f[j + 1]) : NaN;
                     if (Number.isFinite(e)) m[hit.at] = e > 0 ? e : 0;
-                    else {
+                    // поки тайли ще їдуть, рушій за відсутній тайл віддає нуль.
+                    // на перепроході краще лишити попередню висоту, ніж уронити
+                    // хвіст кільця на рівень моря й отримати видимий східець
+                    else if (!DEM.busy) {
                         demScratch.lng = f[j] * 360 - 180;
                         demScratch.lat = 57.29577951308232 * Math.atan(Math.sinh(Math.PI * (1 - 2 * f[j + 1])));
                         e = tr.getElevationForLngLatZoom(demScratch, t.tileZoom);
@@ -7651,9 +7784,13 @@
                 hit.bad = 1;
                 return null;
             }
-            if (hit.at >= n) hit.ep = DEM.ep;
+            if (hit.at >= n) {
+                hit.at = 0;
+                if (DEM.ep === g) { hit.ep = g; hit.want = 0; }
+                else hit.ep = g;  // тайли змінились під час проходу — ще один
+            }
         }
-        return hit.at > 0 ? hit.m : null;
+        return hit.at > 0 || hit.ep >= 0 ? hit.m : null;
     }
 
     function tiltFrame(map, h) {
@@ -8467,8 +8604,21 @@
             // те саме з рельєфом: тайли DEM приходять, коли камера вже нерухома,
             // а з висотою їде і екранне положення зони. без примусового кадру
             // заливка лишалася на старому рельєфі й «від’їжджала» від контуру
+            // кожен завантажений тайл рельєфу одразу замовляє новий прохід
+            // кілець, а не чекає повного idle: висоти зон наздоганяють рельєф
+            // під час руху камери, а не ривком після нього. тротлінг лишає
+            // проходу шанс дійти до кінця між хвилями тайлів
             map.on('data', e => {
-                if (e && e.sourceId === 'lt-dem') { forced = true; schedule(); }
+                if (!e || e.sourceId !== 'lt-dem') return;
+                if (e.tile) {
+                    const now = performance.now();
+                    if (now - DEM.bumpAt > (isMobile() ? 260 : 140)) {
+                        DEM.bumpAt = now;
+                        DEM.gen++;
+                    }
+                }
+                forced = true;
+                schedule();
             });
             // шов для вимірювання прилипання: який ракурс реально лежить на
             // полотні в той самий момент, що й на мапі
@@ -8589,66 +8739,6 @@
         }
 
 
-
-        // Внутрішнє світло шару — справжня «тінь навиворіт» по зовнішньому
-        // силуету заливки. Робимо на зменшеній копії полотна: alpha мінус її
-        // розмиття лишає смугу тільки всередині силуету, тож між сусідніми
-        // шматками одного шару не проступають внутрішні шви (на відміну від
-        // лінії зі зсувом, яка креслила кожне кільце окремо).
-        let glowMaskCv = null, glowMaskCtx = null, glowBandCv = null, glowBandCtx = null;
-        function applyInnerGlow(cv, color, alpha, radius, fillA) {
-            if (!(alpha > 0.008) || !(radius > 0.2)) return;
-            const w = Math.max(1, Math.round(cv.width / 2));
-            const h = Math.max(1, Math.round(cv.height / 2));
-            if (!glowMaskCv) {
-                glowMaskCv = document.createElement('canvas'); glowMaskCtx = glowMaskCv.getContext('2d');
-                glowBandCv = document.createElement('canvas'); glowBandCtx = glowBandCv.getContext('2d');
-            }
-            if (glowMaskCv.width !== w || glowMaskCv.height !== h) {
-                glowMaskCv.width = w; glowMaskCv.height = h;
-                glowBandCv.width = w; glowBandCv.height = h;
-            }
-            // Силует спершу робимо непрозорим: заливка шару має alpha < 1, і
-            // без цього «силует мінус його розмиття» лишало б усередині
-            // A·(1−A) (при A≈.55 це 0.25), тобто світлішав би весь шар, а не
-            // смуга по краю. Кілька проходів 'lighter' підіймають alpha до 1,
-            // не чіпаючи форму (за межами силуету лишається 0).
-            const m = glowMaskCtx;
-            m.setTransform(1, 0, 0, 1, 0, 0);
-            m.globalAlpha = 1;
-            m.filter = 'none';
-            m.globalCompositeOperation = 'source-over';
-            m.clearRect(0, 0, w, h);
-            m.drawImage(cv, 0, 0, w, h);
-            const passes = Math.min(6, Math.max(2, Math.ceil(1 / Math.max(0.08, fillA * 0.86))));
-            if (passes > 1) {
-                m.globalCompositeOperation = 'lighter';
-                for (let i = 1; i < passes; i++) m.drawImage(cv, 0, 0, w, h);
-                m.globalCompositeOperation = 'source-over';
-            }
-            const g = glowBandCtx;
-            g.setTransform(1, 0, 0, 1, 0, 0);
-            g.globalAlpha = 1;
-            g.filter = 'none';
-            g.globalCompositeOperation = 'source-over';
-            g.clearRect(0, 0, w, h);
-            g.drawImage(glowMaskCv, 0, 0);
-            g.globalCompositeOperation = 'destination-out';
-            g.filter = 'blur(' + (radius / 2).toFixed(2) + 'px)';
-            g.drawImage(glowMaskCv, 0, 0);
-            g.filter = 'none';
-            g.globalCompositeOperation = 'source-in';
-            g.fillStyle = color;
-            g.fillRect(0, 0, w, h);
-            g.globalCompositeOperation = 'source-over';
-            const ctx = cv.getContext('2d');
-            ctx.save();
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.globalCompositeOperation = 'source-over';
-            ctx.globalAlpha = alpha;
-            ctx.drawImage(glowBandCv, 0, 0, cv.width, cv.height);
-            ctx.restore();
-        }
 
         function paint() {
             if (!host) return;
@@ -8784,20 +8874,15 @@
                 const rimW = Math.max(1.1, 1.7 * rx);
                 const bloomW = 5.4 * rx;
                 const invScale = 1 / Math.max(1e-9, (kx + ky) / 2);
-                // внутрішнє світло: смуга світлішого за заливку кольору по
-                // силуету шару. сила 0.45..1, тож старий повзунок 7 % дає
-                // видиме свічення, а 0 — справді вимикає його
-                const igStr = glowStrength(l.style.iglow);
-                const glowA = igStr > 0
-                    ? Math.min(0.5, (0.12 + 0.3 * Math.pow(igStr, 0.8)) * fxA)
-                    : 0;
-                const glowCol = glowTint(l.style.color, l.style.igcol);
-                const glowR = (3.2 + 4.6 * igStr) * rx;
                 // чотири сходи градієнта рахуємо раз на шар, не на полігон
                 const gStop0 = hexA(l.style.color, Math.min(1, alpha * 1.16));
                 const gStop1 = hexA(mixHex(l.style.color, gcol, 0.34), alpha * 1.02);
                 const gStop2 = hexA(mixHex(l.style.color, gcol, 0.68), alpha * 0.94);
                 const gStop3 = hexA(gcol, Math.max(0, alpha * 0.86));
+                // кромка — теж раз на шар: раніше рядок кольору будувався на
+                // кожен полігон і кожен кадр, а їх на фронті десятки
+                const rimCol = hexA(lightHex(l.style.color, 0.68), rimA);
+                const bloomCol = rimWide ? hexA(lightHex(l.style.color, 0.5), rimA * 0.22) : null;
                 const gcx = (mminX + mmaxX) / 2, gcy = (mminY + mmaxY) / 2;
                 const ghalf = Math.abs((mmaxX - mminX) * gdx) / 2 + Math.abs((mmaxY - mminY) * gdy) / 2;
                 const gradFlat = l.style.grad === true && isFinite(mminX) && isFinite(mminY) && ghalf > 0;
@@ -8810,6 +8895,10 @@
                 // огляді одиниці, тож це дешево й точно).
                 if (!tilted && zoom < PATH_MAX_Z) {
                     const rw = rimW * invScale, bw = bloomW * invScale;
+                    // підпис стилю: геометрія й кольори градієнта не залежать
+                    // від камери, тож об'єкт градієнта живе разом із Path2D,
+                    // поки не зміниться колір чи альфа шару
+                    const gSig = gStop0 + gStop1 + gStop2 + gStop3 + '|' + gdx + '|' + gdy + '|' + gcx + '|' + gcy + '|' + ghalf;
                     for (let vi = 0; vi < vis.length; vi++) {
                         const poly = vis[vi];
                         const rec = polyPath(poly, tol);
@@ -8819,13 +8908,17 @@
                             // градієнт — у власних координатах полігона (після
                             // зсуву origin): ті самі кольори лягають на шар
                             // безперервно, без швів між полігонами
-                            const g = ctx.createLinearGradient(
-                                gcx - gdx * ghalf - rec.ox, gcy - gdy * ghalf - rec.oy,
-                                gcx + gdx * ghalf - rec.ox, gcy + gdy * ghalf - rec.oy);
-                            g.addColorStop(0, gStop0);
-                            g.addColorStop(0.42, gStop1);
-                            g.addColorStop(0.74, gStop2);
-                            g.addColorStop(1, gStop3);
+                            let g = rec.g;
+                            if (!g || rec.gk !== gSig || rec.gc !== ctx) {
+                                g = ctx.createLinearGradient(
+                                    gcx - gdx * ghalf - rec.ox, gcy - gdy * ghalf - rec.oy,
+                                    gcx + gdx * ghalf - rec.ox, gcy + gdy * ghalf - rec.oy);
+                                g.addColorStop(0, gStop0);
+                                g.addColorStop(0.42, gStop1);
+                                g.addColorStop(0.74, gStop2);
+                                g.addColorStop(1, gStop3);
+                                rec.g = g; rec.gk = gSig; rec.gc = ctx;
+                            }
                             ctx.fillStyle = g;
                         } else {
                             ctx.fillStyle = flatSolid;
@@ -8835,17 +8928,16 @@
                         if (!rimOn || !hasRim || (rr && rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx)) continue;
                         ctx.globalCompositeOperation = 'lighter';
                         ctx.lineJoin = 'round';
-                        if (rimWide) {
-                            ctx.strokeStyle = hexA(lightHex(l.style.color, 0.5), rimA * 0.22);
+                        if (bloomCol) {
+                            ctx.strokeStyle = bloomCol;
                             ctx.lineWidth = bw;
                             ctx.stroke(rec.p);
                         }
-                        ctx.strokeStyle = hexA(lightHex(l.style.color, 0.68), rimA);
+                        ctx.strokeStyle = rimCol;
                         ctx.lineWidth = rw;
                         ctx.stroke(rec.p);
                         ctx.globalCompositeOperation = 'source-over';
                     }
-                    if (glowA > 0) applyInnerGlow(cv, glowCol, glowA, glowR, alpha);
                     ctx.setTransform(1, 0, 0, 1, 0, 0);
                     return;
                 }
@@ -8916,17 +9008,16 @@
                     if (!rimOn || !hasRim || (rr && rr[2] - rr[0] < rimMinPx && rr[3] - rr[1] < rimMinPx)) continue;
                     ctx.globalCompositeOperation = 'lighter';
                     ctx.lineJoin = 'round';
-                    if (rimWide) {
-                        ctx.strokeStyle = hexA(lightHex(l.style.color, 0.5), rimA * 0.22);
+                    if (bloomCol) {
+                        ctx.strokeStyle = bloomCol;
                         ctx.lineWidth = bloomW;
                         ctx.stroke();
                     }
-                    ctx.strokeStyle = hexA(lightHex(l.style.color, 0.68), rimA);
+                    ctx.strokeStyle = rimCol;
                     ctx.lineWidth = rimW;
                     ctx.stroke();
                     ctx.globalCompositeOperation = 'source-over';
                 }
-                if (glowA > 0) applyInnerGlow(cv, glowCol, glowA, glowR, alpha);
             });
 
             // рельєф довантажується порціями: хвіст кілець добирається тільки

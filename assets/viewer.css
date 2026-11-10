@@ -1328,16 +1328,76 @@
 #boot {
     position: fixed; inset: 0; z-index: var(--z-boot);
     display: grid; place-items: center; overflow: hidden;
-    background:
-        radial-gradient(52% 40% at 50% 33%, rgba(92, 60, 12, .38), transparent 72%),
-        radial-gradient(120% 88% at 50% 40%, #17181b 0%, #0b0c0e 46%, #030405 100%);
-    -webkit-backdrop-filter: blur(26px) grayscale(1) brightness(.82) contrast(1.15);
-    backdrop-filter: blur(26px) grayscale(1) brightness(.82) contrast(1.15);
+    background: radial-gradient(120% 90% at 50% 40%, #121317 0%, #0a0b0d 48%, #030405 100%);
     transition: opacity .62s var(--ease), transform .62s var(--ease);
 }
 #boot.done { opacity: 0; pointer-events: none; transform: scale(1.02); }
+
+/* Живий фон завіси: наша ж карта, розмита й приглушена, під нею — повільні
+   хвилі брендових барв і тонка сітка. Рухаються лише transform/opacity, тому
+   навіть слабкий телефон не платить за перемальовку кадру. */
+.boot-bg { position: absolute; inset: -6%; pointer-events: none; overflow: hidden; }
+.boot-bg i { position: absolute; display: block; }
+.bg-map {
+    inset: -6%;
+    background: url(boot-map.jpg) 50% 44% / cover no-repeat;
+    filter: blur(12px) saturate(.7) brightness(.46) contrast(1.08);
+    transform: scale(1.16);
+    opacity: .9;
+    will-change: transform;
+    animation: boot-map-drift 34s ease-in-out infinite alternate;
+}
+@keyframes boot-map-drift {
+    0% { transform: scale(1.16) translate3d(-1.2%, 1%, 0); }
+    100% { transform: scale(1.26) translate3d(1.4%, -1.6%, 0); }
+}
+.bg-aurora {
+    inset: -20%; mix-blend-mode: screen; will-change: transform, opacity;
+}
+.bg-a {
+    background:
+        radial-gradient(38% 30% at 30% 30%, rgba(255, 176, 46, .3), transparent 70%),
+        radial-gradient(30% 26% at 70% 62%, rgba(255, 96, 20, .17), transparent 72%);
+    filter: blur(30px);
+    animation: boot-aurora-a 17s ease-in-out infinite alternate;
+}
+.bg-b {
+    background:
+        radial-gradient(26% 24% at 64% 30%, rgba(46, 128, 196, .2), transparent 70%),
+        radial-gradient(34% 30% at 36% 70%, rgba(255, 206, 110, .16), transparent 74%);
+    filter: blur(38px);
+    animation: boot-aurora-b 23s ease-in-out infinite alternate;
+}
+@keyframes boot-aurora-a {
+    0% { transform: translate3d(-3%, 2%, 0) scale(1); opacity: .75; }
+    100% { transform: translate3d(4%, -3%, 0) scale(1.12); opacity: 1; }
+}
+@keyframes boot-aurora-b {
+    0% { transform: translate3d(3%, -2%, 0) scale(1.08); opacity: .6; }
+    100% { transform: translate3d(-4%, 3%, 0) scale(1); opacity: .95; }
+}
+/* повільна скануюча смуга: живить кадр, не заважаючи читати текст */
+.bg-scan {
+    left: -10%; right: -10%; height: 38%; top: 0;
+    background: linear-gradient(180deg, transparent, rgba(255, 214, 120, .055) 55%, transparent);
+    animation: boot-scan 8.5s linear infinite;
+}
+@keyframes boot-scan {
+    from { transform: translateY(-120%); }
+    to { transform: translateY(360%); }
+}
+.bg-grid {
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px);
+    background-size: 72px 72px;
+    -webkit-mask-image: radial-gradient(70% 60% at 50% 46%, #000 10%, transparent 78%);
+    mask-image: radial-gradient(70% 60% at 50% 46%, #000 10%, transparent 78%);
+    opacity: .5;
+}
 @supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
-    #boot { background: #040507; }
+    .bg-map { filter: saturate(.6) brightness(.4) contrast(1.05); }
 }
 /* тонкі золоті лінії кадру: екран читається як «ефір», а не як картка */
 #boot::before, #boot::after {
@@ -1427,14 +1487,36 @@
     58%, 100% { background-position: -70% 0; }
 }
 
+/* вордмарк: літери виїжджають по одній, кожна несе власний градієнт — так
+   анімація не рве background-clip:text на дочірніх елементах */
 .boot-brand {
+    display: flex; justify-content: center; align-items: baseline;
     font-family: var(--title); font-weight: 900; line-height: 1;
-    font-size: clamp(30px, 7.2vw, 42px);
-    letter-spacing: .26em; text-indent: .26em;
-    background: linear-gradient(180deg, #fffdf4 0 30%, #ffe9a8 58%, #ffb62e 100%);
+    font-size: clamp(34px, 8.4vw, 50px);
+    letter-spacing: 0;
+    filter: drop-shadow(0 3px 12px rgba(0, 0, 0, .92)) drop-shadow(0 0 26px rgba(255, 180, 40, .2));
+}
+.boot-brand span {
+    display: inline-block;
+    padding: 0 .045em;
+    background: linear-gradient(180deg, #fffdf6 0 32%, #ffe9a8 62%, #ffb62e 100%);
     -webkit-background-clip: text; background-clip: text;
     color: transparent; -webkit-text-fill-color: transparent;
-    filter: drop-shadow(0 2px 10px rgba(0, 0, 0, .9)) drop-shadow(0 0 22px rgba(255, 180, 40, .18));
+    animation: boot-letter .68s var(--ease-pop) both;
+}
+.boot-brand span:nth-child(1) { animation-delay: .10s; }
+.boot-brand span:nth-child(2) { animation-delay: .14s; }
+.boot-brand span:nth-child(3) { animation-delay: .18s; }
+.boot-brand span:nth-child(4) { animation-delay: .22s; }
+.boot-brand span:nth-child(5) { animation-delay: .26s; }
+.boot-brand span:nth-child(6) { animation-delay: .30s; }
+.boot-brand span:nth-child(7) { animation-delay: .34s; }
+.boot-brand span:nth-child(8) { animation-delay: .38s; }
+.boot-brand span:nth-child(9) { animation-delay: .42s; }
+@keyframes boot-letter {
+    0% { opacity: 0; transform: translateY(14px) scale(.9); }
+    60% { opacity: 1; }
+    100% { opacity: 1; transform: none; }
 }
 .boot-sub {
     display: flex; align-items: center; justify-content: center; gap: 12px;
@@ -1533,18 +1615,29 @@
 
 @media (max-width: 700px) {
     .boot-hero { width: clamp(112px, 33vw, 142px); }
-    .boot-brand { font-size: clamp(26px, 8.6vw, 32px); }
+    .boot-brand { font-size: clamp(30px, 9.4vw, 38px); }
     .boot-steps { margin-top: 18px; gap: 6px 12px; }
     .boot-step { font-size: 9.5px; letter-spacing: 1.6px; }
     .boot-meter { margin-top: 16px; }
     .boot-meta { font-size: 10px; letter-spacing: 1.6px; }
     .boot-line { font-size: 9.5px; letter-spacing: 1.5px; }
     .boot-halo { top: 34%; }
+    /* на телефоні розмиття дорожче: менший радіус і без другої хвилі.
+       brightness вище, ніж на ПК: інакше власна мапа не читається крізь
+       бурштинову хвилю, а вона тут займає майже весь кадр */
+    .bg-map { filter: blur(8px) saturate(.72) brightness(.56) contrast(1.06); }
+    .bg-a { filter: blur(30px) brightness(.72); }
+    .bg-b { display: none; }
+    .bg-grid { background-size: 56px 56px; opacity: .38; }
 }
+/* застиглі анімації не повинні ховати інформацію: лишаємо статичний кадр
+   з усім текстом, вимірювачем і прогресом */
 @media (prefers-reduced-motion: reduce) {
     .boot-stage, .boot-halo, .boot-orbit, .boot-orbit b, .boot-mark img, .boot-sheen,
-    .boot-bar i::after, #boot-state::before, .boot-step.on i { animation: none; }
+    .boot-bar i::after, #boot-state::before, .boot-step.on i,
+    .bg-map, .bg-aurora, .bg-scan, .boot-brand span { animation: none; }
     .boot-sheen { display: none; }
+    .bg-scan { display: none; }
     #ps-results .sr, .search-marker .sm-in { animation: none; }
 }
 
