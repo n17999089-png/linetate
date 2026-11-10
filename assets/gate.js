@@ -99,10 +99,15 @@
     }
 
     let loading = false;
+    let stopGateViewportWatch = null;
 
     function loadApp() {
         if (loading) return;
         loading = true;
+        if (stopGateViewportWatch) {
+            stopGateViewportWatch();
+            stopGateViewportWatch = null;
+        }
         const gate = document.getElementById('gate');
         if (gate) gate.remove();
 
@@ -134,6 +139,22 @@
         const err = document.getElementById('gate-err');
         const go = document.getElementById('gate-go');
         if (!gate || !form || !input) return;
+
+        const viewport = window.visualViewport;
+        if (viewport) {
+            const fit = () => {
+                gate.style.top = viewport.offsetTop + 'px';
+                gate.style.bottom = 'auto';
+                gate.style.height = viewport.height + 'px';
+            };
+            fit();
+            viewport.addEventListener('resize', fit);
+            viewport.addEventListener('scroll', fit);
+            stopGateViewportWatch = () => {
+                viewport.removeEventListener('resize', fit);
+                viewport.removeEventListener('scroll', fit);
+            };
+        }
 
         gate.classList.add('show');
         setTimeout(() => input.focus(), 80);

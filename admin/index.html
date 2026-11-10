@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
 <title>LINESTATE — редактор карти</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Handjet:wght@400;700;900&family=Tektur:wght@400;700;900&display=swap" rel="stylesheet">
@@ -13,7 +13,7 @@
 <script src="../assets/vendor/turf.min.js"></script>
 <script src="../assets/vendor/topojson-client.min.js"></script>
 <link rel="stylesheet" href="../assets/theme.css?v=50">
-<link rel="stylesheet" href="../assets/admin.css?v=35">
+<link rel="stylesheet" href="../assets/admin.css?v=36">
 </head>
 <body>
 
@@ -354,12 +354,12 @@
     <form class="gate-box" id="gate-form" autocomplete="off">
         <b>LINESTATE</b>
         <small>СЛУЖБОВИЙ ДОСТУП</small>
-        <input class="input" id="gate-key" type="password" autocomplete="new-password" spellcheck="false" placeholder="код доступу" aria-label="Код доступу">
+        <input class="input" id="gate-key" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false" enterkeyhint="go" placeholder="код доступу" aria-label="Код доступу">
         <button class="btn wide" id="gate-go" type="submit">УВІЙТИ</button>
         <span id="gate-err"></span>
     </form>
 </div>
 
-<script src="../assets/gate.js?v=31"></script>
+<script src="../assets/gate.js?v=32"></script>
 </body>
 </html>

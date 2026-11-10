@@ -198,16 +198,25 @@ textarea.input { width: 100%; height: auto; min-height: 72px; padding: 10px 11px
 #gate {
     position: fixed; inset: 0; z-index: 5000;
     display: none; align-items: center; justify-content: center;
-    background: radial-gradient(ellipse at center, #141416, #050506 70%);
+    min-height: 0; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    overflow-y: auto; overscroll-behavior: contain;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, .055), transparent 34%),
+        linear-gradient(160deg, #19191b 0%, #09090a 44%, #010102 76%, #000 100%);
 }
 #gate.show { display: flex; }
 .gate-box {
-    width: min(320px, calc(100vw - 48px));
+    flex: 0 0 auto;
+    width: min(320px, 100%);
+    margin: auto;
     display: flex; flex-direction: column; gap: 10px;
     padding: 26px 24px;
-    background: linear-gradient(160deg, #1c1c1f, #0b0b0c);
-    border: 1px solid var(--line-2); border-radius: 14px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, .65);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .02) 38%, transparent 62%),
+        linear-gradient(160deg, #202024 0%, #0b0b0c 42%, #020203 74%, #000 100%);
+    border: 1px solid rgba(255, 255, 255, .18); border-radius: 14px;
+    border-top-color: rgba(255, 255, 255, .32);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 24px 60px rgba(0, 0, 0, .78);
 }
 .gate-box b { font-family: var(--title); font-size: 22px; letter-spacing: 4px; }
 .gate-box small { font-size: 10px; letter-spacing: 2px; color: var(--dim); margin-bottom: 4px; }
