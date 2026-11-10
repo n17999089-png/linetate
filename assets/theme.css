@@ -330,7 +330,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border-radius
 .status.off::before { background: var(--danger); }
 
 /* Date picker */
-.cal { position: absolute; z-index: var(--z-cal); display: none; width: 340px; max-width: calc(100vw - 24px); padding: 15px; background: linear-gradient(155deg, #262628, #101011 62%, #050506); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow-white), var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .1); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; isolation: isolate; }
+.cal { position: absolute; z-index: var(--z-cal); display: none; width: 340px; max-width: calc(100vw - 24px); padding: 15px; background: linear-gradient(160deg, #1e1e21, #0a0a0b 46%, #010102 78%, #000); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: var(--shadow-white), var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .1); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; isolation: isolate; }
 .cal.show { display: block; animation: cal-in .28s var(--ease-pop); }
 .cal.closing { display: block; animation: cal-out .22s var(--ease) forwards; pointer-events: none; }
 .cal-top { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; }

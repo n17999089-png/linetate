@@ -1010,7 +1010,9 @@
     display: flex; flex-direction: column; min-height: 0; overflow: hidden;
     max-height: calc(100vh - 210px);
     border-radius: 14px;
-    background: linear-gradient(165deg, rgba(26, 26, 29, .97), rgba(7, 7, 8, .99));
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .02) 38%, transparent 62%),
+        linear-gradient(165deg, #1e1e21 0%, #0a0a0b 44%, #010102 100%);
     border: 1px solid rgba(255, 255, 255, .1);
     border-top-color: rgba(255, 255, 255, .16);
     box-shadow:
@@ -1186,9 +1188,10 @@
    успадкований від пошуку, щоб «активне» скрізь читалось однаково */
 #legend, #stats, #draw-panel, #tools, #bottombar, #empty, #cal {
     border-radius: 14px;
+    /* біло-чорний градієнт: сріблястий верхній край тане в глибокий чорний */
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, .05), transparent 55%),
-        linear-gradient(160deg, rgba(34, 34, 38, .98), rgba(8, 8, 9, .99) 70%);
+        linear-gradient(180deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .02) 38%, transparent 62%),
+        linear-gradient(160deg, #202024 0%, #0b0b0c 42%, #020203 74%, #000 100%);
     border: 1px solid rgba(255, 255, 255, .16);
     border-top-color: rgba(255, 255, 255, .3);
     border-bottom-color: rgba(0, 0, 0, .8);

@@ -8,6 +8,10 @@
     const DATE_KEY = 'LINETATE:__date';
     const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
     const MIN_DATE = '2026-10-29';
+    // lite — повторний старт після втрати GPU-контексту: без растрової
+    // підкладки й у меншому DPR, щоб слабкий/забитий памʼяттю телефон
+    // узагалі зміг підняти сцену
+    const LITE = /[?&]lite=1(&|$)/.test(location.search);
 
     /* ------------------------------ утилиты ------------------------------ */
 
@@ -1960,6 +1964,41 @@
         toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
     }
 
+    // незворотний збій графіки: краще назвати причину, ніж лишити людину
+    // з чорним екраном без жодного слова. стилі інлайн — не залежать від CSS
+    function gfxFail(msg) {
+        if (document.getElementById('gfx-fail')) return;
+        const box = document.createElement('div');
+        box.id = 'gfx-fail';
+        box.setAttribute('role', 'alert');
+        box.style.cssText = 'position:fixed;inset:0;z-index:30000;display:flex;flex-direction:column;' +
+            'align-items:center;justify-content:center;gap:14px;padding:28px;text-align:center;' +
+            'background:radial-gradient(130% 110% at 50% 0%,#1e1e21 0%,#0b0b0d 58%,#050506 100%);' +
+            'color:#f2efe8;font:400 15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;' +
+            '-webkit-tap-highlight-color:transparent;';
+        const title = document.createElement('div');
+        title.textContent = 'Не вдалося запустити карту';
+        title.style.cssText = 'font-weight:600;font-size:20px;line-height:1.3;letter-spacing:.02em;';
+        const text = document.createElement('div');
+        text.textContent = msg || 'Телефону не вистачило графічної памʼяті. Закрийте інші вкладки й спробуйте ще раз.';
+        text.style.cssText = 'max-width:36ch;color:#a9a6a0;';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Перезавантажити';
+        btn.style.cssText = 'margin-top:6px;padding:12px 24px;border:1px solid rgba(216,42,32,.55);' +
+            'border-radius:10px;background:linear-gradient(180deg,#d8322a,#a81f18);color:#fff;' +
+            'font-weight:600;font-size:14px;line-height:1;letter-spacing:.04em;cursor:pointer;' +
+            'box-shadow:0 6px 18px rgba(168,31,24,.35);';
+        btn.addEventListener('click', () => {
+            try { sessionStorage.removeItem('LINETATE:__ctxlost'); } catch (e) { }
+            try { location.reload(); } catch (e) { }
+        });
+        box.appendChild(title);
+        box.appendChild(text);
+        box.appendChild(btn);
+        document.body.appendChild(box);
+    }
+
     /* ------------------------------ календарь ------------------------------ */
 
     function Calendar(opts) {
@@ -2175,7 +2214,7 @@
         const strongGpu = gpuInfo().tier >= 2;
         const map = new maplibregl.Map(Object.assign({
             container,
-            style: BASE.hybrid,
+            style: LITE ? BASE.dark : BASE.hybrid,
             center: [37.8, 48.4],
             zoom: 7,
             minZoom: 6,
@@ -2198,8 +2237,10 @@
         // растрова підкладка — головні споживачі). MapLibre піднімає новий
         // контекст, але текстури растрів у цій версії не перезаливає: гібрид
         // лишається чорним, а сцена порожньою (перевірено на реальному GPU).
-        // Зсередини це не лікується, тому перезавантажуємо сторінку, зберігши
-        // камеру; часті поспіль втрати не дають піти в петлю перезавантажень.
+        // Векторний стиль після відновлення малюється сам, тож там
+        // перезавантаження не потрібне — лише перемальовка. Якщо растр є,
+        // перезавантажуємо зі збереженням камери; друга втрата поспіль іде
+        // в lite-режим без растру, а частіші — на екран збою.
         (map => {
             const CAM_KEY = 'LINETATE:__recover';
             const LOST_KEY = 'LINETATE:__ctxlost';
@@ -2214,24 +2255,40 @@
                     }));
                 } catch (e) { }
             };
+            // до style.load стилю немає — вважаємо, що растр є: безпечніше
+            // перезавантажити, ніж показати чорний гібрид
+            const hasRaster = () => {
+                try {
+                    const layers = (map.getStyle() || {}).layers || [];
+                    return layers.some(l => l.type === 'raster');
+                } catch (e) { return true; }
+            };
             const recover = () => {
+                timer = 0;
                 if (dead) return;
                 dead = true;
                 saveCam();
-                let loop = false;
+                let n = 1;
                 try {
                     const now = Date.now();
                     const list = JSON.parse(sessionStorage.getItem(LOST_KEY) || '[]')
                         .filter(t => now - t < 60000);
                     list.push(now);
                     sessionStorage.setItem(LOST_KEY, JSON.stringify(list));
-                    loop = list.length >= 3;
+                    n = list.length;
                 } catch (e) { }
-                if (loop) {
-                    try { toast('Графічне ядро недоступне — перезавантажте сторінку', 'err'); } catch (e) { }
-                    return;
-                }
-                const go = () => { try { location.reload(); } catch (e) { } };
+                if (n >= 3) { gfxFail(); return; }
+                const go = () => {
+                    try {
+                        if (n >= 2 && !LITE) {
+                            // другий збій поспіль: старт без растрової
+                            // підкладки й у меншому DPR
+                            const u = new URL(location.href);
+                            u.searchParams.set('lite', '1');
+                            location.replace(u.href);
+                        } else location.reload();
+                    } catch (e) { }
+                };
                 // приховану вкладку не перезавантажуємо: чекаємо, поки її відкриють
                 if (document.visibilityState === 'hidden') {
                     document.addEventListener('visibilitychange', () => {
@@ -2239,12 +2296,30 @@
                     }, { once: true });
                 } else setTimeout(go, 150);
             };
-            const arm = () => { if (!timer) timer = setTimeout(recover, 1200); };
+            const arm = () => { if (!timer) timer = setTimeout(recover, LITE ? 900 : 1300); };
             const cv = map.getCanvas();
-            cv.addEventListener('webglcontextlost', e => { e.preventDefault(); arm(); }, false);
-            cv.addEventListener('webglcontextrestored', arm, false);
+            cv.addEventListener('webglcontextlost', e => {
+                e.preventDefault();
+                map._ltGlLost = true;
+                arm();
+            }, false);
+            cv.addEventListener('webglcontextrestored', () => {
+                map._ltGlLost = false;
+                if (dead) return;
+                // растр без перезаливки текстури все одно чорний — тоді
+                // даємо спрацювати перезавантаженню
+                if (hasRaster()) return;
+                clearTimeout(timer);
+                timer = 0;
+                try { map.resize(); map.triggerRepaint(); } catch (e) { }
+            }, false);
             map.on('remove', () => { dead = true; clearTimeout(timer); });
         })(map);
+
+        // лічильник кадрів: переглядач за ним розуміє, чи сцена взагалі
+        // малювалася, перш ніж прибрати стартову завісу
+        map._ltFrames = 0;
+        map.on('render', () => { map._ltFrames++; });
 
         // MapLibre 3.6 під рельєфом робить unproject через синхронне читання
         // пікселя з GPU-буфера координат (readPixels), і робить це в
@@ -2356,7 +2431,9 @@
             try {
                 const mem = navigator.deviceMemory || 4;
                 const cores = navigator.hardwareConcurrency || 4;
-                const cap = (mem <= 3 || cores <= 4) ? 1.5 : 1.8;
+                // lite-старт після втрати контексту: менше пікселів на кадр,
+                // щоб телефон узагалі втримав сцену
+                const cap = LITE ? 1.25 : ((mem <= 3 || cores <= 4) ? 1.5 : 1.8);
                 const pr = map.getPixelRatio();
                 if (pr > cap) map.setPixelRatio(cap);
                 adaptResolution(map, Math.min(cap, map.getPixelRatio()));
@@ -2489,7 +2566,8 @@
 
     function baseSwitcher(map, onReady) {
         let pending = false;
-        let current = 'hybrid';
+        // під lite стартуємо з векторної темної бази — без растру
+        let current = LITE ? 'dark' : 'hybrid';
 
         map.on('style.load', () => {
             if (!pending) return;
@@ -2903,7 +2981,7 @@
             const s = viewSize();
             // шрифт на оверлеї перемальовується кожного кадру під час панорами:
             // на телефоні 3x DPR тут зайвий, фото-режим задає свій DPR сам
-            const cap = docMobile() ? (lowEndDevice() ? 1.35 : 1.6) : 2;
+            const cap = docMobile() ? (LITE ? 1.2 : (lowEndDevice() ? 1.35 : 1.6)) : 2;
             const dpr = placeDprOverride || Math.min(window.devicePixelRatio || 1, cap);
             const w = Math.max(2, Math.round(s.x)), h = Math.max(2, Math.round(s.y));
             if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
@@ -9382,6 +9460,7 @@
     window.LT = {
         PREFIX,
         DATE_RE, MIN_DATE, dateBounds,
+        lite: LITE, gfxFail,
         device: () => deviceState || detectDevice(), initDevice, deviceTier, deviceInfo, renderPerf: () => renderPerf,
         isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger, warDays,
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,

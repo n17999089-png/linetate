@@ -3355,7 +3355,16 @@
     LT.initFX();
     state.date = clampDate(LT.todayIso());
 
-    map = LT.createMap('map', { center: [37.6, 48.35], zoom: 7 });
+    try {
+        map = LT.createMap('map', { center: [37.6, 48.35], zoom: 7 });
+    } catch (e) {
+        // без WebGL сцена не підніметься взагалі: без пояснення це чорний
+        // екран, тому знімаємо завісу й кажемо причину
+        const veil = document.getElementById('boot');
+        if (veil) veil.remove();
+        LT.gfxFail('Телефон не зміг створити графічне ядро карти (WebGL). Закрийте інші вкладки й спробуйте ще раз.');
+        return;
+    }
     const mapTools = LT.installMapTools(map, { regionLines: true, regionsOn: state.regions });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.addControl(LT.scaleBar(map), 'bottom-right');
@@ -3445,6 +3454,12 @@
 
     // стан перемикачів шарів зі сховища. не плутати з підписами шарів:
     // relief — гори, places — НП, zones3d — обʼємні 3D-зони
+    // lite-старт (після повторної втрати графічного контексту): темна
+    // векторна база без растру й без 3D-рельєфу — менше памʼяті на кадр
+    if (LT.lite) {
+        state.base = 'dark';
+        state.relief3d = false;
+    }
     map._ltBase = state.base;
     try {
         const r3 = localStorage.getItem('LINETATE:relief3d');
@@ -3568,6 +3583,11 @@
         if (veilLifted) return;
         const veil = $('boot');
         if (!veil) return;
+        // завіса не має відкривати чорну сцену: якщо жодного кадру не було
+        // або графічний контекст загинув — показуємо причину, а не магію
+        if (map._ltGlLost || !map._ltFrames) {
+            LT.gfxFail('Телефон не зміг відмалювати карту. Закрийте інші вкладки й спробуйте ще раз.');
+        }
         veilLifted = true;
         const box = $('boot-steps');
         if (box) box.querySelectorAll('.boot-step').forEach(n => { n.classList.remove('on'); n.classList.add('done'); });
