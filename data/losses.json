@@ -1,5 +1,5 @@
 {
- "updatedAt": "2026-11-09T19:15:46.259Z",
+ "updatedAt": "2026-11-11T14:34:12.841Z",
  "ru": {
   "named": 282993,
   "asOf": "2026-10-23",
@@ -781,8 +781,8 @@
   ]
  },
  "equipUa": {
-  "asOf": "2026-11-09",
-  "day": 1719,
+  "asOf": "2026-11-11",
+  "day": 1721,
   "source": "Oryx",
   "url": "https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-ukrainian.html",
   "summary": {
@@ -859,7 +859,7 @@
   "days": [],
   "history": [
    [
-    "2026-11-09",
+    "2026-11-11",
     1473,
     4687,
     1345,
