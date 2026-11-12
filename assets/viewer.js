@@ -799,6 +799,18 @@
         pts.forEach(c => drawDot(g, c, 4.5, '#141414', '#ffe9a8', 2, .16));
     }
 
+    // територія знайденого міста — на DOM-полотні над заливками зон.
+    // шари lt-ps-* у мапі лежали ПІД полотном blend, тому під окупованою
+    // зоною контур міста зникав (скарга «пошук з отрисовкою не працює»)
+    function paintSearchArea() {
+        if (!searchPick || !searchPick.feature || map._lt3d) return;
+        const geo = searchPick.feature.geometry;
+        const g = drawCtx;
+        fillGeo(g, geo, '#ffcf4d', .1);
+        lineGeo(g, geo, '#ffcf4d', 9, .5, null, 0, 0, 8);
+        lineGeo(g, geo, '#fff1b8', 2, .95, [3, 2]);
+    }
+
     function paintDraw() {
         if (!drawCv || !drawCtx || !mapReady) return;
         const src = map.getCanvas();
@@ -819,18 +831,6 @@
         paintDraft();
         paintRuler();
         paintSearchArea();
-    }
-
-    // територія знайденого міста — на DOM-полотні над заливками зон.
-    // шари lt-ps-* у мапі лежали ПІД полотном blend, тому під окупованою
-    // зоною контур міста зникав (скарга «пошук з отрисовкою не працює»)
-    function paintSearchArea() {
-        if (!searchPick || !searchPick.feature || map._lt3d) return;
-        const geo = searchPick.feature.geometry;
-        const g = drawCtx;
-        fillGeo(g, geo, '#ffcf4d', .1);
-        lineGeo(g, geo, '#ffcf4d', 9, .5, null, 0, 0, 8);
-        lineGeo(g, geo, '#fff1b8', 2, .95, [3, 2]);
     }
 
     function addSourceSafe(id) {
@@ -1972,11 +1972,6 @@
     // з локального індексу не переносився на мережевий рядок
     const foldSearchName = s => normSearchName(s).replace(/['\s\-–—.,]+/g, '');
 
-    const searchHasArea = res => {
-        const g = res && res.geojson;
-        return !!g && (g.type === 'Polygon' || g.type === 'MultiPolygon');
-    };
-
     const SEARCH_TIER = { city: 70, town: 55, municipality: 45, borough: 40, village: 25, hamlet: 10, suburb: 5 };
 
     const searchIsSettlement = res => {
@@ -1988,7 +1983,6 @@
 
     // Nominatim за запитом «Дніпро» ставить річку вище міста, а за «Львів» —
     // хутір у Криму вище міста: без власного рейтингу камера летіла не туди
-    // й зона не малювалась, бо в результату не було полігону
     function searchScore(res, q) {
         const n = normSearchName(shortName(res)), needle = normSearchName(q);
         let s = 0;
@@ -1997,7 +1991,6 @@
         const cc = String((res.address && res.address.country_code) || '');
         const ua = cc === 'ua' || (res._local && res.lon > 21 && res.lon < 41 && res.lat > 44 && res.lat < 53);
         if (ua) s += 80;
-        if (searchHasArea(res)) s += 35;
         const tier = String(res.addresstype || res.type || '');
         s += SEARCH_TIER[tier] || 0;
         if (res._local) s += 20;
@@ -2018,9 +2011,6 @@
             if (bb && bb.length === 4) {
                 lon = (+bb[2] + +bb[3]) / 2;
                 lat = (+bb[0] + +bb[1]) / 2;
-            } else if (res.geojson) {
-                const b = LT.boundsOf([{ type: 'Feature', properties: {}, geometry: res.geojson }]);
-                if (b) { lon = (b[0] + b[2]) / 2; lat = (b[1] + b[3]) / 2; }
             }
         }
         if (!Number.isFinite(lon) || !Number.isFinite(lat)) return true;
@@ -2055,10 +2045,10 @@
 
     function mergeSearchRows(netRows, local, q) {
         // локальний рядок викидаємо лише тоді, коли мережа знає такий самий
-        // населений пункт або його полігон, а не однойменну річку чи область
+        // населений пункт, а не однойменну річку чи область
         const merged = netRows.concat(local.filter(x => {
             const n = foldSearchName(x.name);
-            return !netRows.some(r => foldSearchName(shortName(r)) === n && (searchHasArea(r) || searchIsSettlement(r)));
+            return !netRows.some(r => foldSearchName(shortName(r)) === n && searchIsSettlement(r));
         }));
         merged.sort((a, b) => searchScore(b, q) - searchScore(a, q));
         const seen = new Set();
@@ -2079,9 +2069,9 @@
     }
 
     // відповіді Nominatim кешуємо: повторний запит того ж НП не мусить чекати
-    // мережу, а коли геокодер відповідає 429 чи недоступний — контур усе одно
-    // намалюється з кешу замість «місто знайдено, території немає»
-    const NOM_KEY = 'LINETATE:search1';
+    // мережу, а за 429 чи недоступного геокодера лишаються останні результати.
+    // search2: у старому кеші рядки без polygon_geojson — контур з них не взяти
+    const NOM_KEY = 'LINETATE:search2';
     let nomCache = null;
     function nomCacheRead() {
         if (nomCache) return nomCache;
@@ -4055,14 +4045,39 @@
     }
 
     // опубликованные данные лежат рядом с сайтом: data/map.json
-    LT.store.loadRemoteData('data/map.json').then(() => {
+    let bootWaitTimer = 0;
+    let bootCapTimer = 0;
+    function dataBecameReady() {
+        if (dataReady) return;
         dataReady = true;
+        clearTimeout(bootWaitTimer);
+        clearTimeout(bootCapTimer);
+        bootWaitTimer = 0;
+        bootCapTimer = 0;
         bootStage('boot.warm', 30);
         if (!mapReady) state.date = clampDate(pickDate());
         else if (!dateHasData(state.date)) state.date = clampDate(pickDate());
         boot();
         if (mapReady) refresh();
+    }
+
+    // старт не ждёт сеть бесконечно: локальное хранилище отдаёт даты сразу,
+    // свежая копия получает короткое окно, дальше карта поднимается без неё
+    // и подхватывает данные, когда они доедут. иначе медленный мобильный
+    // канал держал boot() запертым до минуты, а завеса уходила на 16-й секунде
+    const remoteData = LT.store.loadRemoteData('data/map.json');
+    remoteData.then(n => {
+        if (!dataReady) { dataBecameReady(); return; }
+        if (n && mapReady) {
+            if (!dateHasData(state.date)) state.date = clampDate(pickDate());
+            refresh();
+        }
     });
+    LT.store.ready().then(() => {
+        if (dataReady || bootWaitTimer) return;
+        bootWaitTimer = setTimeout(dataBecameReady, isMobileUI() ? 1400 : 900);
+    });
+    bootCapTimer = setTimeout(dataBecameReady, isMobileUI() ? 6000 : 5000);
 
     // телефон повертається до вкладки через години: свіжа публікація має
     // прийти одразу, а не після перезавантаження сторінки

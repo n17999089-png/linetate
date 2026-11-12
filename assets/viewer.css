@@ -348,9 +348,30 @@
 }
 .tg-fab:active { transform: translateY(0) scale(.985); }
 
-/* map controls sit above the bottom bar */
-.maplibregl-ctrl-bottom-right { bottom: 68px; right: 12px; }
-.maplibregl-ctrl-bottom-left { bottom: 68px; }
+/* HUD-контроли виходять зі stacking context мапи й лежать вище полотен фронту */
+body.lt-viewer #map { z-index: auto; }
+.lt-viewer .maplibregl-ctrl-top-left,
+.lt-viewer .maplibregl-ctrl-top-right,
+.lt-viewer .maplibregl-ctrl-bottom-left,
+.lt-viewer .maplibregl-ctrl-bottom-right {
+    z-index: var(--z-hud);
+    pointer-events: none;
+}
+.lt-viewer .maplibregl-ctrl { pointer-events: auto; }
+.lt-viewer .maplibregl-ctrl-bottom-right {
+    bottom: 68px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+.lt-viewer .maplibregl-ctrl-bottom-left { bottom: 68px; }
+.lt-viewer .maplibregl-ctrl-bottom-right .maplibregl-ctrl,
+.lt-viewer .maplibregl-ctrl-bottom-left .maplibregl-ctrl { margin: 0; }
+.lt-viewer .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group { order: 1; }
+.lt-viewer .maplibregl-ctrl-bottom-right .lt-scale { order: 2; }
+.lt-viewer .maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib { order: 3; }
 
 /* ---------- ПОДПИСИ СЛОЁВ ---------- */
 
@@ -505,8 +526,14 @@
 .dev-mobile .tg-fab span { display: none; }
 .dev-mobile .tg-fab { transition: opacity .2s ease, visibility .2s, transform .16s var(--ease), border-color .16s ease, box-shadow .16s ease, background .16s ease; }
 
-.dev-mobile .maplibregl-ctrl-bottom-right { bottom: calc(112px + env(safe-area-inset-bottom)); }
+.dev-mobile .maplibregl-ctrl-bottom-right {
+    bottom: calc(112px + env(safe-area-inset-bottom));
+    right: 8px;
+    gap: 8px;
+}
 .dev-mobile .maplibregl-ctrl-bottom-left { bottom: calc(112px + env(safe-area-inset-bottom)); }
+.dev-mobile .lt-scale { padding: 6px 8px 7px; }
+.dev-mobile .lt-scale-num { font-size: 11px; }
 .dev-mobile #cal {
     left: 8px; right: 8px;
     width: auto; max-width: none;
@@ -1023,7 +1050,7 @@
     transform: translateY(-7px) scale(.985); transform-origin: top center;
     transition: opacity .24s var(--ease), transform .38s var(--ease-pop), visibility .38s;
 }
-.ps-pop.show {
+#place-search.open .ps-pop.show {
     opacity: 1; visibility: visible; pointer-events: auto; transform: none;
     transition: opacity .2s ease, transform .3s var(--ease-pop), visibility .3s;
 }

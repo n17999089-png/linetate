@@ -1591,8 +1591,10 @@
         await storageInit();
         if (!url) return 0;
         try {
-            const sep = url.indexOf('?') >= 0 ? '&' : '?';
-            const res = await fetch(url + sep + 'v=' + Date.now(), { cache: 'no-store' });
+            // свежесть проверяем по ETag: no-cache даёт 304 и берёт тело из
+            // кэша браузера. уникальный ?v= на каждый запуск заставлял качать
+            // все 10 МБ map.json заново, и на мобильной сети старт висел
+            const res = await fetch(url, { cache: 'no-cache' });
             if (!res.ok) return 0;
             const data = await res.json();
             const maps = data && data.maps;
@@ -2224,6 +2226,7 @@
             maxZoom: TILES_MAXZOOM,
             maxPitch: 0,
             maxBounds: MAP_BOUNDS,
+            attributionControl: false,
             pixelRatio: dev.mobile ? Math.min(window.devicePixelRatio || 1, mobileDprCap) : undefined,
             antialias: !dev.mobile && strongGpu,
             // копія кадру для снимка більше не потрібна: фото знімається
@@ -2236,6 +2239,23 @@
             // лишаємо мʼякше, бо там тайли приходять довше
             fadeDuration: dev.mobile ? 120 : 0
         }, options || {}));
+        map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+        let attrCollapsed = false;
+        const collapseAttribution = () => {
+            if (attrCollapsed) return;
+            const el = map.getContainer().querySelector('.maplibregl-ctrl-attrib.maplibregl-compact');
+            if (!el) return;
+            el.classList.remove('maplibregl-compact-show');
+            el.setAttribute('open', '');
+            attrCollapsed = true;
+            map.off('styledata', collapseAttribution);
+            map.off('sourcedata', collapseAttribution);
+            map.off('terrain', collapseAttribution);
+        };
+        map.on('styledata', collapseAttribution);
+        map.on('sourcedata', collapseAttribution);
+        map.on('terrain', collapseAttribution);
+        collapseAttribution();
 
         // GPU-контекст телефонів губиться під тиском памʼяті (3D-рельєф і
         // растрова підкладка — головні споживачі). MapLibre піднімає новий
@@ -2568,11 +2588,22 @@
         // під lite стартуємо з векторної темної бази — без растру
         let current = LITE ? 'dark' : 'hybrid';
 
-        map.on('style.load', () => {
+        function apply(tries) {
             if (!pending) return;
-            pending = false;
-            onReady();
-        });
+            const baseSource = current === 'hybrid' ? 'sat' : 'protomaps';
+            if (!map.isStyleLoaded() || !map.getSource(baseSource)) {
+                if (tries > 0) setTimeout(() => apply(tries - 1), 250);
+                return;
+            }
+            try {
+                onReady();
+                pending = false;
+            } catch (e) {
+                if (tries > 0) setTimeout(() => apply(tries - 1), 250);
+            }
+        }
+
+        map.on('style.load', () => apply(12));
 
         return function setBase(key) {
             if (!BASE[key] || key === current) return;
@@ -2581,15 +2612,6 @@
             map.setStyle(BASE[key]);
 
             // подложка может грузиться долго — слои возвращаем, как только стиль разобран
-            const apply = tries => {
-                if (!pending) return;
-                try {
-                    onReady();
-                    pending = false;
-                } catch (e) {
-                    if (tries > 0) setTimeout(() => apply(tries - 1), 250);
-                }
-            };
             setTimeout(() => apply(12), 500);
         };
     }
@@ -2749,7 +2771,11 @@
     // Метри на піксель — чиста математика з зума й широти, без GPU.
     function scaleBar(map) {
         const box = document.createElement('div');
-        box.className = 'maplibregl-ctrl maplibregl-ctrl-scale';
+        box.className = 'maplibregl-ctrl lt-scale';
+        box.setAttribute('role', 'img');
+        box.innerHTML = '<span class="lt-scale-num"></span><span class="lt-scale-rule" aria-hidden="true"><i></i></span>';
+        const num = box.querySelector('.lt-scale-num');
+        const rule = box.querySelector('.lt-scale-rule');
         const paint = () => {
             if (!box.isConnected) return;
             const z = map.getZoom();
@@ -2761,12 +2787,14 @@
             let r = v / e;
             r = r >= 10 ? 10 : r >= 5 ? 5 : r >= 3 ? 3 : r >= 2 ? 2 : 1;
             const dist = e * r;
-            box.style.width = Math.min(120, 120 * (dist / v)) + 'px';
-            box.innerHTML = `${dist}&nbsp;${km ? 'км' : 'м'}`;
+            rule.style.width = (120 * (dist / v)) + 'px';
+            const unit = currentLang === 'en' ? (km ? 'km' : 'm') : (km ? 'км' : 'м');
+            num.textContent = dist + ' ' + unit;
+            box.setAttribute('aria-label', (currentLang === 'en' ? 'Scale: ' : 'Масштаб: ') + dist + ' ' + unit);
         };
         map.on('move', paint);
         paint();
-        return { onAdd: () => box, onRemove: () => { } };
+        return { onAdd: () => box, onRemove: () => { map.off('move', paint); box.remove(); } };
     }
 
     /* ------------------------------ пиксельные подписи ------------------------------ */
@@ -2880,9 +2908,11 @@
 
     const PLACE_SIZE = [17, 15, 13, 11.5, 10.5];
     const PLACE_TRACK = [1.5, 1.2, 1, .9, .8];
-    const PLACE_FILL = ['#eef4fb', '#dde8f4', '#cad7e5', '#b4c2d2', '#9fb0c1'];
-    const PLACE_CAP = '#ffd489';
-    const PLACE_INK = 'rgba(6, 9, 13, .92)';
+    const PLACE_FILL = ['#f7fbff', '#eaf3fb', '#d8e6f1', '#c2d1de', '#aebdca'];
+    const PLACE_CAP = '#ffd77e';
+    const PLACE_GLOW = 'rgba(174, 216, 255, .48)';
+    const PLACE_CAP_GLOW = 'rgba(255, 188, 74, .58)';
+    const PLACE_INK = 'rgba(3, 5, 8, .94)';
 
     function placeFont(rank) {
         return '700 ' + PLACE_SIZE[rank] + "px 'Handjet', 'Tektur', monospace";
@@ -2907,12 +2937,26 @@
     }
 
     function drawDot(k, cx, cy, r, fill) {
+        const cap = fill === PLACE_CAP;
+        k.save();
+        k.shadowColor = cap ? PLACE_CAP_GLOW : PLACE_GLOW;
+        k.shadowBlur = Math.max(4, r * 2.2);
+        k.beginPath();
+        k.arc(cx, cy, r, 0, Math.PI * 2);
+        k.fillStyle = fill;
+        k.fill();
+        k.restore();
         k.beginPath();
         k.arc(cx, cy, r, 0, Math.PI * 2);
         k.fillStyle = fill;
         k.fill();
         k.strokeStyle = PLACE_INK;
         k.lineWidth = 1;
+        k.stroke();
+        k.beginPath();
+        k.arc(cx, cy, r + .65, 0, Math.PI * 2);
+        k.strokeStyle = cap ? 'rgba(255, 224, 157, .68)' : 'rgba(226, 242, 255, .62)';
+        k.lineWidth = .55;
         k.stroke();
     }
 
@@ -3266,7 +3310,7 @@
             const mob = sc < 1;
             const tw = measure(name, rank);
             // запас під штрих обвідки й м'яку тінь за її межами
-            const padX = (mob ? 4 : 5) + 3, padY = (mob ? 3.5 : 5) + 3;
+            const padX = (mob ? 5 : 6) + 4, padY = (mob ? 4.5 : 5.5) + 4;
             const dr = dot ? dotRadius(rank, sc) : 0;
             const ty = dot ? -(dr + 3.4) : 0;
             const dia = cap ? (big ? 3.2 : 2.8) * sc : 0;
@@ -3294,21 +3338,15 @@
                 // точка точно на координаті, підпис над нею не ховає місце
                 drawDot(k, 0, 0, dr, kind === 'cap' ? PLACE_CAP : '#e8eef5');
             }
-            // контур разом із м'якою тінню: широкий штрих-«світіння» на 1x
-            // зливався з обводкою в чорну плашку навколо всього слова. спрайт
-            // печеться один раз, тому shadowBlur у гарячому шляху не коштує
+            // світіння друкується в спрайт один раз; у кадрі лишається drawImage
             k.save();
-            k.shadowColor = cap ? 'rgba(255, 170, 40, .38)' : 'rgba(0, 0, 0, .62)';
-            k.shadowBlur = (big ? 4.6 : 3.4) * (mob ? .85 : 1);
-            k.shadowOffsetY = 1;
-            // товщина обводки — стара: тонший штрих губився на світлих зонах,
-            // і назви міст читались як незахищений текст
-            k.strokeStyle = PLACE_INK;
-            k.lineWidth = big ? 3.4 : 2.6;
-            k.strokeText(name, 0, ty);
+            k.shadowColor = cap ? PLACE_CAP_GLOW : PLACE_GLOW;
+            k.shadowBlur = (big ? 7 : 5.4) * (mob ? .85 : 1);
+            k.fillStyle = cap ? PLACE_CAP : PLACE_FILL[rank];
+            k.fillText(name, 0, ty);
             k.restore();
             k.strokeStyle = PLACE_INK;
-            k.lineWidth = big ? 3.4 : 2.6;
+            k.lineWidth = big ? 3 : 2.35;
             k.strokeText(name, 0, ty);
             k.fillStyle = cap ? PLACE_CAP : PLACE_FILL[rank];
             k.fillText(name, 0, ty);
@@ -3320,9 +3358,13 @@
                 k.lineTo(0, dmy + dia);
                 k.lineTo(-dia, dmy);
                 k.closePath();
-                k.fillStyle = 'rgba(255, 212, 137, .96)';
+                k.save();
+                k.shadowColor = PLACE_CAP_GLOW;
+                k.shadowBlur = 6;
+                k.fillStyle = PLACE_CAP;
                 k.fill();
-                k.strokeStyle = 'rgba(0, 0, 0, .8)';
+                k.restore();
+                k.strokeStyle = PLACE_INK;
                 k.lineWidth = 1;
                 k.stroke();
             }
@@ -3382,7 +3424,7 @@
             let b = bareIcons.get(key);
             if (b) return b;
             const r = dotRadius(rank, iconSc) + .6;
-            const size = Math.ceil((r + 2) * 2);
+            const size = Math.ceil((r + 5) * 2);
             const c = document.createElement('canvas');
             c.width = Math.round(size * dprNow);
             c.height = Math.round(size * dprNow);
@@ -6418,8 +6460,6 @@
     // перезастосовує paint до всіх шарів
     function setZones3d(map, on) {
         map._ltZones3d = !!on;
-        // при вимкнених обʼємних зонах кромка й піднята пластина не мають сенсу:
-        // перерахунок очищає їх і повертає пластину на землю
         if (map._lt3d) queueZone3d(map, true);
     }
 
@@ -7410,7 +7450,7 @@
                 map.setPaintProperty('fe_' + id, 'fill-extrusion-opacity', ZONE_3D_OPACITY * k * mix);
             } catch (e) { }
         });
-        // стіна просування й пластина пошуку ростуть разом із зонами
+        // стіна просування росте разом із зонами
         try {
             if (map.getLayer('lt-adv-band')) {
                 map.setPaintProperty('lt-adv-band', 'fill-extrusion-height', wallStops(Math.max(0.0001, ADV.wallPx * mix)));
@@ -7418,7 +7458,6 @@
             if (map.getLayer('lt-adv-band-loss')) {
                 map.setPaintProperty('lt-adv-band-loss', 'fill-extrusion-height', wallStops(Math.max(0.0001, (ADV.wallPx + ADV.bumpPx) * mix)));
             }
-            paintSearch3d(map);
         } catch (e) { }
     }
 
@@ -9459,7 +9498,7 @@
         isoOf, fromIso, todayIso, startOfMonth, fmtFull, fmtShort, fmtTrigger, warDays,
         esc, clone, kmLon, cleanPath, buildArrow, pathMidpoint, arrowDecor, tint,
         lang, locale, t, setLang, switchLang, applyI18n, initI18n, countWord,
-        store: { listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage, onMirrorUpdate },
+        store: { ready: storageInit, listDates, dateInfo, load, loadRemoteData, save, saveLabelPos, remove, removeAll, version, lastDate, setLastDate, exportAll, importAll, mergeMaps, optimizeStorage, storageUsage, onMirrorUpdate },
         Calendar, BASE, createMap, baseSwitcher, smoothZoom,
         flagSVG: key => FLAG_SVG[key], flagHtml: (key, cls) => flagHtml(key, cls), pixelLabels, placeRu, applyMapLang, ensurePlaceLabels, setPlaceDpr,
         setPlacesVisible, setReliefUser, setReliefPrefs, reliefPrefs, syncRelief, setZones3d,

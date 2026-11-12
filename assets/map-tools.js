@@ -264,10 +264,17 @@
                     if (thin) f._thin = true;
                     return f;
                 };
-                const features = c.lines.map(line => make(line, false));
+                const detailed = c.lines.map(line => make(line, false));
                 // контури сусідніх країн — тонший шар під основним кордоном
-                if (c.outline) c.outline.forEach(line => features.push(make(line, true)));
-                out[c.id] = { meta: c, fc: { type: 'FeatureCollection', features } };
+                const outlines = (c.outline || []).map(line => make(line, true));
+                const regional = (c.regional || c.overview || c.lines).map(line => make(line, false));
+                const overview = (c.overview || c.regional || c.lines).map(line => make(line, false));
+                out[c.id] = {
+                    meta: c,
+                    fc: { type: 'FeatureCollection', features: detailed.concat(outlines) },
+                    regionalFc: { type: 'FeatureCollection', features: regional.concat(outlines) },
+                    overviewFc: { type: 'FeatureCollection', features: overview.concat(outlines) }
+                };
             });
             window.__ltBorderData = out;
             return out;
@@ -524,6 +531,7 @@
             const vw = view.getWest() - 0.35, ve = view.getEast() + 0.35;
             const vs = view.getSouth() - 0.35, vn = view.getNorth() + 0.35;
             const zoom = map.getZoom();
+            const lod = zoom < 7.2 ? 'overview' : (zoom < 9 ? 'regional' : 'full');
             const pitched = (map.getPitch ? map.getPitch() : 0) > 0.5;
             const srcCv = map.getCanvas();
             const sw = srcCv.clientWidth || srcCv.width || 1280;
@@ -550,26 +558,23 @@
             ['thin', 'main', 'dash'].forEach(pass => {
                 Object.keys(data).forEach(id => {
                     if (borderVis[id] === false) return;
-                    const { meta, fc } = data[id];
+                    const { meta, fc, regionalFc, overviewFc } = data[id];
                     const kind = meta.dash ? 'dash' : 'main';
                     // «thin» — окремий прохід для контурів сусідніх країн:
                     // раніше умова нижче відсікала його цілком, тож кордони
                     // МД–РО, HU–SK та інші не малювалися ніколи
                     if (pass !== 'thin' && kind !== pass) return;
                     const thin = pass === 'thin';
-                    const core = thin ? '#e7decb' : (meta.color || '#efe6d2');
+                    const drawFc = lod === 'overview' ? overviewFc : (lod === 'regional' ? regionalFc : fc);
+                    const core = thin ? '#b9c2cc' : (meta.color || '#f1e8d5');
                     const base = meta.width || 2.9;
-                    const wCore = (thin ? 1.5 : base) * (zoom < 6.5 ? 0.94 : 1.04);
-                    // три смуги: широке темне гало (мʼяко відділяє лінію від
-                    // будь-якого фону), темна підкладка й світлий сердечник.
-                    // на сердечнику — тонкий блик по центру: він і дає відчуття
-                    // металевої kartografічної лінії замість пласкої смуги
-                    const caseW = thin ? wCore + 1.0 : wCore + 2.2;
-                    const haloW = caseW + (thin ? 1.8 : 3.0);
-                    const caseColor = thin ? 'rgba(8,11,16,.58)' : 'rgba(8,11,16,.72)';
-                    const haloColor = thin ? 'rgba(6,9,13,.16)' : 'rgba(6,9,13,.24)';
+                    const wCore = (thin ? 1.15 : Math.min(base, 2.8)) * (zoom < 6.5 ? 0.94 : 1.04);
+                    const caseW = wCore + (thin ? 1.25 : 2.15);
+                    const haloW = caseW + (thin ? 1.4 : 4.2);
+                    const caseColor = thin ? 'rgba(5,8,12,.68)' : 'rgba(5,7,10,.84)';
+                    const haloColor = thin ? 'rgba(4,7,11,.2)' : 'rgba(255,239,207,.11)';
                     ctx.globalAlpha = 1;
-                    fc.features.forEach(f => {
+                    drawFc.features.forEach(f => {
                         if (!!f._thin !== thin) return;
                         const bb = f._bb;
                         if (bb && (bb[2] < vw || bb[0] > ve || bb[3] < vs || bb[1] > vn)) return;
@@ -597,8 +602,6 @@
                             }
                         }
                         if (meta.dash) ctx.setLineDash(meta.dash);
-                        // темна підкладка тримає лінію читабельною і на світлому
-                        // лісі, і на темній заливці окупованої зони
                         ctx.strokeStyle = haloColor;
                         ctx.lineWidth = haloW;
                         ctx.stroke();
@@ -609,8 +612,8 @@
                         ctx.lineWidth = wCore;
                         ctx.stroke();
                         if (!thin) {
-                            ctx.strokeStyle = 'rgba(255,252,243,.5)';
-                            ctx.lineWidth = Math.max(.65, wCore * .28);
+                            ctx.strokeStyle = 'rgba(255,253,246,.66)';
+                            ctx.lineWidth = Math.max(.55, wCore * .24);
                             ctx.stroke();
                         }
                         if (meta.dash) ctx.setLineDash([]);
@@ -622,7 +625,8 @@
             window.__ltBorderMs = {
                 ms: +(performance.now() - t0).toFixed(2), feats: st.feats, pts: st.pts,
                 checks: st.checks, err: +st.err.toFixed(2), hom: !!homog,
-                z: +zoom.toFixed(2), pitch: +(map.getPitch() || 0).toFixed(0)
+                z: +zoom.toFixed(2), pitch: +(map.getPitch() || 0).toFixed(0),
+                lod
             };
         }
 
