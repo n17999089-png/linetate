@@ -1,5 +1,5 @@
 {
- "updatedAt": "2026-11-25T17:23:05.917Z",
+ "updatedAt": "2026-11-26T17:02:54.423Z",
  "ru": {
   "named": 282993,
   "asOf": "2026-10-23",
@@ -649,8 +649,8 @@
   "url": "https://ualosses.org/en/statistics/"
  },
  "equip": {
-  "asOf": "2026-11-25",
-  "day": 1735,
+  "asOf": "2026-11-26",
+  "day": 1736,
   "source": "Oryx",
   "url": "https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-equipment.html",
   "summary": {
@@ -760,7 +760,7 @@
     0
    ],
    [
-    "2026-11-25",
+    "2026-11-26",
     2,
     5,
     4,
@@ -830,7 +830,7 @@
     null
    ],
    [
-    "2026-11-25",
+    "2026-11-26",
     4460,
     9752,
     1878,
@@ -849,8 +849,8 @@
   ]
  },
  "equipUa": {
-  "asOf": "2026-11-25",
-  "day": 1735,
+  "asOf": "2026-11-26",
+  "day": 1736,
   "source": "Oryx",
   "url": "https://www.oryxspioenkop.com/2022/02/attack-on-europe-documenting-ukrainian.html",
   "summary": {
@@ -943,7 +943,7 @@
     0
    ],
    [
-    "2026-11-25",
+    "2026-11-26",
     0,
     7,
     7,
@@ -996,7 +996,7 @@
     null
    ],
    [
-    "2026-11-25",
+    "2026-11-26",
     1475,
     4707,
     1354,
